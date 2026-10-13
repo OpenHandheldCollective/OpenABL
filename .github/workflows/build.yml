@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026-present Open Handheld Collective
+#   https://github.com/OpenHandheldCollective
+# Builds every chipset and uploads the images to the tag's release.
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build
+        required: true
+      build:
+        description: Build
+        type: choice
+        options: [release, debug]
+        default: release
+
+permissions:
+  contents: read
+
+jobs:
+  # The build runs fetched code, so it gets no token that can write.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      SUFFIX: ${{ inputs.build == 'debug' && '-debug' || '' }}
+    outputs:
+      fetched: ${{ steps.sources.outputs.fetched }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+
+      # The fetched sources are kept in the "sources" release, one file per set
+      # of pins in Scripts/fetch.sh, so they are fetched only after a pin changes.
+      - name: Restore the sources
+        id: sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          key=sources-$(grep -E '^[A-Z0-9]+_(URL|TAG|COMMIT)=' Scripts/fetch.sh | sha256sum | cut -c1-16)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          if gh release download sources --pattern "$key.tar" --dir "$RUNNER_TEMP" &&
+            tar -xf "$RUNNER_TEMP/$key.tar"; then
+            echo "restored $key"
+          else
+            echo "fetched=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: ./build.sh all ${{ inputs.build == 'debug' && '--debug' || '' }}
+
+      - name: Keep the log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: abl-build-log
+          path: build/abl-build.log
+
+      - name: Pack the sources for later builds
+        if: steps.sources.outputs.fetched == 'true'
+        run: |
+          mkdir store
+          tar -cf "store/${{ steps.sources.outputs.key }}.tar" \
+            --exclude=build/edk2/.git/openabl-patch --exclude=build/edk2/.git/index \
+            build/edk2/.git build/microui build/qtestsign
+
+      - uses: actions/upload-artifact@v7
+        if: steps.sources.outputs.fetched == 'true'
+        with:
+          name: sources
+          path: store
+          retention-days: 1
+          compression-level: 0
+
+      - name: Archive the sources
+        env:
+          XZ_OPT: -T0
+        run: |
+          src=openabl-${TAG#v}
+          mkdir -p "sources/$src" dist
+          git archive HEAD | tar -x -C "sources/$src"
+          for d in edk2 microui qtestsign; do
+            mkdir -p "sources/$src/build/$d"
+            git -C "build/$d" archive HEAD | tar -x -C "sources/$src/build/$d"
+            cp -R "build/$d/.git" "sources/$src/build/$d/"
+            rm -f "sources/$src/build/$d/.git/openabl-patch" "sources/$src/build/$d/.git/index"
+          done
+          tar -C sources -cJf "dist/$src-source.tar.xz" "$src"
+
+      - name: Collect the images
+        run: |
+          for elf in build/out/abl_signed-*.elf; do
+            name=$(basename "$elf" .elf)$SUFFIX.elf
+            cp "$elf" "dist/$name"
+            (cd dist && sha256sum "$name" > "$name.sha256")
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: dist
+          retention-days: 1
+          compression-level: 0
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        if: needs.build.outputs.fetched == 'true'
+        with:
+          name: sources
+          path: store
+
+      - name: Keep the sources for later builds
+        if: needs.build.outputs.fetched == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view sources > /dev/null 2>&1 ||
+            gh release create sources --prerelease --target "$GITHUB_SHA" --title "Build sources" \
+              --notes "What Scripts/fetch.sh fetches, kept for CI builds. Not an OpenABL release."
+          gh release upload sources store/* --clobber
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --verify-tag --title "OpenABL ${TAG#v}" \
+              --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
+          gh release upload "$TAG" dist/* --clobber

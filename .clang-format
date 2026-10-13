@@ -1,0 +1,67 @@
+# OpenABL's C style: edk2's C coding standard (sections noted), with each
+# parameter of a function declaration on its own line. Needs clang-format 22
+# or later.
+---
+Language:        C
+
+# 5.1.1
+ColumnLimit:     80
+
+# 5.1.2
+IndentWidth:     2
+TabWidth:        2
+UseTab:          Never
+ContinuationIndentWidth: 2
+
+# 5.2.1.1
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# 5.2.1.3, 5.7.1.10
+BreakBeforeBraces: Linux
+# 5.2.2.1: every if, else, for, while and do body in braces
+InsertBraces: true
+
+# 5.2.2.2
+SpaceBeforeAssignmentOperators: true
+
+# 5.2.2.6
+SpaceBeforeParens: Always
+
+# 5.7.1.3
+AlwaysBreakAfterReturnType: All
+
+# 5.7.1.5
+IndentWrappedFunctionNames: false
+
+# 5.7.1.7: a declaration's parameters one to a line, between a line break
+# after the opening parenthesis and one before the closing
+AlignAfterOpenBracket: true
+BreakAfterOpenBracketFunction: true
+BreakBeforeCloseBracketFunction: true
+AllowAllParametersOfDeclarationOnNextLine: false
+BinPackParameters: AlwaysOnePerLine
+
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignTrailingComments: true
+PointerAlignment: Right
+SortIncludes: Never
+# OPTIONAL follows a parameter's name; without this it is taken for the name.
+AttributeMacros: [OPTIONAL, EFIAPI]
+TypeNames: [VOID, BOOLEAN, CHAR8, CHAR16, INT8, UINT8, INT16, UINT16, INT32,
+            UINT32, INT64, UINT64, INTN, UINTN, EFI_STATUS, EFI_HANDLE]
+...

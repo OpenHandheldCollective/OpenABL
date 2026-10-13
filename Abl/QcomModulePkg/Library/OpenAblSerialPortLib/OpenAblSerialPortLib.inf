@@ -1,0 +1,21 @@
+## @file
+# The ABL's debug output, for the menu program's Log screen.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later WITH GPL-3.0-linking-source-exception
+# Copyright (C) 2026-present Open Handheld Collective
+#   https://github.com/OpenHandheldCollective
+##
+[Defines]
+  INF_VERSION    = 0x00010005
+  FILE_GUID      = 6c1f0a4e-8b2d-4e57-9a63-2f4d7b1c8e05
+  BASE_NAME      = OpenAblSerialPortLib
+  MODULE_TYPE    = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS  = SerialPortLib
+
+[Sources.common]
+  OpenAblSerialPortLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  QcomModulePkg/QcomModulePkg.dec
