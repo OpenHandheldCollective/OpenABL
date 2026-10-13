@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026-present Open Handheld Collective
+#   https://github.com/OpenHandheldCollective
+# Packages a release's images into a .tar.gz archive (one folder per chipset
+# with the image and its .sha256) and uploads it to that release.
+name: Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to package
+        required: true
+      build:
+        description: Build
+        type: choice
+        options: [release, debug]
+        default: release
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      build:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      SUFFIX: ${{ inputs.build == 'debug' && '-debug' || '' }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Archive the images
+        run: |
+          name=openabl-$TAG$SUFFIX
+          mkdir images "$name"
+          found=0
+          gh release download "$TAG" --pattern 'abl_signed-*.elf' --dir images
+          for elf in images/abl_signed-*.elf; do
+            file=$(basename "$elf")
+            case $file in
+              *-debug.elf) [ -n "$SUFFIX" ] || continue ;;
+              *) [ -z "$SUFFIX" ] || continue ;;
+            esac
+            soc=${file#abl_signed-}
+            soc=${soc%.elf}
+            soc=${soc%-debug}
+            mkdir "$name/$soc"
+            cp "$elf" "$name/$soc/"
+            (cd "$name/$soc" && sha256sum "$file" > "$file.sha256")
+            found=$((found + 1))
+          done
+          [ "$found" -gt 0 ] || { echo "$TAG has no ${{ inputs.build }} images" >&2; exit 1; }
+          cp -R LICENSE LICENSES.md LICENSES "$name/"
+          cp Assets/*-OFL.txt "$name/LICENSES/"
+          tar -czf "$name.tar.gz" "$name"
+          gh release upload "$TAG" "$name.tar.gz" --clobber

@@ -1,0 +1,1438 @@
+diff --git a/BaseTools/Conf/build_rule.template b/BaseTools/Conf/build_rule.template
+index 0822b68..d5defb3 100755
+--- a/BaseTools/Conf/build_rule.template
++++ b/BaseTools/Conf/build_rule.template
+@@ -385,8 +385,10 @@
+ 
+         "$(GENFW)" -e $(MODULE_TYPE) -o ${dst} ${src} $(GENFW_FLAGS)
+         $(CP) ${dst} $(DEBUG_DIR)
+-        $(CP) ${dst} $(BIN_DIR)(+)$(MODULE_NAME_GUID).efi
++        # OpenABL: "-" so GenFds doesn't pack this copy as a second image.
++        -$(CP) ${dst} $(BIN_DIR)(+)$(MODULE_NAME_GUID).efi
+         -$(CP) $(DEBUG_DIR)(+)*.map $(OUTPUT_DIR)
++        -$(CP) $(DEBUG_DIR)(+)*.map $(BIN_DIR)
+         
+     <Command.XCODE>
+         # tool to convert Mach-O to PE/COFF
+diff --git a/BaseTools/Conf/tools_def.template b/BaseTools/Conf/tools_def.template
+index 2b17d3b..846dfe4 100755
+--- a/BaseTools/Conf/tools_def.template
++++ b/BaseTools/Conf/tools_def.template
+@@ -2497,7 +2497,7 @@ RELEASE_GCC5_AARCH64_DLINK_XIPFLAGS = -z common-page-size=0x20
+ DEFINE CLANG35_ARM_TARGET        = -target arm-linux-gnueabi
+ DEFINE CLANG35_AARCH64_TARGET    = -target aarch64-linux-gnu
+ 
+-DEFINE CLANG35_WARNING_OVERRIDES = -Wno-parentheses-equality -Wno-tautological-compare -Wno-tautological-constant-out-of-range-compare -Wno-empty-body -Wno-unknown-warning-option
++DEFINE CLANG35_WARNING_OVERRIDES = -Wno-parentheses-equality -Wno-tautological-compare -Wno-tautological-constant-out-of-range-compare -Wno-empty-body -Wno-unknown-warning-option -Wno-unused-but-set-variable
+ DEFINE CLANG35_ARM_CC_FLAGS      = DEF(GCC_ARM_CC_FLAGS) DEF(CLANG35_ARM_TARGET) DEF(CLANG35_WARNING_OVERRIDES)
+ DEFINE CLANG35_AARCH64_CC_FLAGS  = DEF(GCC_AARCH64_CC_FLAGS) DEF(CLANG35_AARCH64_TARGET) -mcmodel=small DEF(CLANG35_WARNING_OVERRIDES)
+ 
+@@ -2758,7 +2758,7 @@ DEFINE CLANGPDB_X64_PREFIX           = ENV(CLANG_BIN)
+ DEFINE CLANGPDB_IA32_TARGET          = -target i686-unknown-windows-gnu
+ DEFINE CLANGPDB_X64_TARGET           = -target x86_64-unknown-windows-gnu
+ 
+-DEFINE CLANGPDB_WARNING_OVERRIDES    = -Wno-parentheses-equality -Wno-tautological-compare -Wno-tautological-constant-out-of-range-compare -Wno-empty-body -Wno-unused-const-variable -Wno-varargs -Wno-unknown-warning-option -Wno-microsoft-enum-forward-reference
++DEFINE CLANGPDB_WARNING_OVERRIDES    = -Wno-parentheses-equality -Wno-tautological-compare -Wno-tautological-constant-out-of-range-compare -Wno-empty-body -Wno-unused-const-variable -Wno-varargs -Wno-unknown-warning-option -Wno-microsoft-enum-forward-reference -Wno-deprecated-non-prototype -Wno-register
+ DEFINE CLANGPDB_ALL_CC_FLAGS         = DEF(GCC48_ALL_CC_FLAGS) DEF(CLANGPDB_WARNING_OVERRIDES) -fno-stack-protector -funsigned-char -ftrap-function=undefined_behavior_has_been_optimized_away_by_clang -Wno-address -Wno-shift-negative-value -Wno-unknown-pragmas -Wno-incompatible-library-redeclaration -Wno-null-dereference -mno-implicit-float -mms-bitfields -mno-stack-arg-probe -nostdlib -nostdlibinc
+ 
+ ###########################
+diff --git a/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c b/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c
+index 2d55c96..6cb10a2 100644
+--- a/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c
++++ b/MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceIo.c
+@@ -917,15 +917,9 @@ NonCoherentPciIoAllocateBuffer (
+     goto FreeBuffer;
+   }
+ 
+-  //
+-  // Set the preferred memory attributes
+-  //
+-  if ((Attributes & EFI_PCI_ATTRIBUTE_MEMORY_WRITE_COMBINE) != 0 ||
+-      (GcdDescriptor.Capabilities & EFI_MEMORY_UC) == 0) {
+-    //
+-    // Use write combining if it was requested, or if it is the only
+-    // type supported by the region.
+-    //
++  // Set the preferred memory attributes.
++  // Avoids hardfault on some platforms.
++  if ((GcdDescriptor.Capabilities & EFI_MEMORY_WC) != 0) {
+     MemType = EFI_MEMORY_WC;
+   } else {
+     MemType = EFI_MEMORY_UC;
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+index 43c53ba..b47afe5 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/Xhci.c
+@@ -456,7 +456,13 @@ XhcGetRootHubPortStatus (
+   // For those devices behind hub, we get its attach/detach event by hooking Get_Port_Status request at control transfer for those hub.
+   //
+   ParentRouteChart.Dword = 0;
+-  XhcPollPortStatusChange (Xhc, ParentRouteChart, PortNumber, PortStatus);
++  Status                 = XhcPollPortStatusChange (Xhc, ParentRouteChart, PortNumber, PortStatus);
++
++  // Reset the port if the poll fails (backport of edk2 992d5451d).
++  if (EFI_ERROR (Status)) {
++    PortStatus->PortChangeStatus &= ~(USB_PORT_STAT_C_RESET);
++    Status                        = EFI_SUCCESS;
++  }
+ 
+ ON_EXIT:
+   gBS->RestoreTPL (OldTpl);
+@@ -797,12 +803,17 @@ XhcTransfer (
+   *TransferResult = Urb->Result;
+   *DataLength     = Urb->Completed;
+ 
+-  if ((*TransferResult == EFI_USB_ERR_STALL) || (*TransferResult == EFI_USB_ERR_BABBLE)) {
++  // Reset the endpoint on a transaction error too (backport of edk2 c12bbc149).
++  if ((*TransferResult == EFI_USB_ERR_STALL) || (*TransferResult == EFI_USB_ERR_BABBLE) || (*TransferResult == EDKII_USB_ERR_TRANSACTION)) {
+     ASSERT (Status == EFI_DEVICE_ERROR);
+     RecoveryStatus = XhcRecoverHaltedEndpoint(Xhc, Urb);
+     if (EFI_ERROR (RecoveryStatus)) {
+       DEBUG ((DEBUG_ERROR, "XhcTransfer[Type=%d]: XhcRecoverHaltedEndpoint failed!\n", Type));
+     }
++
++    if (*TransferResult == EDKII_USB_ERR_TRANSACTION) {
++      *TransferResult = EFI_USB_ERR_TIMEOUT;
++    }
+   }
+ 
+   Xhc->PciIo->Flush (Xhc->PciIo);
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
+index c0c374f..8422599 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.c
+@@ -168,8 +168,8 @@ XhcCreateUrb (
+   Urb->Callback = Callback;
+   Urb->Context  = Context;
+ 
++  // Do not ASSERT on failure here (backport of edk2 01ad4134c).
+   Status = XhcCreateTransferTrb (Xhc, Urb);
+-  ASSERT_EFI_ERROR (Status);
+   if (EFI_ERROR (Status)) {
+     DEBUG ((EFI_D_ERROR, "XhcCreateUrb: XhcCreateTransferTrb Failed, Status = %r\n", Status));
+     FreePool (Urb);
+@@ -246,6 +246,11 @@ XhcCreateTransferTrb (
+   Dci       = XhcEndpointToDci (Urb->Ep.EpAddr, (UINT8)(Urb->Ep.Direction));
+   ASSERT (Dci < 32);
+   EPRing    = (TRANSFER_RING *)(UINTN) Xhc->UsbDevContext[SlotId].EndpointTransferRing[Dci-1];
++
++  if (EPRing == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++
+   Urb->Ring = EPRing;
+   OutputContext = Xhc->UsbDevContext[SlotId].OutputContext;
+   if (Xhc->HcCParams.Data.Csz == 0) {
+@@ -1169,7 +1174,7 @@ XhcCheckUrbResult (
+         goto EXIT;
+ 
+       case TRB_COMPLETION_USB_TRANSACTION_ERROR:
+-        CheckedUrb->Result  |= EFI_USB_ERR_TIMEOUT;
++        CheckedUrb->Result  |= EDKII_USB_ERR_TRANSACTION;
+         CheckedUrb->Finished = TRUE;
+         DEBUG ((EFI_D_ERROR, "XhcCheckUrbResult: TRANSACTION_ERROR! Completecode = %x\n",EvtTrb->Completecode));
+         goto EXIT;
+diff --git a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h
+index 2f18995..9af8439 100644
+--- a/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h
++++ b/MdeModulePkg/Bus/Pci/XhciDxe/XhciSched.h
+@@ -77,6 +77,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #define TRB_COMPLETION_STOPPED                26
+ #define TRB_COMPLETION_STOPPED_LENGTH_INVALID 27
+ 
++// Backport of edk2 c12bbc149.
++#define EDKII_USB_ERR_TRANSACTION  0x200
++
+ //
+ // The topology string used to present usb device location
+ //
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h
+index c84a24d..da72865 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBus.h
+@@ -147,6 +147,17 @@ typedef struct _USB_HUB_API    USB_HUB_API;
+ #define USB_BUS_FROM_THIS(a) \
+           CR(a, USB_BUS, BusId, USB_BUS_SIGNATURE)
+ 
++// Enumeration retries (backport of edk2 23ebccb46).
++#define USB_CONFIG_DESC_DEF_ALLOC_LEN  255
++
++typedef enum {
++  UsbEnumScriptEdk2    = 0,         // 0   :EDK2 flow
++  UsbEnumScriptRsrv    = 1,         // 1   :Reserved flow - EDK2
++  UsbEnumScriptLinux   = 2,         // 2   :Linux flow
++  UsbEnumScriptWin     = 3,         // 3   :Window flow
++  UsbEnumScriptUnknown = 0xFF,      // 0xff:Unknow flow
++} USB_ENUM_SCRIPT_TYPE;
++
+ //
+ // Used to locate USB_BUS
+ // UsbBusProtocol is the private protocol.
+@@ -193,6 +204,7 @@ struct _USB_DEVICE {
+   UINT8                     ParentPort;       // Start at 0
+   UINT8                     Tier;
+   BOOLEAN                   DisconnectFail;
++  UINT8                     EnumScript;
+ };
+ 
+ //
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
+index b08188b..8771ec9 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbDesc.c
+@@ -615,6 +615,21 @@ UsbGetDevDesc (
+   if (EFI_ERROR (Status)) {
+     gBS->FreePool (DevDesc);
+   } else {
++    
++    if (  (DevDesc->Desc.DescriptorType != USB_DESC_TYPE_DEVICE)
++       || (DevDesc->Desc.Length != sizeof (EFI_USB_DEVICE_DESCRIPTOR))
++       || (  (UsbDev->Speed != EFI_USB_SPEED_SUPER)
++          && (DevDesc->Desc.MaxPacketSize0 != 8)
++          && (DevDesc->Desc.MaxPacketSize0 != 16)
++          && (DevDesc->Desc.MaxPacketSize0 != 32)
++          && (DevDesc->Desc.MaxPacketSize0 != 64))
++       || (DevDesc->Desc.NumConfigurations == 0))
++    {
++      gBS->FreePool (DevDesc);
++      Status = EFI_DEVICE_ERROR;
++      return Status;
++    }
++
+     UsbDev->DevDesc = DevDesc;
+   }
+ 
+@@ -757,12 +772,27 @@ UsbGetOneConfig (
+   EFI_USB_CONFIG_DESCRIPTOR Desc;
+   EFI_STATUS                Status;
+   VOID                      *Buf;
++  UINT8                     BufDesc[USB_CONFIG_DESC_DEF_ALLOC_LEN];
+ 
+   //
+-  // First get four bytes which contains the total length
+-  // for this configuration.
++  // First get the bytes which contain the total length for this configuration.
+   //
+-  Status = UsbCtrlGetDesc (UsbDev, USB_DESC_TYPE_CONFIG, Index, 0, &Desc, 8);
++  switch (UsbDev->EnumScript) {
++    case UsbEnumScriptWin:
++      ZeroMem (BufDesc, USB_CONFIG_DESC_DEF_ALLOC_LEN);
++      Status = UsbCtrlGetDesc (UsbDev, USB_DESC_TYPE_CONFIG, Index, 0, BufDesc, USB_CONFIG_DESC_DEF_ALLOC_LEN);
++      if (!EFI_ERROR (Status)) {
++        CopyMem (&Desc, BufDesc, sizeof (EFI_USB_CONFIG_DESCRIPTOR));
++      }
++
++      break;
++    case UsbEnumScriptLinux:
++      Status = UsbCtrlGetDesc (UsbDev, USB_DESC_TYPE_CONFIG, Index, 0, &Desc, sizeof (EFI_USB_CONFIG_DESCRIPTOR));
++      break;
++    default:
++      Status = UsbCtrlGetDesc (UsbDev, USB_DESC_TYPE_CONFIG, Index, 0, &Desc, 8);
++      break;
++  }
+ 
+   if (EFI_ERROR (Status)) {
+     DEBUG (( EFI_D_ERROR, "UsbGetOneConfig: failed to get descript length(%d) %r\n",
+@@ -786,6 +816,11 @@ UsbGetOneConfig (
+     return NULL;
+   }
+ 
++  if ((UsbDev->EnumScript == UsbEnumScriptWin) && (Desc.TotalLength <= USB_CONFIG_DESC_DEF_ALLOC_LEN)) {
++    CopyMem (Buf, BufDesc, Desc.TotalLength);
++    return Buf;
++  }
++
+   Status = UsbCtrlGetDesc (UsbDev, USB_DESC_TYPE_CONFIG, Index, 0, Buf, Desc.TotalLength);
+ 
+   if (EFI_ERROR (Status)) {
+diff --git a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
+index d3e0cfa..afa5f60 100644
+--- a/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
++++ b/MdeModulePkg/Bus/Usb/UsbBusDxe/UsbEnumer.c
+@@ -233,6 +233,7 @@ UsbCreateDevice (
+   Device->ParentIf    = ParentIf;
+   Device->ParentPort  = ParentPort;
+   Device->Tier        = (UINT8)(ParentIf->Device->Tier + 1);
++  Device->EnumScript  = 0;
+   return Device;
+ }
+ 
+@@ -674,6 +675,8 @@ UsbEnumerateNewDev (
+   UINTN                   Address;
+   UINT8                   Config;
+   EFI_STATUS              Status;
++  EFI_STATUS              OriginalStatus;
++  UINT8                   RetryCount;
+ 
+   Parent  = HubIf->Device;
+   Bus     = Parent->Bus;
+@@ -706,6 +709,9 @@ UsbEnumerateNewDev (
+     return EFI_OUT_OF_RESOURCES;
+   }
+ 
++  RetryCount = 3;
++
++DeviceRetry:
+   //
+   // OK, now identify the device speed. After reset, hub
+   // fully knows the actual device speed.
+@@ -717,9 +723,12 @@ UsbEnumerateNewDev (
+     goto ON_ERROR;
+   }
+ 
++  Child->EnumScript = RetryCount;
++
+   if (!USB_BIT_IS_SET (PortState.PortStatus, USB_PORT_STAT_CONNECTION)) {
+     DEBUG ((EFI_D_ERROR, "UsbEnumerateNewDev: No device present at port %d\n", Port));
+     Status = EFI_NOT_FOUND;
++    RetryCount = 0;
+     goto ON_ERROR;
+   } else if (USB_BIT_IS_SET (PortState.PortStatus, USB_PORT_STAT_SUPER_SPEED)){
+     Child->Speed      = EFI_USB_SPEED_SUPER;
+@@ -768,6 +777,13 @@ UsbEnumerateNewDev (
+   // ADDRESS state. Address zero is reserved for root hub.
+   //
+   ASSERT (Bus->MaxDevices <= 256);
++  // A retry reuses the address of the attempt before.
++  if (Child->Address != 0) {
++    Address               = Child->Address;
++    Child->Address        = 0;
++    Bus->Devices[Address] = NULL;
++    goto SET_ADDRESS;
++  }
+   for (Address = 1; Address < Bus->MaxDevices; Address++) {
+     if (Bus->Devices[Address] == NULL) {
+       break;
+@@ -781,6 +797,7 @@ UsbEnumerateNewDev (
+     goto ON_ERROR;
+   }
+ 
++SET_ADDRESS:
+   Status                = UsbSetAddress (Child, (UINT8)Address);
+   Child->Address        = (UINT8)Address;
+   Bus->Devices[Address] = Child;
+@@ -853,6 +870,29 @@ UsbEnumerateNewDev (
+   return EFI_SUCCESS;
+ 
+ ON_ERROR:
++
++  OriginalStatus = Status;
++  Status         = HubApi->GetPortStatus (HubIf, Port, &PortState);
++  if (EFI_ERROR (Status) || (!USB_BIT_IS_SET (PortState.PortStatus, USB_PORT_STAT_CONNECTION))) {
++    DEBUG ((EFI_D_ERROR, "UsbEnumerateNewDev: device is gone, not resetting the port\n"));
++    Status = EFI_NOT_FOUND;
++  }
++
++  if (!EFI_ERROR (Status) && (RetryCount > 0)) {
++    RetryCount--;
++    DEBUG ((EFI_D_INFO, "UsbEnumerateNewDev: resetting the port to retry enumeration\n"));
++    if ((Child != NULL) && (Child->DevDesc != NULL)) {
++      UsbFreeDevDesc (Child->DevDesc);
++      Child->DevDesc = NULL;
++    }
++
++    Status = HubApi->ResetPort (HubIf, Port);
++    if (!EFI_ERROR (Status)) {
++      gBS->Stall (USB_WAIT_PORT_STABLE_STALL);
++      goto DeviceRetry;
++    }
++  }
++
+   //
+   // If reach here, it means the enumeration process on a given port is interrupted due to error.
+   // The s/w resources, including the assigned address(Address) and the allocated usb device data
+@@ -867,7 +907,7 @@ ON_ERROR:
+   //
+   // EDKII UHCI/EHCI doesn't get impacted as it's make sense to reserve s/w resource till it gets unplugged.
+   //
+-  return Status;
++  return OriginalStatus;
+ }
+ 
+ 
+diff --git a/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassImpl.c b/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassImpl.c
+index bbd19e0..c0989bd 100644
+--- a/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassImpl.c
++++ b/MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassImpl.c
+@@ -106,6 +106,7 @@ UsbMassReadBlocks (
+   EFI_STATUS          Status;
+   EFI_TPL             OldTpl;
+   UINTN               TotalBlock;
++  INT8                ResetRetryCount;
+ 
+   //
+   // Raise TPL to TPL_CALLBACK to serialize all its operations
+@@ -114,7 +115,9 @@ UsbMassReadBlocks (
+   OldTpl  = gBS->RaiseTPL (TPL_CALLBACK);
+   UsbMass = USB_MASS_DEVICE_FROM_BLOCK_IO (This);
+   Media   = &UsbMass->BlockIoMedia;
++  ResetRetryCount = 3;
+ 
++RETRY:
+   //
+   // If it is a removable media, such as CD-Rom or Usb-Floppy,
+   // need to detect the media before each read/write. While some of
+@@ -174,6 +177,10 @@ UsbMassReadBlocks (
+   if (EFI_ERROR (Status)) {
+     DEBUG ((EFI_D_ERROR, "UsbMassReadBlocks: UsbBootReadBlocks (%r) -> Reset\n", Status));
+     UsbMassReset (This, TRUE);
++    // Retry after the reset (backport of edk2 1a261da76).
++    if (ResetRetryCount-- > 0) {
++      goto RETRY;
++    }
+   }
+ 
+ ON_EXIT:
+diff --git a/MdePkg/Include/Library/BaseLib.h b/MdePkg/Include/Library/BaseLib.h
+index 76aabaa..60b4bba 100644
+--- a/MdePkg/Include/Library/BaseLib.h
++++ b/MdePkg/Include/Library/BaseLib.h
+@@ -145,7 +145,7 @@ VOID FortifyFail (CONST CHAR8 *Name,
+   } while (0);
+ 
+ #else
+-#define FORTIFY_CHECK_P1_L1 (p1, l1)
++#define FORTIFY_CHECK_P1_L1(p1, l1)
+ #endif
+ 
+ /**
+diff --git a/MdePkg/Include/Library/DebugLib.h b/MdePkg/Include/Library/DebugLib.h
+index f1d55cf..b45cf4f 100644
+--- a/MdePkg/Include/Library/DebugLib.h
++++ b/MdePkg/Include/Library/DebugLib.h
+@@ -289,7 +289,17 @@ DebugPrintLevelEnabled (
+   @param  Expression  Boolean expression that evaluated to FALSE
+ 
+ **/
++#if defined (DEBUG_SHORT_ASSERT)
++// OpenABL: file name and line only, for a smaller image.
++#define _ASSERT(Expression)  DebugAssert (__FILE_NAME__, __LINE__, "")
++#else
+ #define _ASSERT(Expression)  DebugAssert (__FILE__, __LINE__, #Expression)
++#endif
++
++// OpenABL: the DEBUG() levels compiled in (QcomModulePkg.dsc).
++#ifndef DEBUG_COMPILED_LEVELS
++#define DEBUG_COMPILED_LEVELS  0xFFFFFFFF
++#endif
+ 
+ 
+ /**
+@@ -308,7 +318,8 @@ DebugPrintLevelEnabled (
+ #if !defined(MDE_CPU_EBC) && (!defined (_MSC_VER) || _MSC_VER > 1400)
+   #define _DEBUG_PRINT(PrintLevel, ...)              \
+     do {                                             \
+-      if (DebugPrintLevelEnabled (PrintLevel)) {     \
++      if ((((PrintLevel) & (DEBUG_COMPILED_LEVELS)) != 0) && \
++          DebugPrintLevelEnabled (PrintLevel)) {     \
+         DebugPrint (PrintLevel, ##__VA_ARGS__);      \
+       }                                              \
+     } while (FALSE)
+diff --git a/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c b/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c
+index 9b243a5..a824120 100644
+--- a/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c
++++ b/QcomModulePkg/Application/LinuxLoader/LinuxLoader.c
+@@ -81,6 +81,7 @@
+ #include <Library/StackCanary.h>
+ #include "Library/ThreadStack.h"
+ #include <Library/HypervisorMvCalls.h>
++#include <Library/OpenAblMenu.h>
+ #include <Library/UpdateCmdLine.h>
+ #include <Protocol/EFICardInfo.h>
+ 
+@@ -178,7 +179,9 @@ SetDefaultAudioFw ()
+     }
+   }
+   else {
+-    if (Src != NULL) {
++    /* OpenABL: write devinfo only when the value changes. */
++    if (Src != NULL &&
++        AsciiStrnCmp (Src, AUDIOFRAMEWORK, MAX_AUDIO_FW_LENGTH) != 0) {
+       Status =
+       ReadWriteDeviceInfo (READ_CONFIG, (VOID *)&DevInfo, sizeof (DevInfo));
+       if (Status != EFI_SUCCESS) {
+@@ -271,6 +274,9 @@ LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
+   DEBUG ((EFI_D_VERBOSE, "LinuxLoaderEntry Address: 0x%llx\n",
+          (UINTN)LinuxLoaderEntry));
+ 
++  /* OpenABL */
++  OpenAblMenuEarly ();
++
+   BootStatsSetInitTimeStamp ();
+ 
+   Status = InitThreadUnsafeStack ();
+@@ -431,6 +437,21 @@ flashless_boot:
+     DEBUG ((EFI_D_ERROR, "VM Hyp calls not present\n"));
+   }
+ 
++  /* OpenABL: the menu program runs the boot if it can. */
++  {
++    BootInfo Info = {0};
++
++    Info.MultiSlotBoot = MultiSlotBoot;
++    Info.BootReasonAlarm = BootReasonAlarm;
++    Info.FlashlessBoot = FlashlessBoot;
++    Info.SilentBootMode = SilentBootMode;
++    Status = OpenAblMenuMain (&Info, &BootIntoFastboot, &BootIntoRecovery,
++                              KeyPressed, SetRotAndBootStateAndVBH);
++    if (Status != EFI_UNSUPPORTED) {
++      goto stack_guard_update_default;
++    }
++  }
++
+   if (BootIntoFastboot) {
+       goto fastboot;
+   }
+diff --git a/QcomModulePkg/Include/Library/BootLinux.h b/QcomModulePkg/Include/Library/BootLinux.h
+index b511571..907805b 100644
+--- a/QcomModulePkg/Include/Library/BootLinux.h
++++ b/QcomModulePkg/Include/Library/BootLinux.h
+@@ -283,6 +283,9 @@ extern UINT32 NumUpdPartitions;
+ extern BOOLEAN UpdRamPartitionsAvail;
+ EFI_STATUS
+ BootLinux (BootInfo *Info);
++/* OpenABL: BootLinux's last step, for kernels the menu program loads. */
++EFI_STATUS
++LaunchLinux (IN CONST BootParamlist *Params, IN UINT32 RamdiskSizeActual);
+ EFI_STATUS
+ CheckImageHeader (VOID *ImageHdrBuffer,
+                   UINT32 ImageHdrSize,
+diff --git a/QcomModulePkg/Include/Library/DrawUI.h b/QcomModulePkg/Include/Library/DrawUI.h
+index b18a5b8..45fadf3 100644
+--- a/QcomModulePkg/Include/Library/DrawUI.h
++++ b/QcomModulePkg/Include/Library/DrawUI.h
+@@ -203,4 +203,6 @@ EFI_STATUS BackUpBootLogoBltBuffer (VOID);
+ VOID RestoreBootLogoBitBuffer (VOID);
+ VOID FreeBootLogoBltBuffer (VOID);
+ VOID DrawMenuInit (VOID);
++/* OpenABL: TRUE if a boot logo was saved. */
++BOOLEAN BootLogoBackupAvailable (VOID);
+ #endif
+diff --git a/QcomModulePkg/Include/Library/FdtRw.h b/QcomModulePkg/Include/Library/FdtRw.h
+index a4fcba9..6dcf2d8 100644
+--- a/QcomModulePkg/Include/Library/FdtRw.h
++++ b/QcomModulePkg/Include/Library/FdtRw.h
+@@ -37,6 +37,8 @@ typedef struct _FDT_FIRST_LEVEL_NODE {
+ } FDT_FIRST_LEVEL_NODE;
+ 
+ INT32 FdtPathOffset (CONST VOID *Fdt, CONST CHAR8 *Path);
++/* OpenABL: drop the cached node offsets after edits made without FdtRw. */
++VOID FdtResetNodeList (VOID);
+ INT32 FdtGetPropLen (VOID *Fdt, INT32 Offset, CONST CHAR8 *Name);
+ VOID FdtUpdateNodeOffsetInList (INT32 NodeOffset, INT32 DiffLen);
+ INT32 FdtSetProp (VOID *Fdt, INT32 Offset, CONST CHAR8 *Name,
+diff --git a/QcomModulePkg/Library/BootLib/BootLib.inf b/QcomModulePkg/Library/BootLib/BootLib.inf
+index 07eac0d..ec4aec1 100644
+--- a/QcomModulePkg/Library/BootLib/BootLib.inf
++++ b/QcomModulePkg/Library/BootLib/BootLib.inf
+@@ -111,6 +111,7 @@
+         Bootconfig.c
+ 	EarlyEthernet.c
+ 	EarlyUsbInit.c
++	OpenAblMenu.c
+ 
+ [Packages]
+ 	ArmPkg/ArmPkg.dec
+@@ -203,6 +204,8 @@
+ 	gEfiKernelProtocolGuid
+ 	gEfiDisplayPowerStateProtocolGuid
+ 	gEfiSoftSkuProtocolGuid
++	gEfiFirmwareVolume2ProtocolGuid
++	gOpenAblMenuHostProtocolGuid
+ 
+ [FixedPcd]
+ 	gArmTokenSpaceGuid.PcdSystemMemoryBase
+diff --git a/QcomModulePkg/Library/BootLib/BootLinux.c b/QcomModulePkg/Library/BootLib/BootLinux.c
+index ea7930e..0a6e290 100644
+--- a/QcomModulePkg/Library/BootLib/BootLinux.c
++++ b/QcomModulePkg/Library/BootLib/BootLinux.c
+@@ -1552,6 +1552,10 @@ UpdateBootParamsSizeAndCmdLine (BootInfo *Info, BootParamlist *BootParamlistPtr)
+   return EFI_SUCCESS;
+ }
+ 
++/* OpenABL */
++STATIC CONST BootParamlist *mLaunch;
++STATIC UINT32 mLaunchRamdiskSize;
++
+ EFI_STATUS
+ BootLinux (BootInfo *Info)
+ {
+@@ -1591,6 +1595,13 @@ BootLinux (BootInfo *Info)
+   INT32 Fragment = 0;
+   INT32 Node = 0;
+ 
++  if (mLaunch != NULL) {
++    BootParamlistPtr = *mLaunch;
++    RamdiskSizeActual = mLaunchRamdiskSize;
++    mLaunch = NULL;
++    goto Launch;
++  }
++
+   if (Info == NULL) {
+     DEBUG ((EFI_D_ERROR, "BootLinux: invalid parameter Info\n"));
+     return EFI_INVALID_PARAMETER;
+@@ -1892,6 +1903,7 @@ BootLinux (BootInfo *Info)
+   FreeVerifiedBootResource (Info);
+ #endif
+ 
++Launch:
+   /* Free the boot logo blt buffer before starting kernel */
+   FreeBootLogoBltBuffer ();
+   if (BootParamlistPtr.BootingWith32BitKernel &&
+@@ -1947,8 +1959,24 @@ BootLinux (BootInfo *Info)
+ #ifdef DISABLE_KERNEL_PROTOCOL
+   PreparePlatformHardware ();
+ #else
++  UINTN KernelCacheSize;
++  Kernel64Hdr *KernelHdr;
++
++  KernelCacheSize = (UINTN)BootParamlistPtr.KernelSizeActual;
++  if (BootParamlistPtr.BootingWithGzipPkgKernel) {
++    KernelHdr = (Kernel64Hdr *)(UINTN)BootParamlistPtr.KernelLoadAddr;
++    if (KernelHdr->magic_64 == KERNEL64_HDR_MAGIC) {
++      KernelCacheSize = LOCAL_ROUND_TO_PAGE (KernelHdr->ImageSize,
++                                             BootParamlistPtr.PageSize);
++    }
++  }
++
++  if ((UINT64)KernelCacheSize > KernelSizeReserved) {
++    KernelCacheSize = (UINTN)KernelSizeReserved;
++  }
++
+   PreparePlatformHardware (KernIntf, (VOID *)BootParamlistPtr.KernelLoadAddr,
+-                  (UINTN)KernelSizeReserved,
++                  KernelCacheSize,
+                   (VOID *)BootParamlistPtr.RamdiskLoadAddr,
+                   (UINTN)RamdiskSizeActual,
+                   (VOID *)BootParamlistPtr.DeviceTreeLoadAddr, DT_SIZE_2MB,
+@@ -1990,6 +2018,15 @@ Exit:
+   return EFI_NOT_STARTED;
+ }
+ 
++/* OpenABL */
++EFI_STATUS
++LaunchLinux (IN CONST BootParamlist *Params, IN UINT32 RamdiskSizeActual)
++{
++  mLaunch = Params;
++  mLaunchRamdiskSize = RamdiskSizeActual;
++  return BootLinux (NULL);
++}
++
+ /**
+   Check image header
+   @param[in]  ImageHdrBuffer  Supplies the address where a pointer to the image
+diff --git a/QcomModulePkg/Library/BootLib/DeviceInfo.c b/QcomModulePkg/Library/BootLib/DeviceInfo.c
+index 2e29bce..c76cc6a 100644
+--- a/QcomModulePkg/Library/BootLib/DeviceInfo.c
++++ b/QcomModulePkg/Library/BootLib/DeviceInfo.c
+@@ -259,8 +259,8 @@ UpdateDevInfo (CHAR16 *Pname, CHAR8 *ImgVersion)
+                    AsciiStrLen (PRODUCT_NAME));
+     AsciiStrnCatS (DevInfo.bootloader_version, MAX_VERSION_LEN, "-",
+                    AsciiStrLen ("-"));
+-    AsciiStrnCatS (DevInfo.bootloader_version, MAX_VERSION_LEN, ImgVersion,
+-                   AsciiStrLen (ImgVersion));
++    AsciiStrnCatS (DevInfo.bootloader_version, MAX_VERSION_LEN, PRODUCT_VERSION,
++                   AsciiStrLen (PRODUCT_VERSION));
+   } else {
+     AsciiStrnCpyS (DevInfo.radio_version, MAX_VERSION_LEN, PRODUCT_NAME,
+                    AsciiStrLen (PRODUCT_NAME));
+@@ -381,7 +381,7 @@ EFI_STATUS DeviceInfoInit (VOID)
+       DevInfo.is_unlocked = TRUE;
+       DevInfo.is_unlock_critical = TRUE;
+     }
+-    DevInfo.is_charger_screen_enabled = FALSE;
++    DevInfo.is_charger_screen_enabled = TRUE;
+     DevInfo.verity_mode = TRUE;
+     Status =
+         ReadWriteDeviceInfo (WRITE_CONFIG, (VOID *)&DevInfo, sizeof (DevInfo));
+diff --git a/QcomModulePkg/Library/BootLib/DrawUI.c b/QcomModulePkg/Library/BootLib/DrawUI.c
+index 0e456db..7ebcc1b 100755
+--- a/QcomModulePkg/Library/BootLib/DrawUI.c
++++ b/QcomModulePkg/Library/BootLib/DrawUI.c
+@@ -258,6 +258,11 @@ VOID FreeBootLogoBltBuffer (VOID)
+   }
+ }
+ 
++BOOLEAN BootLogoBackupAvailable (VOID)
++{
++  return (LogoBlt != NULL);
++}
++
+ STATIC UINT32 GetDisplayMode  (VOID)
+ {
+   if (GetResolutionWidth () < GetResolutionHeight ()) {
+diff --git a/QcomModulePkg/Library/BootLib/FdtRw.c b/QcomModulePkg/Library/BootLib/FdtRw.c
+index 8d74170..00c10c3 100644
+--- a/QcomModulePkg/Library/BootLib/FdtRw.c
++++ b/QcomModulePkg/Library/BootLib/FdtRw.c
+@@ -110,6 +110,11 @@ STATIC VOID FdtDeleteNodeList (VOID)
+   NodeList = NULL;
+ }
+ 
++VOID FdtResetNodeList (VOID)
++{
++  FdtDeleteNodeList ();
++}
++
+ STATIC UINT32 GetNodeNameLen (CONST CHAR8 *NodeName)
+ {
+   CONST CHAR8 *Ptr = NULL;
+diff --git a/QcomModulePkg/Library/BootLib/MenuKeysDetection.c b/QcomModulePkg/Library/BootLib/MenuKeysDetection.c
+index 4684c88..73ac1e5 100644
+--- a/QcomModulePkg/Library/BootLib/MenuKeysDetection.c
++++ b/QcomModulePkg/Library/BootLib/MenuKeysDetection.c
+@@ -111,11 +111,14 @@ VOID ExitMenuKeysDetection (VOID)
+     }
+     DEBUG ((EFI_D_VERBOSE, "Exit key detection timer\n"));
+ 
+-    /* Clear the screen */
+-    gST->ConOut->ClearScreen (gST->ConOut);
++    /* OpenABL: otherwise XBL's splash stays. */
++    if (BootLogoBackupAvailable ()) {
++      /* Clear the screen */
++      gST->ConOut->ClearScreen (gST->ConOut);
+ 
+-    /* Show boot logo */
+-    RestoreBootLogoBitBuffer ();
++      /* Show boot logo */
++      RestoreBootLogoBitBuffer ();
++    }
+   }
+ }
+ 
+diff --git a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
+index 88e0117..b3c8b82 100644
+--- a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
++++ b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
+@@ -77,6 +77,7 @@
+ #include <Protocol/Print2.h>
+ #include <Library/EarlyUsbInit.h>
+ #include <Library/PartialGoods.h>
++#include <Library/OpenAblMenu.h>
+ 
+ #include "AutoGen.h"
+ #include "DeviceInfo.h"
+@@ -179,6 +180,45 @@ STATIC CONST CHAR8 *MovableNode = " movable_node";
+ STATIC CONST CHAR8 *WarmResetArgs = " reboot=w";
+ 
+ LIST_ENTRY *BootConfigListHead = NULL;
++
++#if defined (TARGET_SOC_SM6115)
++/* OpenABL: no PMI632 for ChargerEx; the PON reason, as the stock ABL. */
++STATIC EFI_STATUS
++PonOffModeCharging (BOOLEAN *BatteryStatus)
++{
++  EFI_STATUS Status;
++  EFI_PM_PON_REASON_TYPE PONReason;
++  EFI_QCOM_PMIC_PON_PROTOCOL *PmicPonProtocol;
++  BOOLEAN WarmRtStatus;
++
++  Status = gBS->LocateProtocol (&gQcomPmicPonProtocolGuid, NULL,
++                                (VOID **)&PmicPonProtocol);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((EFI_D_ERROR, "Error locating pmic pon protocol: %r\n", Status));
++    return Status;
++  }
++
++  Status = PmicPonProtocol->GetPonReason (0, &PONReason);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((EFI_D_ERROR, "Error getting pon reason: %r\n", Status));
++    return Status;
++  }
++
++  Status = PmicPonProtocol->WarmResetStatus (0, &WarmRtStatus);
++  if (EFI_ERROR (Status)) {
++    DEBUG ((EFI_D_ERROR, "Error getting warm reset status: %r\n", Status));
++    return Status;
++  }
++
++  DEBUG ((EFI_D_INFO, " PON Reason is 0x%x cold_boot:%d\n",
++          *(UINT8 *)&PONReason, !WarmRtStatus));
++  *BatteryStatus = !WarmRtStatus && !PONReason.HARD_RESET &&
++                   !PONReason.KPDPWR &&
++                   (PONReason.CBLPWR || PONReason.USB_CHG || PONReason.PON1);
++  return EFI_SUCCESS;
++}
++#endif
++
+ EFI_STATUS
+ TargetPauseForBatteryCharge (BOOLEAN *BatteryStatus)
+ {
+@@ -194,6 +234,10 @@ TargetPauseForBatteryCharge (BOOLEAN *BatteryStatus)
+    * Serves only performance purposes, defaults to return zero*/
+   *BatteryStatus = 0;
+ 
++#if defined (TARGET_SOC_SM6115)
++  return PonOffModeCharging (BatteryStatus);
++#endif
++
+   Status = gBS->LocateProtocol (&gChargerExProtocolGuid, NULL,
+                                 (VOID **)&ChgDetectProtocol);
+   if (Status == EFI_NOT_FOUND) {
+@@ -658,6 +702,8 @@ STATIC
+ EFI_STATUS
+ GetMemoryLimit (VOID *fdt, CHAR8 *MemOffAmt)
+ {
++  return EFI_UNSUPPORTED;
++
+   UINT64 DdrSize = 0;
+   UINT64 MemLimit;
+   UINT32 i = 0;
+@@ -930,7 +976,8 @@ UpdateCmdLineParams (UpdateCmdLineParamList *Param, CHAR8 **FinalCmdLine,
+     if (Param->HeaderVersion <= BOOT_HEADER_VERSION_THREE) {
+       Src = AndroidBootForceNormalBoot;
+       AsciiStrCatS (Dst, MaxCmdLineLen, Src);
+-      Src = &BootForceNormalBoot;
++      CHAR8 TempBuf[2] = {BootForceNormalBoot, '\0'};
++      Src = TempBuf;
+       AsciiStrCatS (Dst, MaxCmdLineLen, Src);
+     }
+   }
+@@ -1531,6 +1578,23 @@ UpdateCmdLine (BootParamlist *BootParamlistPtr,
+   AddtoBootConfigList (BootConfigFlag, DisplayCmdLine, NULL,
+                    BootConfigListHead, ParamLen, 0);
+ 
++  /* OpenABL: androidboot parameters from the menu program. */
++  {
++    CONST CHAR8 *Key;
++    CONST CHAR8 *Value;
++    UINTN        Index;
++
++    for (Index = 0; OpenAblAndroidParam (Index, &Key, &Value); Index++) {
++      ParamLen = AsciiStrLen (Key);
++      BootConfigFlag = IsAndroidBootParam (Key, ParamLen, HeaderVersion);
++      ADD_PARAM_LEN (BootConfigFlag, ParamLen, CmdLineLen, BootConfigLen);
++      AddtoBootConfigList (BootConfigFlag, Key, Value, BootConfigListHead,
++                           ParamLen, AsciiStrLen (Value));
++      ADD_PARAM_LEN (BootConfigFlag, AsciiStrLen (Value), CmdLineLen,
++                     BootConfigLen);
++    }
++  }
++
+   GetHwFenceCmdline ();
+   ParamLen = AsciiStrLen (HwFenceCmdLine);
+   BootConfigFlag = IsAndroidBootParam (HwFenceCmdLine,
+diff --git a/QcomModulePkg/Library/BootLib/UpdateDeviceTree.c b/QcomModulePkg/Library/BootLib/UpdateDeviceTree.c
+index 975e656..51ffe92 100644
+--- a/QcomModulePkg/Library/BootLib/UpdateDeviceTree.c
++++ b/QcomModulePkg/Library/BootLib/UpdateDeviceTree.c
+@@ -169,7 +169,7 @@ GetRandomSeed (UINT64 *RandomSeed)
+   return Status;
+ }
+ 
+-STATIC VOID
++STATIC VOID __attribute__ ((unused))
+ DisableDisplay (VOID)
+ {
+   EFI_STATUS                     Status           = EFI_SUCCESS;
+@@ -283,16 +283,13 @@ UpdateSplashMemInfo (VOID *fdt)
+   /* Get offset of the splash memory reservation node */
+   ret = FdtPathOffset (fdt, "/reserved-memory/splash_region");
+   if (ret < 0) {
++    /* OpenABL: the name some trees use (Pocket Max). */
++    ret = FdtPathOffset (fdt, "/reserved-memory/cont_splash_region");
++  }
++  if (ret < 0) {
++    /* OpenABL: the display stays on; the menu program handles it. */
+     DEBUG ((EFI_D_WARN, "Splash region not found in device tree, " \
+-                        "powering down the display and controller\n"));
+-
+-    /*
+-     * This function call leads to the following:
+-     * 1) Turn off display power
+-     * 2) Disable display clocks
+-     * 3) Reset display TE/RST pin
+-     */
+-    DisableDisplay ();
++                        "the display left on\n"));
+     return EFI_NOT_FOUND;
+   }
+ 
+diff --git a/QcomModulePkg/Library/FastbootLib/FastbootCmds.c b/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
+index 1ca6796..e5dfc12 100644
+--- a/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
++++ b/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
+@@ -88,6 +88,7 @@ found at
+ #include <Library/DebugLib.h>
+ #include <Library/Debug.h>
+ #include <Library/DeviceInfo.h>
++#include <Library/OpenAblMenu.h>
+ #include <Library/DevicePathLib.h>
+ #include <Library/MemoryAllocationLib.h>
+ #include <Library/MenuKeysDetection.h>
+@@ -153,6 +154,7 @@ STATIC FASTBOOT_VAR *Varlist;
+ STATIC BOOLEAN Finished = FALSE;
+ STATIC CHAR8 StrSerialNum[MAX_RSP_SIZE];
+ STATIC CHAR8 FullProduct[MAX_RSP_SIZE];
++STATIC CHAR8 FullVersion[MAX_RSP_SIZE];
+ STATIC CHAR8 StrVariant[MAX_RSP_SIZE];
+ STATIC CHAR8 StrBatteryVoltage[MAX_RSP_SIZE];
+ STATIC CHAR8 StrBatterySocOk[MAX_RSP_SIZE];
+@@ -3005,6 +3007,8 @@ CmdBoot (CONST CHAR8 *Arg, VOID *Data, UINT32 Size)
+   FastbootOkay ("");
+   FastbootUsbDeviceStop ();
+   ResetBootDevImage ();
++  /* OpenABL: the menu program boots it in Linux boot mode. */
++  OpenAblStartBootImage (Data, ImageSizeActual);
+   BootLinux (&Info);
+ 
+ out:
+@@ -4048,7 +4052,8 @@ FastbootCommandSetup (IN VOID *Base, IN UINT64 Size)
+   AsciiSPrint (EraseBlkSizeStr, sizeof (EraseBlkSizeStr), " 0x%x", BlkSize);
+   FastbootPublishVar ("erase-block-size", EraseBlkSizeStr);
+   GetDevInfo (&DevInfoPtr);
+-  FastbootPublishVar ("version-bootloader", DevInfoPtr->bootloader_version);
++  AsciiSPrint (FullVersion, sizeof (FullVersion), "%a", PRODUCT_VERSION);
++  FastbootPublishVar ("version-bootloader", FullVersion);
+   FastbootPublishVar ("version-baseband", DevInfoPtr->radio_version);
+   BatterySocOk = TargetBatterySocOk (&BatteryVoltage);
+   AsciiSPrint (StrBatteryVoltage, sizeof (StrBatteryVoltage), "%d",
+diff --git a/QcomModulePkg/Library/FastbootLib/FastbootMain.c b/QcomModulePkg/Library/FastbootLib/FastbootMain.c
+index 05554a6..11d8624 100755
+--- a/QcomModulePkg/Library/FastbootLib/FastbootMain.c
++++ b/QcomModulePkg/Library/FastbootLib/FastbootMain.c
+@@ -160,7 +160,12 @@ DummyNotify (IN EFI_EVENT Event, IN VOID *Context)
+ {
+ }
+ 
+-STATIC EFI_STATUS FastbootUsbDeviceStart (VOID)
++STATIC BOOLEAN mFastbootUsbStarted = FALSE;
++/* Stopped for USB host. */
++STATIC BOOLEAN mGadgetPaused = FALSE;
++
++/* Again: restarting after a pause. */
++STATIC EFI_STATUS FastbootUsbDeviceStart (IN BOOLEAN Again)
+ {
+   EFI_STATUS Status;
+   EFI_USB_BUS_SPEED UsbMaxSupportSpeed;
+@@ -191,6 +196,9 @@ STATIC EFI_STATUS FastbootUsbDeviceStart (VOID)
+     gBS->SignalEvent (UsbConfigEvt);
+     gBS->CloseEvent (UsbConfigEvt);
+   }
++  if (Again) {
++    goto StartGadget;
++  }
+ 
+   /* Locate the USBFastboot  Protocol from DXE */
+   Status = gBS->LocateProtocol (&UsbDeviceProtolGuid, NULL,
+@@ -207,6 +215,7 @@ STATIC EFI_STATUS FastbootUsbDeviceStart (VOID)
+     return Status;
+   }
+ 
++StartGadget:
+   /* Build the descriptor for fastboot */
+   BuildDefaultDescriptors (&DevDesc, &Descriptors, &SSDevDesc, &SSDescriptors);
+   UsbSpeedDataSize = sizeof (UsbMaxSupportSpeed);
+@@ -258,6 +267,7 @@ STATIC EFI_STATUS FastbootUsbDeviceStart (VOID)
+ 
+   DEBUG ((EFI_D_INFO, "Fastboot: Processing commands\n"));
+ 
++  mFastbootUsbStarted = TRUE;
+   return Status;
+ }
+ 
+@@ -267,6 +277,11 @@ FastbootUsbDeviceStop (VOID)
+ {
+   EFI_STATUS Status;
+ 
++  if (!mFastbootUsbStarted) {
++    return EFI_SUCCESS;
++  }
++  mFastbootUsbStarted = FALSE;
++
+   /* Free the Rx & Tx Buffers */
+   Status = Fbd.UsbDeviceProtocol->FreeTransferBuffer (Fbd.gTxBuffer);
+   if (EFI_ERROR (Status)) {
+@@ -352,6 +367,12 @@ EFI_STATUS HandleUsbEvents (VOID)
+   USB_DEVICE_EVENT_DATA Payload;
+   UINTN PayloadSize;
+ 
++  /* Not started, paused, or stopped by fastboot's boot command. */
++  if ((Fbd.UsbDeviceProtocol == NULL) || mGadgetPaused ||
++      !mFastbootUsbStarted) {
++    return EFI_ABORTED;
++  }
++
+   /* Look for Event from Usb device protocol */
+   Fbd.UsbDeviceProtocol->HandleEvent (&Msg, &PayloadSize, &Payload);
+   if (UsbDeviceEventDeviceStateChange == Msg) {
+@@ -392,35 +413,104 @@ EFI_STATUS HandleUsbEvents (VOID)
+   return Status;
+ }
+ 
+-/* Initialize and start fastboot */
+-EFI_STATUS FastbootInitialize (VOID)
++/* One pass of fastboot. Anything but EFI_SUCCESS ends it. */
++EFI_STATUS
++FastbootPoll (VOID)
+ {
+-  EFI_STATUS Status = EFI_SUCCESS;
++  EFI_STATUS Status = HandleUsbEvents ();
++
++  if (EFI_ERROR (Status) && (Status != EFI_ABORTED)) {
++    DEBUG ((EFI_D_ERROR, "Error, failed to handle USB event\n"));
++    return Status;
++  }
++  if (FastbootFatal ()) {
++    DEBUG ((EFI_D_ERROR, "Continue detected, Exiting App...\n"));
++    return EFI_ABORTED;
++  }
++  return EFI_SUCCESS;
++}
++
++VOID
++FastbootTextMenuLoop (VOID)
++{
++  DisplayFastbootMenu ();
++  /* Wait for USB events in tight loop */
++  while (FastbootPoll () == EFI_SUCCESS) {
++  }
++}
++
++/* The gadget off and on, for USB host. Stop() first so no transfer is in
++ * flight; XBL's Stop() never twice without a StartEx between. */
++EFI_STATUS
++FastbootGadget (IN BOOLEAN On)
++{
++  EFI_STATUS Status;
++
++  if (!On) {
++    if (!mFastbootUsbStarted) {
++      return EFI_SUCCESS;
++    }
++    Status = Fbd.UsbDeviceProtocol->Stop ();
++    DEBUG ((EFI_D_ERROR, "Fastboot: gadget paused for USB host: %r\n", Status));
++    if (EFI_ERROR (Status)) {
++      return Status;
++    }
++    mGadgetPaused = TRUE;
++    return FastbootUsbDeviceStop ();
++  }
++  if (!mGadgetPaused) {
++    return EFI_SUCCESS;
++  }
++  Status = FastbootUsbDeviceStart (TRUE);
++  DEBUG ((EFI_D_ERROR, "Fastboot: gadget back: %r\n", Status));
++  if (!EFI_ERROR (Status)) {
++    mGadgetPaused = FALSE;
++  }
++  return Status;
++}
++
++EFI_STATUS
++FastbootStart (VOID)
++{
++  EFI_STATUS Status;
+ 
+   DEBUG ((EFI_D_INFO, "Fastboot Build Info: %a %a\n", __DATE__, __TIME__));
+   BootStatsSetTimeStamp (BS_BL_START);
+ 
+-  /* Start the USB device enumeration */
+-  Status = FastbootUsbDeviceStart ();
++  Status = FastbootUsbDeviceStart (FALSE);
+   if (Status != EFI_SUCCESS) {
+     DEBUG ((EFI_D_ERROR, "couldnt Start fastboot usb device, exiting"));
+     return Status;
+   }
+ 
+-  DisplayFastbootMenu ();
+   StoreRootDeviceType ();
+-  /* Wait for USB events in tight loop */
+-  while (1) {
+-    Status = HandleUsbEvents ();
+-    if (EFI_ERROR (Status) && (Status != EFI_ABORTED)) {
+-      DEBUG ((EFI_D_ERROR, "Error, failed to handle USB event\n"));
+-      break;
+-    }
++  return EFI_SUCCESS;
++}
+ 
+-    if (FastbootFatal ()) {
+-      DEBUG ((EFI_D_ERROR, "Continue detected, Exiting App...\n"));
+-      break;
+-    }
++/* Initialize and start fastboot */
++EFI_STATUS FastbootInitialize (VOID)
++{
++  EFI_STATUS Status = EFI_SUCCESS;
++
++  Status = FastbootStart ();
++  if (Status != EFI_SUCCESS) {
++    return Status;
++  }
++
++  FastbootTextMenuLoop ();
++
++  return FastbootStop ();
++}
++
++EFI_STATUS
++FastbootStop (VOID)
++{
++  EFI_STATUS Status;
++
++  if (mGadgetPaused) {
++    /* A second Stop() would double-free in XBL. */
++    ExitMenuKeysDetection ();
++    return EFI_SUCCESS;
+   }
+ 
+   /* Close the fastboot app and stop USB device */
+diff --git a/QcomModulePkg/Library/FastbootLib/FastbootMain.h b/QcomModulePkg/Library/FastbootLib/FastbootMain.h
+index c528a50..62ccbb5 100755
+--- a/QcomModulePkg/Library/FastbootLib/FastbootMain.h
++++ b/QcomModulePkg/Library/FastbootLib/FastbootMain.h
+@@ -56,4 +56,10 @@ FastbootDeviceData *GetFastbootDeviceData (VOID);
+ EFI_STATUS HandleUsbEvents (VOID);
+ EFI_STATUS FastbootUsbDeviceStop (VOID);
+ EFI_STATUS FastbootInitialize (VOID);
++/* Fastboot as calls, for the OpenABL program. */
++EFI_STATUS FastbootStart (VOID);
++EFI_STATUS FastbootPoll (VOID);
++EFI_STATUS FastbootStop (VOID);
++EFI_STATUS FastbootGadget (IN BOOLEAN On);
++VOID FastbootTextMenuLoop (VOID);
+ #endif
+diff --git a/QcomModulePkg/Library/avb/VerifiedBoot.c b/QcomModulePkg/Library/avb/VerifiedBoot.c
+index 012a75d..e89e6e0 100644
+--- a/QcomModulePkg/Library/avb/VerifiedBoot.c
++++ b/QcomModulePkg/Library/avb/VerifiedBoot.c
+@@ -1818,7 +1818,7 @@ out:
+   return Status;
+ }
+ 
+-STATIC EFI_STATUS
++STATIC EFI_STATUS __attribute__ ((unused))
+ DisplayVerifiedBootScreen (BootInfo *Info)
+ {
+   EFI_STATUS Status = EFI_SUCCESS;
+@@ -2264,7 +2264,7 @@ get_ptn_name:
+   }
+ 
+   if (AVBVersion != AVB_LE) {
+-    DisplayVerifiedBootScreen (Info);
++    /* OpenABL: no verified boot warning screens. */
+     DEBUG ((EFI_D_VERBOSE, "Sending Milestone Call\n"));
+     Status = Info->VbIntf->VBSendMilestone (Info->VbIntf);
+     if (Status != EFI_SUCCESS) {
+diff --git a/QcomModulePkg/Library/avb/libavb/avb_util.h b/QcomModulePkg/Library/avb/libavb/avb_util.h
+index 48a1972..9d18a10 100755
+--- a/QcomModulePkg/Library/avb/libavb/avb_util.h
++++ b/QcomModulePkg/Library/avb/libavb/avb_util.h
+@@ -113,7 +113,14 @@ extern "C" {
+ #define avb_assert_aligned(addr) \
+   avb_assert((((uintptr_t)addr) & (AVB_ALIGNMENT_SIZE - 1)) == 0)
+ 
+-#ifdef AVB_ENABLE_DEBUG
++#ifdef __FILE_NAME__
++#define AVB_FILE_NAME __FILE_NAME__
++#else
++#define AVB_FILE_NAME avb_basename(__FILE__)
++#endif
++
++#if defined(AVB_ENABLE_DEBUG) && \
++    (!defined(DEBUG_COMPILED_LEVELS) || ((DEBUG_COMPILED_LEVELS) & 0x00400000))
+ /* Print functions, used for diagnostics.
+  *
+  * These have no effect unless AVB_ENABLE_DEBUG is defined.
+@@ -121,7 +128,7 @@ extern "C" {
+ #define avb_debug(message)              \
+   do {                                  \
+     avb_printv(EFI_D_VERBOSE,           \
+-               avb_basename(__FILE__),  \
++               AVB_FILE_NAME,  \
+                ":",                     \
+                AVB_TO_STRING(__LINE__), \
+                ": DEBUG: ",             \
+@@ -131,7 +138,7 @@ extern "C" {
+ #define avb_debugv(message, ...)        \
+   do {                                  \
+     avb_printv(EFI_D_VERBOSE,           \
+-               avb_basename(__FILE__),  \
++               AVB_FILE_NAME,  \
+                ":",                     \
+                AVB_TO_STRING(__LINE__), \
+                ": DEBUG: ",             \
+@@ -149,7 +156,7 @@ extern "C" {
+ #define avb_error(message)              \
+   do {                                  \
+     avb_printv(EFI_D_ERROR,             \
+-               avb_basename(__FILE__),  \
++               AVB_FILE_NAME,  \
+                ":",                     \
+                AVB_TO_STRING(__LINE__), \
+                ": ERROR: ",             \
+@@ -159,7 +166,7 @@ extern "C" {
+ #define avb_errorv(message, ...)        \
+   do {                                  \
+     avb_printv(EFI_D_ERROR,             \
+-               avb_basename(__FILE__),  \
++               AVB_FILE_NAME,  \
+                ":",                     \
+                AVB_TO_STRING(__LINE__), \
+                ": ERROR: ",             \
+@@ -172,7 +179,7 @@ extern "C" {
+ #define avb_fatal(message)              \
+   do {                                  \
+     avb_printv(EFI_D_ERROR,             \
+-               avb_basename(__FILE__),  \
++               AVB_FILE_NAME,  \
+                ":",                     \
+                AVB_TO_STRING(__LINE__), \
+                ": FATAL: ",             \
+@@ -183,7 +190,7 @@ extern "C" {
+ #define avb_fatalv(message, ...)        \
+   do {                                  \
+     avb_printv(EFI_D_ERROR,             \
+-               avb_basename(__FILE__),  \
++               AVB_FILE_NAME,  \
+                ":",                     \
+                AVB_TO_STRING(__LINE__), \
+                ": FATAL: ",             \
+diff --git a/QcomModulePkg/QcomModulePkg.dec b/QcomModulePkg/QcomModulePkg.dec
+index b058b87..e6aff75 100644
+--- a/QcomModulePkg/QcomModulePkg.dec
++++ b/QcomModulePkg/QcomModulePkg.dec
+@@ -98,6 +98,8 @@
+   gEfiRNGAlgRawGuid =                   { 0xe43176d7, 0xb6e8, 0x4827, { 0xb7, 0x84, 0x7f, 0xfd, 0xc4, 0xb6, 0x85, 0x61 } }
+ 
+ [Protocols]
++  # OpenABL menu host (Include/Protocol/OpenAblMenuHost.h)
++  gOpenAblMenuHostProtocolGuid =        { 0x6b3c9a52, 0x1f4e, 0x4d2a, { 0x9c, 0x61, 0x2e, 0x7f, 0x0a, 0x5d, 0x83, 0xb4 } }
+   # SCM
+   gQcomScmProtocolGuid =                { 0x77ed108d, 0x8524, 0x4b8b, { 0x9d, 0x2e, 0x34, 0x98, 0x7a, 0xec, 0xb9, 0xc1 } }
+   # PlatformInfo
+diff --git a/QcomModulePkg/QcomModulePkg.dsc b/QcomModulePkg/QcomModulePkg.dsc
+index 395087e..97b00ae 100644
+--- a/QcomModulePkg/QcomModulePkg.dsc
++++ b/QcomModulePkg/QcomModulePkg.dsc
+@@ -53,6 +53,9 @@
+   SKUID_IDENTIFIER               = DEFAULT
+   FLASH_DEFINITION               = QcomModulePkg/QcomModulePkg.fdf
+ 
++  # ERROR, WARN and INFO; the other debug levels are compiled out.
++  DEFINE DEBUG_PRINT_LEVELS      = 0x80000042
++
+ [LibraryClasses.common]
+   BaseStackCheckLib|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
+   DebugPrintErrorLevelLib|MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
+@@ -79,7 +82,8 @@
+       DebugLib|QcomModulePkg/Library/DebugLib/DebugLib.inf
+   !else
+       BaseMemoryLibOptDxe|MdePkg/Library/BaseMemoryLibOptDxe/BaseMemoryLibOptDxe.inf
+-      DebugLib|MdeModulePkg/Library/PeiDxeDebugLibReportStatusCode/PeiDxeDebugLibReportStatusCode.inf
++      BaseMemoryLib|MdePkg/Library/UefiMemoryLib/UefiMemoryLib.inf
++      DebugLib|MdePkg/Library/BaseDebugLibSerialPort/BaseDebugLibSerialPort.inf
+       ReportStatusCodeLib|MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
+   !endif
+   DebugPrintErrorLevelLib|MdeModulePkg/Library/DxeDebugPrintErrorLevelLib/DxeDebugPrintErrorLevelLib.inf
+@@ -109,6 +113,9 @@
+   GCC:*_*_*_DLINK_FLAGS = -Wl,-Ttext=0x0
+   GCC:*_*_*_CC_FLAGS = -DZ_SOLO
+   GCC:*_*_*_CC_FLAGS = -DPRODUCT_NAME=\"$(BOARD_BOOTLOADER_PRODUCT_NAME)\"
++  GCC:*_*_*_CC_FLAGS = -DPRODUCT_VERSION=\"$(BOARD_BOOTLOADER_PRODUCT_VERSION)\"
++  GCC:*_*_*_CC_FLAGS = -DENABLE_BOOT_CMD
++  GCC:*_*_*_CC_FLAGS = -DDEBUG_COMPILED_LEVELS=$(DEBUG_PRINT_LEVELS) -DDEBUG_SHORT_ASSERT
+ 
+   GCC:*_*_*_DLINK_FLAGS = $(CLANG_EXTRA_DLINK_FLAGS)
+   !ifdef $(TARGET_AUDIO_FRAMEWORK)
+@@ -167,7 +174,7 @@
+   !if $(USER_BUILD_VARIANT) == 0
+       GCC:*_*_*_CC_FLAGS = -DENABLE_UPDATE_PARTITIONS_CMDS -DENABLE_BOOT_CMD -DENABLE_DEVICE_CRITICAL_LOCK_UNLOCK_CMDS
+   !else
+-      GCC:*_*_*_CC_FLAGS = -DUSER_BUILD_VARIANT
++      GCC:*_*_*_CC_FLAGS = -DENABLE_UPDATE_PARTITIONS_CMDS -DENABLE_BOOT_CMD -DENABLE_DEVICE_CRITICAL_LOCK_UNLOCK_CMDS -DUSER_BUILD_VARIANT
+   !endif
+   !if $(ENABLE_LE_VARIANT) == 1
+       GCC:*_*_*_CC_FLAGS = -DENABLE_LE_VARIANT
+@@ -214,6 +221,9 @@
+   !if $(DISABLE_KERNEL_PROTOCOL)
+       GCC:*_*_*_CC_FLAGS = -DDISABLE_KERNEL_PROTOCOL=$(DISABLE_KERNEL_PROTOCOL)
+   !endif
++  !if $(TARGET_SOC_SM6115) == 1
++      GCC:*_*_*_CC_FLAGS = -DTARGET_SOC_SM6115
++  !endif
+   !if $(NAND_UBI_VOLUME_FLASHING_ENABLED)
+       GCC:*_*_*_CC_FLAGS = -DNAND_UBI_VOLUME_FLASHING_ENABLED
+   !endif
+@@ -232,7 +242,9 @@
+   !if $(AUTO_VIRT_ABL)
+       GCC:*_*_*_CC_FLAGS = -DAUTO_VIRT_ABL
+   !endif
+-
++  !if $(ABL_USB_HOST)
++      GCC:*_*_*_CC_FLAGS = -DABL_USB_HOST
++  !endif
+ 
+ [PcdsFixedAtBuild.common]
+ 
+@@ -244,7 +256,7 @@
+ # ASSERT_DEADLOOP_ENABLED    0x20
+ 
+   gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x2f
+-  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000042
++  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|$(DEBUG_PRINT_LEVELS)
+   gEfiMdePkgTokenSpaceGuid.PcdReportStatusCodePropertyMask|0x06
+ 
+ ################################################################################
+@@ -279,4 +291,35 @@
+ 			AesLib|QcomModulePkg/Library/aes/AesLib.inf
+ 			UbsanLib|QcomModulePkg/Library/UbsanLib/UbsanLib.inf
+ 			Lz4Lib|QcomModulePkg/Library/lz4/lib/Lz4Lib.inf
++
++			SerialPortLib|QcomModulePkg/Library/OpenAblSerialPortLib/OpenAblSerialPortLib.inf
++	}
++
++!if $(ABL_USB_HOST_BUNDLED_STACK)
++	MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf {
++		<LibraryClasses>
++			UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
++			DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
++			NULL|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
++	}
++	MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf {
++		<LibraryClasses>
++			UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
++			DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
++			ReportStatusCodeLib|MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
++			NULL|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
++	}
++	MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf {
++		<LibraryClasses>
++			UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
++			DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
++			ReportStatusCodeLib|MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
++			NULL|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
++	}
++	MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf {
++		<LibraryClasses>
++			UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
++			DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
++			NULL|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
+ 	}
++!endif
+diff --git a/QcomModulePkg/QcomModulePkg.fdf b/QcomModulePkg/QcomModulePkg.fdf
+index 226f6fb..a4f1044 100755
+--- a/QcomModulePkg/QcomModulePkg.fdf
++++ b/QcomModulePkg/QcomModulePkg.fdf
+@@ -56,10 +56,19 @@
+ 
+ [FD.QcomModule_EFI]
+ BaseAddress   = 0x80200000|gEmbeddedTokenSpaceGuid.PcdEmbeddedFdBaseAddress  #The base address of the FLASH Device.
++# ABL_LARGE_IMAGE: 512 KiB; abl_a/abl_b are 1 MiB on every device.
++!if $(ABL_LARGE_IMAGE) == 1
++Size          = 0x00080000|gEmbeddedTokenSpaceGuid.PcdEmbeddedFdSize         #The size in bytes of the FLASH Device
++!else
+ Size          = 0x0003D000|gEmbeddedTokenSpaceGuid.PcdEmbeddedFdSize         #The size in bytes of the FLASH Device
++!endif
+ ErasePolarity = 1
+ BlockSize     = 0x200
++!if $(ABL_LARGE_IMAGE) == 1
++NumBlocks     = 0x400
++!else
+ NumBlocks     = 0x1E8
++!endif
+ 
+ ################################################################################
+ #
+@@ -78,7 +87,11 @@ NumBlocks     = 0x1E8
+ ################################################################################
+ 
+ # 512 bytes of configuration header & 8 bytes of image header
++!if $(ABL_LARGE_IMAGE) == 1
++0x00000000|0x00080000
++!else
+ 0x00000000|0x0003D000
++!endif
+ gEmbeddedTokenSpaceGuid.PcdFlashFvMainBase|gEmbeddedTokenSpaceGuid.PcdFlashFvMainSize
+ FV = FVMAIN_COMPACT
+ 
+@@ -115,6 +128,21 @@ READ_LOCK_STATUS   = TRUE
+ FvNameGuid         = 046fae99-cf2e-49ed-a6a8-a1488b7e80d3
+ 
+ INF QcomModulePkg/Application/LinuxLoader/LinuxLoader.inf
++!if $(OPENABL_MENU) == 1
++# The menu program, built by build.sh. LinuxLoader starts it from this
++# volume (BootLib/OpenAblMenu.c).
++FILE APPLICATION = 3f1d0c7a-8e52-4b6d-a93e-51c27d04b86f {
++  SECTION PE32 = QcomModulePkg/Prebuilt/OpenAblMenu/openabl-menu.efi
++  SECTION UI = "OpenAblMenu"
++}
++!endif
++
++!if $(ABL_USB_HOST_BUNDLED_STACK)
++INF MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
++INF MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
++INF MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
++INF MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
++!endif
+ 
+ [FV.FVMAIN_COMPACT]
+ FvAlignment        = 8
+diff --git a/makefile b/makefile
+index 8904640..81dedb0 100644
+--- a/makefile
++++ b/makefile
+@@ -22,7 +22,7 @@ ifeq ($(BUILD_NATIVE_AARCH64),true)
+ endif
+ 
+ ifndef $(BOOTLOADER_OUT)
+-	BOOTLOADER_OUT := $(shell pwd)
++	BOOTLOADER_OUT := $(shell pwd)/obj/ABL_OBJ
+ endif
+ export $(BOOTLOADER_OUT)
+ 
+@@ -54,7 +54,8 @@ ABL_OUT := $(BOOTLOADER_OUT)/Build
+ 
+ WORKSPACE=$(BUILDDIR)
+ TARGET_TOOLS := CLANG35
+-TARGET := DEBUG
++# RELEASE: -Oz. The debug output stays (no MDEPKG_NDEBUG).
++TARGET := RELEASE
+ BUILD_ROOT := $(ABL_OUT)/$(TARGET)_$(TARGET_TOOLS)
+ EDK_TOOLS := $(BUILDDIR)/BaseTools
+ EDK_TOOLS_BIN := $(EDK_TOOLS)/Source/C/bin
+@@ -193,6 +194,13 @@ else
+ 	UBSAN_GCC_FLAG_ALIGNMENT :=
+ endif
+ 
++ifeq "$(PVMFW_ENABLED)" "true"
++	PVMFW_BCC_ENABLED := -DPVMFW_BCC
++else
++	PVMFW_BCC_ENABLED :=
++endif
++export PVMFW_BCC_ENABLED := $(PVMFW_BCC_ENABLED)
++
+ ifeq ($(TARGET_ARCHITECTURE), arm)
+ 	LOAD_ADDRESS := 0X8F700000
+ else
+@@ -229,6 +237,17 @@ else
+ 	AUTO_VIRT_ABL := 0
+ endif
+ 
++# USB host support ("force external boot"), set per SoC.
++ABL_USB_HOST ?= 0
++# edk2's USB host stack, for SoCs whose XBL has none (sm6115).
++ABL_USB_HOST_BUNDLED_STACK ?= 0
++# The menu program (QcomModulePkg/Prebuilt/OpenAblMenu/openabl-menu.efi).
++OPENABL_MENU ?= 0
++# A 512 KiB image instead of 244 KiB.
++ABL_LARGE_IMAGE ?= 0
++# sm6115: off-mode charging from the PMIC power-on reason.
++TARGET_SOC_SM6115 ?= 0
++
+ ifeq ($(DISABLE_KERNEL_PROTOCOL), 1)
+ 	DISABLE_KERNEL_PROTOCOL := 1
+ else
+@@ -381,6 +400,11 @@ ABL_FV_IMG: $(EDK_TOOLS_PATH_MARK_FILE)
+ 	-D REMOVE_CARVEOUT_REGION=$(REMOVE_CARVEOUT_REGION) \
+ 	-D QSPA_BOOTCONFIG_ENABLE=$(QSPA_BOOTCONFIG_ENABLE) \
+ 	-D AUTO_VIRT_ABL=$(AUTO_VIRT_ABL) \
++	-D ABL_USB_HOST=$(ABL_USB_HOST) \
++	-D ABL_USB_HOST_BUNDLED_STACK=$(ABL_USB_HOST_BUNDLED_STACK) \
++	-D OPENABL_MENU=$(OPENABL_MENU) \
++	-D ABL_LARGE_IMAGE=$(ABL_LARGE_IMAGE) \
++	-D TARGET_SOC_SM6115=$(TARGET_SOC_SM6115) \
+ 	-D DDR_SUPPORTS_SCT_CONFIG=$(DDR_SUPPORTS_SCT_CONFIG) \
+ 	-j build_modulepkg.log $*
+ 

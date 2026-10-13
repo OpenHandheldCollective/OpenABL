@@ -1,0 +1,10 @@
+Additional permission under GNU GPL version 3 section 7
+
+If you modify this Program, or any covered work, by linking or combining it
+with Qualcomm's Android bootloader (ABL) or the libraries it is built with
+(or a modified version of them), containing parts covered by the terms of the
+OpenSSL License or the original SSLeay License, the licensors of this Program
+grant you additional permission to convey the resulting work. Corresponding
+Source for a non-source form of such a combination shall include the source
+code for the parts of Qualcomm's Android bootloader and those libraries used
+as well as that of the covered work.
