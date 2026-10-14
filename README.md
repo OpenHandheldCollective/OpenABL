@@ -151,11 +151,12 @@ GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
 `v*` tag is pushed and uploads the images to that tag's release, with
 `openabl-<TAG>-source.tar.xz`: this repository and the sources it fetches,
 which `./build.sh` builds without fetching them again. Run it by hand to
-pick a tag and a release or debug build; debug images end in `-debug.elf`.
-Each build also uploads `openabl-<TAG>.tar.gz` (or `-debug.tar.gz`) with a
-folder per chipset holding its image and `.sha256`; the Package workflow
-makes that archive for an existing release. CI keeps the sources it fetches
-in the `sources` pre-release and fetches them again only after a pin in
+pick a tag and a release or debug build; a debug build goes to its own
+`debug-<TAG>` pre-release, and its images end in `-debug.elf`. Each build
+also uploads `openabl-<TAG>.tar.gz` (or `-debug.tar.gz`) with a folder per
+chipset holding its image and `.sha256`; the Package workflow makes that
+archive for an existing release. CI keeps the sources it fetches in the
+`sources` pre-release and fetches them again only after a pin in
 `Scripts/fetch.sh` changes.
 
 ## Future direction

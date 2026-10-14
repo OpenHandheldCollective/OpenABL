@@ -2,7 +2,8 @@
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
 # Packages a release's images into a .tar.gz archive (one folder per chipset
-# with the image and its .sha256) and uploads it to that release.
+# with the image and its .sha256) and uploads it to that release, or to the
+# debug-<tag> pre-release for a debug build.
 name: Package
 
 on:
@@ -34,6 +35,7 @@ jobs:
     env:
       TAG: ${{ inputs.tag }}
       SUFFIX: ${{ inputs.build == 'debug' && '-debug' || '' }}
+      RELEASE: ${{ inputs.build == 'debug' && format('debug-{0}', inputs.tag) || inputs.tag }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
@@ -47,7 +49,7 @@ jobs:
           name=openabl-$TAG$SUFFIX
           mkdir images "$name"
           found=0
-          gh release download "$TAG" --pattern 'abl_signed-*.elf' --dir images
+          gh release download "$RELEASE" --pattern 'abl_signed-*.elf' --dir images
           for elf in images/abl_signed-*.elf; do
             file=$(basename "$elf")
             case $file in
@@ -62,8 +64,8 @@ jobs:
             (cd "$name/$soc" && sha256sum "$file" > "$file.sha256")
             found=$((found + 1))
           done
-          [ "$found" -gt 0 ] || { echo "$TAG has no ${{ inputs.build }} images" >&2; exit 1; }
+          [ "$found" -gt 0 ] || { echo "$RELEASE has no ${{ inputs.build }} images" >&2; exit 1; }
           cp -R LICENSE LICENSES.md LICENSES "$name/"
           cp Assets/*-OFL.txt "$name/LICENSES/"
           tar -czf "$name.tar.gz" "$name"
-          gh release upload "$TAG" "$name.tar.gz" --clobber
+          gh release upload "$RELEASE" "$name.tar.gz" --clobber

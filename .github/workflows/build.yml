@@ -31,11 +31,16 @@ jobs:
       SUFFIX: ${{ inputs.build == 'debug' && '-debug' || '' }}
     outputs:
       fetched: ${{ steps.sources.outputs.fetched }}
+      commit: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
           persist-credentials: false
+
+      - name: Note the commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # The fetched sources are kept in the "sources" release, one file per set
       # of pins in Scripts/fetch.sh, so they are fetched only after a pin changes.
@@ -117,6 +122,9 @@ jobs:
       contents: write
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
+      # Debug builds go to a pre-release of their own.
+      RELEASE: ${{ inputs.build == 'debug' && format('debug-{0}', inputs.tag) || inputs.tag || github.ref_name }}
+      COMMIT: ${{ needs.build.outputs.commit }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -145,10 +153,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release view "$TAG" > /dev/null 2>&1 ||
-            gh release create "$TAG" --verify-tag --title "OpenABL $TAG" \
-              --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
-          gh release upload "$TAG" dist/* --clobber
+          if [ "$RELEASE" = "$TAG" ]; then
+            gh release view "$TAG" > /dev/null 2>&1 ||
+              gh release create "$TAG" --verify-tag --title "OpenABL $TAG" \
+                --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
+          else
+            gh release view "$RELEASE" > /dev/null 2>&1 ||
+              gh release create "$RELEASE" --prerelease --target "$COMMIT" --title "OpenABL $TAG debug" \
+                --notes "Debug build of $TAG, unreleased: for testing only."
+          fi
+          gh release upload "$RELEASE" dist/* --clobber
 
   package:
     needs: release
