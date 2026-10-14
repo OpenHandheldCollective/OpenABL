@@ -700,6 +700,42 @@ index 4684c88..73ac1e5 100644
    }
  }
  
+diff --git a/QcomModulePkg/Library/BootLib/ShutdownServices.c b/QcomModulePkg/Library/BootLib/ShutdownServices.c
+index 4064b49..9c877d9 100644
+--- a/QcomModulePkg/Library/BootLib/ShutdownServices.c
++++ b/QcomModulePkg/Library/BootLib/ShutdownServices.c
+@@ -57,6 +57,7 @@
+ #include <Guid/FileInfo.h>
+ #include <Guid/GlobalVariable.h>
+ #include <Library/ArmLib.h>
++#include <Library/ArmSmcLib.h>
+ #include <Library/DxeServicesTableLib.h>
+ #include <Library/HobLib.h>
+ #include <Library/LinuxLoaderLib.h>
+@@ -134,6 +135,15 @@ EFI_STATUS PreparePlatformHardware (VOID)
+   return EFI_SUCCESS;
+ }
+ #else
++/* OpenABL: free the UART from hypervisor logging; older firmware needs it. */
++STATIC VOID DisableHypUartLogging (VOID)
++{
++  ARM_SMC_ARGS Args = {0};
++
++  Args.Arg0 = 0x86000000;
++  ArmCallSmc (&Args);
++}
++
+ EFI_STATUS PreparePlatformHardware (EFI_KERNEL_PROTOCOL *KernIntf,
+     VOID *KernelLoadAddr, UINTN KernelSizeActual, VOID *RamdiskLoadAddr,
+     UINTN RamdiskSizeActual, VOID *DeviceTreeLoadAddr,
+@@ -149,6 +159,7 @@ EFI_STATUS PreparePlatformHardware (EFI_KERNEL_PROTOCOL *KernIntf,
+     StackBase = KernIntf->Thread->ThreadGetUnsafeSPBase (ThreadNum);
+   }
+ 
++  DisableHypUartLogging ();
+   ArmDisableBranchPrediction ();
+ 
+   /* ArmDisableAllExceptions */
 diff --git a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
 index 88e0117..b3c8b82 100644
 --- a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
