@@ -156,6 +156,43 @@ PutName (
   }
 }
 
+// Finds the one in-use userdata entry. FALSE if there is none, or more than
+// one, as then which to grow is a guess.
+STATIC BOOLEAN
+UserdataIndex (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  OUT UINTN           *Found
+)
+{
+  UINTN   Count = EntryCount (Header, ArrayLen);
+  BOOLEAN Seen  = FALSE;
+
+  for (UINTN Index = 0; Index < Count; Index++) {
+    CONST UINT8 *Entry = Array + Index * Header->EntrySize;
+    if (InUse (Entry) && Named (Entry, mUserdata)) {
+      if (Seen) {
+        return FALSE;
+      }
+      Seen   = TRUE;
+      *Found = Index;
+    }
+  }
+  return Seen;
+}
+
+// Whether an entry is Linux's: in use and on disk after userdata, which
+// stock Android leaves last. The disk order counts, not the entry order.
+STATIC BOOLEAN
+AfterUserdata (
+  IN CONST UINT8 *Entry,
+  IN UINT64       UserdataEnd
+)
+{
+  return InUse (Entry) && ReadLe64 (Entry + 32) > UserdataEnd;
+}
+
 BOOLEAN
 GptCfwAfterUserdata (
   IN CONST GPT_HEADER *Header,
@@ -163,20 +200,75 @@ GptCfwAfterUserdata (
   IN UINTN             ArrayLen
 )
 {
-  UINTN   Count    = EntryCount (Header, ArrayLen);
-  BOOLEAN Userdata = FALSE;
+  return GptCfwParts (Header, Array, ArrayLen, 0, NULL, 0) > 0;
+}
 
+UINTN
+GptCfwParts (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             BlockSize,
+  OUT GPT_CFW_PART    *Out,
+  IN UINTN             Max
+)
+{
+  UINTN  Count = EntryCount (Header, ArrayLen);
+  UINTN  Found = 0;
+  UINTN  Userdata;
+  UINT64 End;
+
+  if (!UserdataIndex (Header, Array, ArrayLen, &Userdata)) {
+    return 0;
+  }
+  End = ReadLe64 (Array + Userdata * Header->EntrySize + 40);
   for (UINTN Index = 0; Index < Count; Index++) {
-    CONST UINT8 *Entry = Array + Index * Header->EntrySize;
-    if (!InUse (Entry)) {
+    CONST UINT8  *Entry = Array + Index * Header->EntrySize;
+    GPT_CFW_PART *Part;
+    UINT64        First;
+    UINT64        Last;
+    UINTN         Len = 0;
+
+    if (!AfterUserdata (Entry, End)) {
       continue;
     }
-    if (Userdata) {
-      return TRUE;
+    if (Found++ >= Max) {
+      continue;
     }
-    Userdata = Named (Entry, mUserdata);
+    Part  = &Out[Found - 1];
+    First = ReadLe64 (Entry + 32);
+    Last  = ReadLe64 (Entry + 40);
+    Part->Bytes =
+      Last >= First ? (Last - First + 1) * (UINT64)BlockSize : 0;
+    // ASCII as is, anything else as '?'; names are ASCII in practice.
+    for (UINTN Unit = 0; Unit < NAME_LEN / 2; Unit++) {
+      UINT16 Char = ReadLe16 (Entry + NAME_AT + 2 * Unit);
+      if (Char == 0) {
+        break;
+      }
+      Part->Name[Len++] = Char >= 0x20 && Char < 0x7f ? (CHAR8)Char : '?';
+    }
+    Part->Name[Len] = 0;
   }
-  return FALSE;
+  return Found;
+}
+
+BOOLEAN
+GptEntryNamed (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  IN CONST CHAR8      *Name
+)
+{
+  CONST UINT8 *Entry;
+
+  if (Index >= EntryCount (Header, ArrayLen)) {
+    return FALSE;
+  }
+  Entry = Array + Index * Header->EntrySize;
+  return InUse (Entry) && Named (Entry, Name);
 }
 
 VOID
@@ -209,8 +301,22 @@ WriteOf (
   return (GPT_WRITE){Lba, {Data, Size, Size}};
 }
 
-// Builds the writes for both tables, taking ownership of Array. The order
-// is the ABL's: primary header and entries, then backup entries and header.
+// Whether Blocks blocks from Lba fit in [Low, High).
+STATIC BOOLEAN
+Within (
+  IN UINT64 Lba,
+  IN UINT64 Blocks,
+  IN UINT64 Low,
+  IN UINT64 High
+)
+{
+  return Lba >= Low && Lba < High && Blocks <= High - Lba;
+}
+
+// Builds the writes for both tables, taking ownership of Array. The backup
+// goes first, entries before header, so losing power part way leaves one
+// whole table: the new backup or the old primary. BackupEntries is where
+// the backup's array is; both arrays must lie outside the usable blocks.
 STATIC BOOLEAN
 Tables (
   IN CONST UINT8      *Header,
@@ -219,22 +325,26 @@ Tables (
   IN UINT8            *Array,
   IN UINTN             ArrayLen,
   IN UINTN             BlockSize,
+  IN UINT64            BackupEntries,
   OUT GPT_WRITES      *Out
 )
 {
   UINTN      Size   = GptArraySize (Parsed);
   UINT64     Blocks = (Size + BlockSize - 1) / BlockSize;
-  UINT64     BackupEntries;
   UINT8     *Primary = NULL;
   UINT8     *Backup  = NULL;
   UINT8     *Array2  = NULL;
   GPT_WRITES Writes  = {0};
 
-  if (Parsed->AlternateLba < Blocks) {
+  if (ArrayLen != Blocks * BlockSize ||
+      !Within (Parsed->EntryLba, Blocks, 2, Parsed->FirstUsable) ||
+      Parsed->LastUsable == MAX_UINT64 ||
+      !Within (
+        BackupEntries, Blocks, Parsed->LastUsable + 1, Parsed->AlternateLba
+      )) {
     goto Fail;
   }
-  BackupEntries = Parsed->AlternateLba - Blocks;
-  Primary       = AllocateCopyPool (HeaderLen, Header);
+  Primary = AllocateCopyPool (HeaderLen, Header);
   if (!Primary) {
     goto Fail;
   }
@@ -250,10 +360,10 @@ Tables (
   WriteLe64 (Backup + 72, BackupEntries);
   SetCrc (Backup, Parsed->HeaderSize);
   // These can't fail; four slots are reserved.
-  (VOID)VecPush (&Writes, WriteOf (1, Primary, HeaderLen));
-  (VOID)VecPush (&Writes, WriteOf (Parsed->EntryLba, Array2, ArrayLen));
   (VOID)VecPush (&Writes, WriteOf (BackupEntries, Array, ArrayLen));
   (VOID)VecPush (&Writes, WriteOf (Parsed->AlternateLba, Backup, HeaderLen));
+  (VOID)VecPush (&Writes, WriteOf (Parsed->EntryLba, Array2, ArrayLen));
+  (VOID)VecPush (&Writes, WriteOf (1, Primary, HeaderLen));
   *Out = Writes;
   return TRUE;
 Fail:
@@ -272,43 +382,62 @@ GptUninstall (
   IN CONST UINT8 *Array,
   IN UINTN        ArrayLen,
   IN UINTN        BlockSize,
+  IN UINT64       BackupEntryLba,
   OUT GPT_WRITES *Out
 )
 {
   GPT_HEADER Parsed;
   UINT8     *Copy;
-  UINT8     *Userdata = NULL;
+  UINT8     *Userdata;
   UINTN      Count;
+  UINTN      Index;
+  UINT64     Start;
+  UINT64     End;
+  BOOLEAN    Removed = FALSE;
 
   if (!GptParse (Header, HeaderLen, &Parsed)) {
     return FALSE;
   }
-  if (BlockSize == 0 || ArrayLen < GptArraySize (&Parsed)) {
+  if (BlockSize == 0 || ArrayLen < GptArraySize (&Parsed) ||
+      !UserdataIndex (&Parsed, Array, ArrayLen, &Index)) {
     return FALSE;
   }
   Copy = AllocateCopyPool (ArrayLen, Array);
   if (!Copy) {
     return FALSE;
   }
-  Count = EntryCount (&Parsed, ArrayLen);
-  for (UINTN Index = 0; Index < Count; Index++) {
-    UINT8 *Entry = Copy + Index * Parsed.EntrySize;
-    if (!Userdata) {
-      if (InUse (Entry) && Named (Entry, mUserdata)) {
-        Userdata = Entry;
-      }
-    } else if (InUse (Entry)) {
-      ZeroMem (Entry, 32);
-      ZeroMem (Entry + NAME_AT, NAME_LEN);
+  Userdata = Copy + Index * Parsed.EntrySize;
+  Start    = ReadLe64 (Userdata + 32);
+  End      = ReadLe64 (Userdata + 40);
+  Count    = EntryCount (&Parsed, ArrayLen);
+  if (Start < Parsed.FirstUsable || End < Start || End > Parsed.LastUsable) {
+    goto Fail;
+  }
+  for (UINTN Other = 0; Other < Count; Other++) {
+    UINT8 *Entry = Copy + Other * Parsed.EntrySize;
+    if (AfterUserdata (Entry, End)) {
+      ZeroMem (Entry, Parsed.EntrySize);
+      Removed = TRUE;
+    } else if (Other != Index && InUse (Entry) &&
+               ReadLe64 (Entry + 40) >= Start) {
+      // What's left must end before userdata, which grows over the rest.
+      goto Fail;
     }
   }
-  if (!Userdata) {
-    FreePool (Copy);
-    return FALSE;
+  if (!Removed) {
+    goto Fail;
   }
-  CopyMem (Userdata, gGptAndroidUserdata, 16);
+  // Only undo an installer's retyping; an OEM's own userdata type stays.
+  if (BytesEq (Userdata, gGptLinuxFs, 16)) {
+    CopyMem (Userdata, gGptAndroidUserdata, 16);
+  }
   WriteLe64 (Userdata + 40, Parsed.LastUsable);
-  return Tables (Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize, Out);
+  return Tables (
+    Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize, BackupEntryLba, Out
+  );
+Fail:
+  FreePool (Copy);
+  return FALSE;
 }
 
 BOOLEAN
@@ -330,6 +459,7 @@ GptInstallAfterUserdata (
   UINT64     Start;
   UINT64     End;
   UINT64     Need = 0;
+  UINT64     ArrayBlocks;
   UINT64     At;
   UINT8     *Copy;
   UINT8     *Userdata;
@@ -390,7 +520,14 @@ GptInstallAfterUserdata (
     At += Parts[Index].Blocks;
     Slot++;
   }
-  return Tables (Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize, Out);
+  ArrayBlocks = (GptArraySize (&Parsed) + BlockSize - 1) / BlockSize;
+  if (Parsed.AlternateLba < ArrayBlocks) {
+    goto Fail;
+  }
+  return Tables (
+    Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize,
+    Parsed.AlternateLba - ArrayBlocks, Out
+  );
 Fail:
   FreePool (Copy);
   return FALSE;
@@ -428,6 +565,25 @@ GptVerify (
   }
   *Out = Header;
   return TRUE;
+}
+
+BOOLEAN
+GptCopiesAgree (
+  IN CONST GPT_HEADER *Primary,
+  IN CONST GPT_HEADER *Backup,
+  IN UINT64            LastBlock
+)
+{
+  return Primary->MyLba == 1 && Backup->MyLba == Primary->AlternateLba &&
+         Backup->AlternateLba == Primary->MyLba &&
+         Primary->AlternateLba > Primary->MyLba &&
+         Primary->AlternateLba <= LastBlock &&
+         Backup->FirstUsable == Primary->FirstUsable &&
+         Backup->LastUsable == Primary->LastUsable &&
+         Backup->Entries == Primary->Entries &&
+         Backup->EntrySize == Primary->EntrySize &&
+         Primary->FirstUsable <= Primary->LastUsable &&
+         Primary->LastUsable < Primary->AlternateLba;
 }
 
 BOOLEAN

@@ -232,6 +232,16 @@ AndroidBcbCommand (
   }
 }
 
+VOID
+AndroidBcbWipe (OUT UINT8 Out[ANDROID_BCB_SIZE])
+{
+  STATIC CONST CHAR8 Arguments[] = "recovery\n--wipe_data\n";
+
+  ZeroMem (Out, ANDROID_BCB_SIZE);
+  AndroidBcbCommand ("boot-recovery", Out);
+  CopyMem (Out + ANDROID_BCB_RECOVERY_AT, Arguments, sizeof (Arguments) - 1);
+}
+
 BOOLEAN
 AndroidFindDtbs (
   IN CONST UINT8   *Region,

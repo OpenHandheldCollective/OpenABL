@@ -16,6 +16,7 @@
 #include "View/View.h"
 
 #include "Base/Memory.h"
+#include "Base/Print.h"
 #include "Base/Text.h"
 #include "Gfx/Gfx.h"
 #include "Ui/Lang.h"
@@ -1617,6 +1618,41 @@ ScanningDraw (VOID)
   );
 }
 
+// While the uninstall rewrites the partition table.
+STATIC VOID
+UninstallingDraw (VOID)
+{
+  float Cx = CenterX (mView.Body);
+  float Y  = CenterY (mView.Body) - ToPx (40);
+
+  Icon (ICON_TRASH, Cx, Y + ToPx (14), ToPx (28), THEME_DANGER);
+  Y += ToPx (40);
+  CentredLines (
+    Cx, &Y, gStrings->Uninstalling, 15, FONT_WEIGHT_MEDIUM, THEME_TEXT
+  );
+  CentredLines (
+    Cx, &Y, gStrings->DontTurnOff, 12.5f, FONT_WEIGHT_REGULAR, THEME_TEXT2
+  );
+}
+
+// After an uninstall, until the platform restarts into recovery.
+STATIC VOID
+RestartingDraw (IN CONST APP *A)
+{
+  float Cx = CenterX (mView.Body);
+  float Y  = CenterY (mView.Body) - ToPx (40);
+
+  Icon (ICON_LIFEBUOY, Cx, Y + ToPx (14), ToPx (28), THEME_ACCENT);
+  Y += ToPx (40);
+  CentredLines (
+    Cx, &Y, gStrings->RestartingRecovery, 15, FONT_WEIGHT_MEDIUM, THEME_TEXT
+  );
+  CentredLines (
+    Cx, &Y, A->Wiped ? gStrings->CfwRemoved : gStrings->WipeInRecovery, 12.5f,
+    FONT_WEIGHT_REGULAR, THEME_TEXT2
+  );
+}
+
 STATIC VOID
 BootingDraw (IN CONST APP *A)
 {
@@ -1693,6 +1729,14 @@ ErrorDraw (IN CONST APP *A)
     Hint    = gStrings->ErrAndroidFailedHint;
     Action  = gStrings->PressAnyKeyMenu;
     break;
+  case BOOT_ERROR_WIPE_BY_HAND:
+    Title = gStrings->ErrWipeTitle, Message = gStrings->WipeByHand, Hint = "";
+    Action = gStrings->PressAnyKeyMenu;
+    break;
+  case BOOT_ERROR_UNINSTALL:
+    Title = gStrings->UninstallFailed, Message = A->ErrorDetail, Hint = "";
+    Action = gStrings->PressAnyKeyMenu;
+    break;
   default:
     Title = gStrings->ErrModelTitle, Message = gStrings->ErrModelMsg, Hint = "";
     Action = gStrings->PressAnyKeyModel;
@@ -1750,30 +1794,54 @@ ErrorDraw (IN CONST APP *A)
 
 // Confirmation and toast, drawn over everything
 
+// A partition's size for the uninstall card: whole GiB, or MiB below one.
+STATIC VOID
+SizeText (
+  IN UINT64  Bytes,
+  OUT CHAR8 *Out,
+  IN UINTN   OutSize
+)
+{
+  if (Bytes >= (1ULL << 30)) {
+    SPrint (Out, OutSize, "%llu GiB", Bytes >> 30);
+  } else {
+    SPrint (Out, OutSize, "%llu MiB", Bytes >> 20);
+  }
+}
+
 // The confirmation card over a dimmed screen. The selected button is filled
-// (red for an uninstall) and gets a ring unless it is red.
+// (red for an uninstall) and gets a ring unless it is red. The first
+// uninstall card lists the partitions it erases, a row each.
 STATIC VOID
 OverlayDraw (IN CONST APP *A)
 {
-  BOOLEAN      Danger   = A->Confirm == CONFIRM_UNINSTALL;
+  BOOLEAN      Final  = A->Confirm == CONFIRM_UNINSTALL_FINAL;
+  BOOLEAN      Danger = A->Confirm == CONFIRM_UNINSTALL || Final;
   ICON         CardIcon = Danger ? ICON_TRASH : ICON_CPU;
-  CONST CHAR8 *Title =
-    Danger ? gStrings->ConfirmUninstallTitle : gStrings->ConfirmEdlTitle;
-  CONST CHAR8 *Message =
-    Danger ? gStrings->ConfirmUninstallMsg : gStrings->ConfirmEdlMsg;
-  CONST CHAR8 *Confirm =
-    Danger ? gStrings->ConfirmUninstall : gStrings->ConfirmEdl;
+  CONST CHAR8 *Title   = Final  ? gStrings->ConfirmUninstallFinalTitle
+                         : Danger ? gStrings->ConfirmUninstallTitle
+                                  : gStrings->ConfirmEdlTitle;
+  CONST CHAR8 *Message = Final  ? gStrings->ConfirmUninstallFinalMsg
+                         : Danger ? gStrings->ConfirmUninstallMsg
+                                  : gStrings->ConfirmEdlMsg;
+  CONST CHAR8 *Confirm = Final  ? gStrings->ConfirmUninstallFinal
+                         : Danger ? gStrings->ConfirmUninstall
+                                  : gStrings->ConfirmEdl;
+  UINTN        Parts =
+    A->Confirm == CONFIRM_UNINSTALL ? A->CfwPartCount : 0;
 
   Fill (Rect (0, 0, mView.W, mView.H), 0x000000, 158);
   float CardW =
     ToPx (300) < (float)mView.W * 0.82f ? ToPx (300) : (float)mView.W * 0.82f;
   float Pad          = ToPx (18);
   float TextW        = CardW - 2 * Pad;
+  float RowH         = ToPx (13.5f * 1.45f);
   INT32 TitleLines   = WrapCount (Title, 18, FONT_WEIGHT_MEDIUM, TextW);
   INT32 MessageLines = WrapCount (Message, 13.5f, FONT_WEIGHT_REGULAR, TextW);
   float CardH = 2 * Pad + ToPx (40 + 12) +
                 (float)TitleLines * ToPx (18 * 1.3f) + ToPx (6) +
-                (float)MessageLines * ToPx (13.5f * 1.45f) + ToPx (16 + 34);
+                (float)MessageLines * RowH +
+                (Parts ? ToPx (6) + (float)Parts * RowH : 0) + ToPx (16 + 34);
   RECT  Card  = Rectf (
     (float)mView.W / 2 - CardW / 2, (float)mView.H / 2 - CardH / 2, CardW, CardH
   );
@@ -1796,10 +1864,30 @@ OverlayDraw (IN CONST APP *A)
   );
   Y += (float)TitleLines * ToPx (18 * 1.3f) + ToPx (6);
   Wrapped (
-    X, Y, TextW, Message, 13.5f, FONT_WEIGHT_REGULAR, ToPx (13.5f * 1.45f), 12,
+    X, Y, TextW, Message, 13.5f, FONT_WEIGHT_REGULAR, RowH, 12,
     THEME_TEXT2, ALIGN_LEFT
   );
-  Y += (float)MessageLines * ToPx (13.5f * 1.45f) + ToPx (16);
+  Y += (float)MessageLines * RowH;
+  if (Parts) {
+    Y += ToPx (6);
+    for (UINTN Index = 0; Index < Parts; Index++) {
+      CHAR8 Size[24];
+      float SizeW;
+
+      SizeText (A->CfwParts[Index].Bytes, Size, sizeof (Size));
+      SizeW = Measure (Size, 13.5f, FONT_WEIGHT_REGULAR);
+      TextIn (
+        Rectf (X, Y, TextW, RowH), Size, 13.5f, FONT_WEIGHT_REGULAR,
+        THEME_DANGER, ALIGN_RIGHT
+      );
+      TextIn (
+        Rectf (X, Y, TextW - SizeW - ToPx (8), RowH), A->CfwParts[Index].Name,
+        13.5f, FONT_WEIGHT_MEDIUM, THEME_DANGER, ALIGN_LEFT
+      );
+      Y += RowH;
+    }
+  }
+  Y += ToPx (16);
   float        Gap       = ToPx (10);
   float        ButtonW   = (TextW - Gap) / 2;
   float        ButtonH   = ToPx (34);
@@ -1972,6 +2060,12 @@ Build (IN OUT APP *A)
       break;
     case SCREEN_BOOTING:
       BootingDraw (A);
+      break;
+    case SCREEN_UNINSTALLING:
+      UninstallingDraw ();
+      break;
+    case SCREEN_RESTARTING:
+      RestartingDraw (A);
       break;
     case SCREEN_ERROR:
       ErrorDraw (A);

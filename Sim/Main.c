@@ -23,6 +23,7 @@
 #include "Core/Settings.h"
 #include "Base/Text.h"
 #include "Base/Memory.h"
+#include "Ui/Lang.h"
 #include "Ui/Ui.h"
 #include "View/View.h"
 
@@ -184,6 +185,12 @@ SampleEntries (OUT CONST ENTRY_VIEW **Entries)
   return sizeof (mEntries) / sizeof (mEntries[0]);
 }
 
+// Linux's partitions on internal storage, as a ROCKNIX install leaves them.
+STATIC CONST GPT_CFW_PART mCfwParts[] = {
+  {"ROCKNIX", 2ULL << 30},
+  {"STORAGE", 48ULL << 30},
+};
+
 // Screens
 
 STATIC SETTINGS_CAPS
@@ -203,6 +210,7 @@ MakeApp (
   SETTINGS_CAPS Caps = SampleCaps ();
   SampleInfo (&Info);
   AppInit (A, Settings, &Caps, &Info, SCHEME_HANDHELD, MENU_VERSION);
+  AppSetCfwParts (A, mCfwParts, sizeof (mCfwParts) / sizeof (mCfwParts[0]));
 }
 
 // Takes A, started at Now, to one of the screens.
@@ -289,6 +297,18 @@ SConfirmUninstall (
   AppInput (A, INPUT_SELECT);
 }
 
+// Past the first card, to the second with Cancel picked.
+STATIC VOID
+SConfirmUninstallFinal (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SConfirmUninstall (A, Now);
+  AppInput (A, INPUT_DOWN);
+  AppInput (A, INPUT_SELECT);
+}
+
 STATIC VOID
 SConfirmEdl (
   IN OUT APP *A,
@@ -321,6 +341,55 @@ SErrorNoImage (
 {
   (VOID)Now;
   AppOnBootResult (A, FALSE, BOOT_ERROR_NO_IMAGE, NULL);
+}
+
+// After an uninstall, waiting for the restart into recovery.
+STATIC VOID
+SRestarting (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppOnUninstalled (A, TRUE, TRUE);
+}
+
+// Past the second card with Erase picked, while the table is rewritten.
+STATIC VOID
+SUninstalling (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SConfirmUninstallFinal (A, Now);
+  AppInput (A, INPUT_DOWN);
+  AppInput (A, INPUT_SELECT);
+}
+
+// After an uninstall that couldn't write the partition table.
+STATIC VOID
+SErrorUninstall (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  CONST CHAR8 *Args[1] = {"error 7"};
+  CHAR8        Why[192];
+
+  (VOID)Now;
+  LangFill (Why, sizeof (Why), gStrings->UninstallWriteFailed, Args, 1);
+  AppOnUninstallFailed (A, Why);
+}
+
+// After an uninstall that couldn't make Android the boot mode.
+STATIC VOID
+SErrorWipeByHand (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppOnUninstalled (A, FALSE, FALSE);
 }
 
 STATIC VOID
@@ -377,10 +446,15 @@ STATIC CONST struct {
   {"menu-scrolled", SScrolled},
   {"models", SModels},
   {"confirm-uninstall", SConfirmUninstall},
+  {"confirm-uninstall-final", SConfirmUninstallFinal},
   {"confirm-edl", SConfirmEdl},
   {"booting", SBooting},
   {"error-no-image", SErrorNoImage},
   {"error-model", SErrorModel},
+  {"uninstalling", SUninstalling},
+  {"restarting", SRestarting},
+  {"error-uninstall", SErrorUninstall},
+  {"error-wipe-by-hand", SErrorWipeByHand},
   {"toast", SToast},
   {"menu-entries", SMenuEntries},
   {"entries", SEntries},

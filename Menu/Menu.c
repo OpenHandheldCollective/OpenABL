@@ -357,7 +357,7 @@ typedef struct _MENU_STATE {
   // Started on the model list after the restart for it. USB host is up, so
   // the USB boot source can be scanned.
   BOOLEAN StartModels;
-  // When to restart after an uninstall, in ms. 0 for never.
+  // When to restart into recovery after an uninstall, in ms. 0 for never.
   UINT64 RestartAt;
   // Why the last Start Linux didn't boot (MENU_START_RESULT_*).
   UINT8 CameBack;
@@ -366,7 +366,7 @@ typedef struct _MENU_STATE {
   UINTN DisplayW, DisplayH;
 } MENU_STATE;
 
-// How long the uninstall's result stays on screen before the restart.
+// How long the uninstall's result stays on screen before recovery starts.
 #define UNINSTALL_RESTART_MS 5000
 
 // Sets up a menu run and fills the info card in Info.
@@ -1199,17 +1199,57 @@ RunCommand (
       AppOnFailed (&mApp, gStrings->PowerOffFailed);
     }
     break;
-  case COMMAND_UNINSTALL_CFW:
-    // Rewrite the GPT, then restart once the result has been on screen.
-    if (UninstallRun (gMenuEfiLog) == EFI_SUCCESS) {
-      M->Caps.CfwOnInternal = FALSE;
-      AppSetCaps (&mApp, &M->Caps);
-      AppNotify (&mApp, gStrings->CfwRemoved);
-      M->RestartAt = ClockNowMs () + UNINSTALL_RESTART_MS;
-    } else {
-      AppOnFailed (&mApp, gStrings->UninstallFailed);
+  case COMMAND_UNINSTALL_CFW: {
+    SETTINGS     Want = M->Stored;
+    BOOLEAN      Android;
+    BOOLEAN      Wipe;
+    EFI_STATUS   Status;
+    CONST CHAR8 *Args[1];
+    CONST CHAR8 *Why;
+    CHAR8        Text[192];
+
+    // The GPT first: a failure there leaves everything as it was, where
+    // asking for the wipe first could erase Android's data for nothing.
+    Status = UninstallRun (gMenuEfiLog);
+    if (Status != EFI_SUCCESS) {
+      // UninstallRun's status says which step failed.
+      Why = Status == EFI_NOT_FOUND          ? gStrings->UninstallNotFound
+            : Status == EFI_VOLUME_CORRUPTED ? gStrings->UninstallUntrusted
+            : Status == EFI_CRC_ERROR        ? gStrings->UninstallReadBack
+            : Status == EFI_OUT_OF_RESOURCES ? gStrings->UninstallError
+                                             : gStrings->UninstallWriteFailed;
+      Args[0] = MENU_STATUS (Status);
+      LangFill (Text, sizeof (Text), Why, Args, 1);
+      AppOnUninstallFailed (&mApp, Text);
+      break;
     }
+    M->Caps.CfwOnInternal = FALSE;
+    // With Linux as the boot mode the reboot reason is ignored and Linux
+    // is looked for, so recovery needs Android as the boot mode. Set it
+    // first: a wipe request left in misc without it would fire whenever
+    // Android is next picked. The boot source stays: an SD card may still
+    // hold Linux.
+    Want.BootMode = BOOT_MODE_ANDROID;
+    Android = !Save (M, &Want) && M->Stored.BootMode == BOOT_MODE_ANDROID;
+    AppSetSettings (&mApp, &M->Stored);
+    AppSetCaps (&mApp, &M->Caps);
+    AppSetCfwParts (&mApp, NULL, 0);
+    if (!Android) {
+      // A restart would look for the Linux that's gone, so stay and say
+      // what to do.
+      MenuLog ("uninstall: Android couldn't be made the boot mode");
+      AppOnUninstalled (&mApp, FALSE, FALSE);
+      break;
+    }
+    // Recovery formats userdata at its new size. Without the message it
+    // still offers a factory reset by hand.
+    Wipe = UninstallRequestWipe (gMenuEfiLog) == EFI_SUCCESS;
+    // The restarting screen stays until the restart, which the firmware's
+    // handles for the removed partitions don't outlive.
+    AppOnUninstalled (&mApp, TRUE, Wipe);
+    M->RestartAt = ClockNowMs () + UNINSTALL_RESTART_MS;
     break;
+  }
   case COMMAND_SAVE_EXPERIMENTS: {
 #ifdef OABL_DEBUG
     EXPERIMENTS Want = Command.Experiments;
@@ -1375,6 +1415,11 @@ MenuRun (
     Version, sizeof (Version), M.AblVersion[0] ? M.AblVersion : MENU_VERSION
   );
   AppInit (&mApp, &M.Stored, &M.Caps, &Info, Scheme, Version);
+  {
+    CONST GPT_CFW_PART *Parts;
+    UINTN               Count = UninstallCfwParts (&Parts);
+    AppSetCfwParts (&mApp, Parts, Count);
+  }
 #ifdef OABL_DEBUG
   mApp.Debug = TRUE;
 #endif
@@ -1422,11 +1467,18 @@ MenuRun (
     UINT16       Want;
 
     InputKeysPoll (&Keys, Now, &Events);
-    for (UINTN Index = 0; Index < Events.Count; Index++) {
+    // Once an uninstall waits to restart into recovery, keys and timers do
+    // nothing, so its settings can't be changed back before the wipe.
+    for (UINTN Index = 0; Index < Events.Count && !M.RestartAt; Index++) {
       Pend (&Pending, AppInput (&mApp, Events.Items[Index]));
     }
     VecFree (&Events);
-    Pend (&Pending, AppTick (&mApp, Now));
+    {
+      COMMAND Tick = AppTick (&mApp, Now);
+      if (!M.RestartAt) {
+        Pend (&Pending, Tick);
+      }
+    }
     Want = AppDesiredRotation (&mApp);
     if (Want != Rotation) {
       MenuLog ("rotation -> %u", Want);
@@ -1439,8 +1491,10 @@ MenuRun (
     }
     ViewRun ();
     if (M.RestartAt && ClockNowMs () >= M.RestartAt) {
-      MenuLog ("restarting");
+      MenuLog ("restarting into recovery");
       MenuFlush ();
+      Act (&M, OPENABL_MENU_ACTION_RECOVERY);
+      // The ABL reads misc's boot-recovery on any restart.
       gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
     }
     // Commands run after the frame is on screen.
