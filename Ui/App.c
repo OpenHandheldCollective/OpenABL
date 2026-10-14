@@ -88,6 +88,22 @@ AppSetCaps (
 }
 
 VOID
+AppSetCfwParts (
+  IN OUT APP            *A,
+  IN CONST GPT_CFW_PART *Parts OPTIONAL,
+  IN UINTN               Count
+)
+{
+  A->CfwPartCount = Parts && Count < MAX_CFW_PARTS ? Count
+                    : Parts                        ? MAX_CFW_PARTS
+                                                   : 0;
+  for (UINTN Index = 0; Index < A->CfwPartCount; Index++) {
+    A->CfwParts[Index] = Parts[Index];
+  }
+  A->Dirty = TRUE;
+}
+
+VOID
 AppSetPhysicalSize (
   IN OUT APP *A,
   IN UINT32   W,
@@ -270,6 +286,25 @@ AppOnBootResult (
   AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Detail ? Detail : "");
 }
 
+VOID
+AppOnUninstalled (
+  IN OUT APP *A,
+  IN BOOLEAN  Restarting,
+  IN BOOLEAN  Wiped
+)
+{
+  A->Dirty      = TRUE;
+  A->ToastUntil = 0;
+  A->Wiped      = Wiped;
+  if (Restarting) {
+    A->Screen = SCREEN_RESTARTING;
+    return;
+  }
+  A->Screen         = SCREEN_ERROR;
+  A->Error          = BOOT_ERROR_WIPE_BY_HAND;
+  A->ErrorDetail[0] = 0;
+}
+
 // Opens the device info or the log (already in A->Lines) at line Focus.
 // Back returns to menu item From.
 STATIC VOID
@@ -350,13 +385,26 @@ AppOnModels (
 }
 
 VOID
+AppOnUninstallFailed (
+  IN OUT APP     *A,
+  IN CONST CHAR8 *Why
+)
+{
+  A->Dirty      = TRUE;
+  A->ToastUntil = 0;
+  A->Screen     = SCREEN_ERROR;
+  A->Error      = BOOT_ERROR_UNINSTALL;
+  AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Why);
+}
+
+VOID
 AppOnFailed (
   IN OUT APP     *A,
   IN CONST CHAR8 *Message
 )
 {
   if (A->Screen == SCREEN_BOOTING || A->Screen == SCREEN_SCANNING ||
-      A->Screen == SCREEN_CONFIRM) {
+      A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_UNINSTALLING) {
     A->Screen = SCREEN_MENU;
   }
   ShowToast (A, Message);
@@ -955,7 +1003,8 @@ EntriesInput (
   return None ();
 }
 
-// Up and down switch between Cancel and the action; Back cancels.
+// Up and down switch between Cancel and the action; Back cancels. Yes on
+// the first uninstall card shows the second, with Cancel picked again.
 STATIC COMMAND
 ConfirmInput (
   IN OUT APP *A,
@@ -976,6 +1025,13 @@ ConfirmInput (
       return None ();
     }
     if (A->Confirm == CONFIRM_UNINSTALL) {
+      A->Screen     = SCREEN_CONFIRM;
+      A->Confirm    = CONFIRM_UNINSTALL_FINAL;
+      A->ConfirmYes = FALSE;
+      return None ();
+    }
+    if (A->Confirm == CONFIRM_UNINSTALL_FINAL) {
+      A->Screen = SCREEN_UNINSTALLING;
       return Command (COMMAND_UNINSTALL_CFW, 0);
     }
     return Command (COMMAND_REBOOT, REBOOT_EDL);
@@ -1015,6 +1071,8 @@ AppInput (
     return InfoInput (A, Input);
   case SCREEN_SCANNING:
   case SCREEN_BOOTING:
+  case SCREEN_UNINSTALLING:
+  case SCREEN_RESTARTING:
     return None ();
   }
   return None ();

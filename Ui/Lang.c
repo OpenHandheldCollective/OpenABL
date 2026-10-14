@@ -119,10 +119,14 @@ STATIC CONST LANG_STRINGS mEn = {
   .PressAnyKeyMenu       = "Press any key to return to the menu",
   .PressAnyKeyModel      = "Press any key to choose your model",
   .ConfirmUninstallTitle = "Uninstall CFW?",
-  .ConfirmUninstallMsg   = "Removes the Linux install from internal storage. "
-                           "Android's data stays; Android gets the space back "
-                           "after its next factory reset. This can't be undone.",
+  .ConfirmUninstallMsg   = "Erases these partitions, and all of Android's "
+                           "data with them:",
   .ConfirmUninstall      = "Uninstall",
+  .ConfirmUninstallFinalTitle = "Erase for good?",
+  .ConfirmUninstallFinalMsg =
+    "The device restarts into recovery, which wipes Android's data. This "
+    "can't be undone.",
+  .ConfirmUninstallFinal = "Erase",
   .ConfirmEdlTitle       = "Enter emergency download mode?",
   .ConfirmEdlMsg = "The screen stays off in this mode. You'll need a computer "
                    "with Qualcomm flashing tools to leave it.",
@@ -137,8 +141,22 @@ STATIC CONST LANG_STRINGS mEn = {
   .ModelScanFailed     = "Couldn't look for device models",
   .AblActionFailed     = "The ABL couldn't do that",
   .PowerOffFailed      = "Couldn't power off",
-  .CfwRemoved          = "Linux was removed from internal storage",
+  .RestartingRecovery  = "Restarting into recovery",
+  .CfwRemoved          = "Linux is removed. Recovery wipes Android's data next.",
+  .WipeInRecovery      = "Linux is removed. Choose Factory reset in recovery to "
+                         "wipe Android's data.",
   .UninstallFailed     = "Uninstall failed",
+  .Uninstalling        = "Uninstalling CFW",
+  .DontTurnOff         = "Don't turn off the device.",
+  .UninstallNotFound   = "Linux is no longer on internal storage.",
+  .UninstallUntrusted  = "The partition table can't be trusted, so nothing "
+                         "was changed.",
+  .UninstallWriteFailed = "Writing the partition table failed ({}).",
+  .UninstallReadBack   = "The partition table didn't read back as written.",
+  .UninstallError      = "Something went wrong ({}).",
+  .ErrWipeTitle        = "Linux is removed",
+  .WipeByHand          = "Android couldn't be made the boot mode. Set Boot Mode "
+                         "to Android, then choose Factory reset in recovery.",
   .Unknown             = "Unknown",
   .NotInserted         = "Not inserted",
   .SrcAblScan          = "the ABL's scan",
@@ -249,10 +267,12 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .PressAnyKeyMenu       = "按任意键返回菜单",
   .PressAnyKeyModel      = "按任意键选择型号",
   .ConfirmUninstallTitle = "卸载 CFW？",
-  .ConfirmUninstallMsg =
-    "将从内部存储中删除 Linux，Android 的数据保留；释放的空间在 Android "
-    "下次恢复出厂设置后可用。此操作无法撤销。",
+  .ConfirmUninstallMsg = "将清除以下分区，以及 Android 的全部数据：",
   .ConfirmUninstall = "卸载",
+  .ConfirmUninstallFinalTitle = "确定永久清除？",
+  .ConfirmUninstallFinalMsg =
+    "设备将重启进入 Recovery，清除 Android 的数据。此操作无法撤销。",
+  .ConfirmUninstallFinal = "清除",
   .ConfirmEdlTitle  = "进入紧急下载模式？",
   .ConfirmEdlMsg = "此模式下屏幕保持关闭，需要用电脑上的高通刷机工具才能退出。",
   .ConfirmEdl    = "进入 EDL",
@@ -266,8 +286,21 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .ModelScanFailed     = "无法查找设备型号",
   .AblActionFailed     = "ABL 无法执行该操作",
   .PowerOffFailed      = "无法关机",
-  .CfwRemoved          = "已从内部存储删除 Linux",
+  .RestartingRecovery  = "正在重启进入 Recovery",
+  .CfwRemoved          = "已删除 Linux。Recovery 接下来会清除 Android 的数据。",
+  .WipeInRecovery      = "已删除 Linux。请在 Recovery 中选择恢复出厂设置以清除 "
+                         "Android 的数据。",
   .UninstallFailed     = "卸载失败",
+  .Uninstalling        = "正在卸载 CFW",
+  .DontTurnOff         = "请勿关闭设备。",
+  .UninstallNotFound   = "内部存储上已没有 Linux。",
+  .UninstallUntrusted  = "分区表不可信，因此未做任何更改。",
+  .UninstallWriteFailed = "写入分区表失败（{}）。",
+  .UninstallReadBack   = "分区表读回的内容与写入的不一致。",
+  .UninstallError      = "出现错误（{}）。",
+  .ErrWipeTitle        = "已删除 Linux",
+  .WipeByHand          = "无法将 Android 设为启动模式。请将启动模式设为 Android，"
+                         "然后在 Recovery 中选择恢复出厂设置。",
   .Unknown             = "未知",
   .NotInserted         = "未插入",
   .SrcAblScan          = "ABL 的扫描",

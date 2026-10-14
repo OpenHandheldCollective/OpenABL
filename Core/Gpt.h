@@ -6,9 +6,9 @@
 /**
   Gpt - GPT parsing and rewriting for Uninstall CFW.
 
-  Uninstall removes every partition after userdata and grows userdata to
-  the last usable block in both tables. Android reclaims the space on its
-  next factory reset.
+  Uninstall removes every partition on disk after userdata and grows
+  userdata to the last usable block in both tables. Android reclaims the
+  space when recovery wipes its data.
 */
 
 #ifndef __CORE_GPT_H__
@@ -21,7 +21,8 @@
 
 #define GPT_SIGNATURE "EFI PART"
 
-// Userdata type 1B81E7E6-F50D-419B-A739-2AEEF8DA3335, restored on uninstall.
+// Userdata type 1B81E7E6-F50D-419B-A739-2AEEF8DA3335, restored on uninstall
+// when an installer had made userdata a Linux partition.
 extern CONST UINT8 gGptAndroidUserdata[16];
 // Linux filesystem type 0FC63DAF-8483-4772-8E79-3D69D8477DE4.
 extern CONST UINT8 gGptLinuxFs[16];
@@ -48,12 +49,42 @@ GptParse (
 UINTN
 GptArraySize (IN CONST GPT_HEADER *Header);
 
-// Returns TRUE if Linux is installed: an entry after userdata is in use.
+// Returns TRUE if Linux is installed: an entry in use lies on disk after
+// the one userdata. FALSE when there are two userdata entries.
 BOOLEAN
 GptCfwAfterUserdata (
   IN CONST GPT_HEADER *Header,
   IN CONST UINT8      *Array,
   IN UINTN             ArrayLen
+);
+
+// A partition Linux added, for the uninstall confirmation. Name is the
+// entry's name in ASCII, with '?' for anything else.
+typedef struct _GPT_CFW_PART {
+  CHAR8  Name[37];
+  UINT64 Bytes;
+} GPT_CFW_PART;
+
+// Fills Out with up to Max of the partitions GptCfwAfterUserdata looks for,
+// and returns how many there are in all.
+UINTN
+GptCfwParts (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             BlockSize,
+  OUT GPT_CFW_PART    *Out,
+  IN UINTN             Max
+);
+
+// Returns TRUE if entry Index is in use and called Name (ASCII).
+BOOLEAN
+GptEntryNamed (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  IN CONST CHAR8      *Name
 );
 
 typedef struct _GPT_WRITE {
@@ -67,9 +98,13 @@ typedef struct _GPT_WRITES OABL_VEC (GPT_WRITE) GPT_WRITES;
 VOID
 GptWritesFree (IN OUT GPT_WRITES *Writes);
 
-// Clears every entry after userdata, restores userdata's Android type and
-// grows it to the last usable block. Header is the primary header block and
-// Array the entries in whole blocks. Free Out with GptWritesFree.
+// Clears every entry on disk after userdata, grows userdata to the last
+// usable block and gives it back its Android type if it has the Linux one.
+// Header is the primary header block and Array the entries in whole
+// blocks. FALSE if there is nothing to remove, if another entry reaches
+// into userdata, or if either array, the backup's at BackupEntryLba, lies
+// in the usable blocks. The writes rebuild the backup table from the
+// primary, backup first. Free Out with GptWritesFree.
 BOOLEAN
 GptUninstall (
   IN CONST UINT8 *Header,
@@ -77,6 +112,7 @@ GptUninstall (
   IN CONST UINT8 *Array,
   IN UINTN        ArrayLen,
   IN UINTN        BlockSize,
+  IN UINT64       BackupEntryLba,
   OUT GPT_WRITES *Out
 );
 
@@ -110,6 +146,16 @@ GptVerify (
   IN CONST UINT8 *Array,
   IN UINTN        ArrayLen,
   OUT GPT_HEADER *Out
+);
+
+// Whether two verified headers are one disk's primary and backup: each
+// pointing at the other, the backup at or before LastBlock, the same
+// usable blocks and entry layout. CRCs pass but don't prove these.
+BOOLEAN
+GptCopiesAgree (
+  IN CONST GPT_HEADER *Primary,
+  IN CONST GPT_HEADER *Backup,
+  IN UINT64            LastBlock
 );
 
 // For tests: builds a disk image with Parts laid out in order from the
