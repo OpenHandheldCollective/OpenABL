@@ -615,9 +615,19 @@ CmdLineAndroidParams (
   IN OUT OABL_BUFFER *Out
 )
 {
-  KERNEL_CMDLINE_PARAM Params[KERNEL_CMDLINE_ANDROID_PARAMS];
-  CHAR8               *Panel = QcomDisplayPanelConfig ();
-  UINTN Count = KernelCmdLineAndroidParams (Panel ? Panel : "", Params);
+  KERNEL_CMDLINE_PARAM                Params[KERNEL_CMDLINE_ANDROID_PARAMS];
+  CHAR8                              *Panel = QcomDisplayPanelConfig ();
+  EFI_PLATFORMINFO_PLATFORM_INFO_TYPE Platform;
+  QCOM_CHIP                           Chip;
+  BOOLEAN                             Sm8750;
+  UINTN                               Count;
+
+  (VOID)QcomPlatform (&Platform);
+  // Only the SM8750 stock ABL passes the display id.
+  Sm8750 = QcomChip (&Chip) && TextStartsWith (TextOf (Chip.Name), "SM8750");
+  Count  = KernelCmdLineAndroidParams (
+    Panel ? Panel : "", Platform.subtype, (UINT8)Platform.fusion, Sm8750, Params
+  );
 
   for (UINTN Index = 0; Index < Count; Index++) {
     LogPrint (

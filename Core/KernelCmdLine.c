@@ -9,10 +9,14 @@
 
 #include "Core/KernelCmdLine.h"
 
+#include "Base/Print.h"
 #include "Base/Text.h"
 
-// AYANEO Pocket S2/FIT panel, as named in XBL's DisplayPanelConfiguration.
-#define POCKET_FIT_PANEL "mdss_dsi_panel_ar14_1080p_144hz_video"
+// AYANEO/KONKR panels, as XBL names tehm.
+STATIC CONST CHAR8 *CONST mOemPanels[] = {
+  "mdss_dsi_panel_ar14_", "mdss_dsi_ar06_",   "mdss_dsi_ar07_",
+  "mdss_dsi_kr04_",       "mdss_dsi_wt0630_",
+};
 
 BOOLEAN
 KernelCmdLineFileText (
@@ -60,16 +64,41 @@ KernelCmdLineCombine (
   return BufferAppend (Out, Text.Ptr, Text.Len);
 }
 
+STATIC VOID
+Param (
+  OUT KERNEL_CMDLINE_PARAM *Out,
+  IN CONST CHAR8           *Key,
+  IN UINT8                  Value
+)
+{
+  Out->Key = Key;
+  SPrint (Out->Value, sizeof (Out->Value), "0x%02x", Value);
+}
+
 UINTN
 KernelCmdLineAndroidParams (
   IN CONST CHAR8          *PanelConfig,
+  IN UINT32                Subtype,
+  IN UINT8                 DisplayId,
+  IN BOOLEAN               WithDisplayId,
   OUT KERNEL_CMDLINE_PARAM Out[KERNEL_CMDLINE_ANDROID_PARAMS]
 )
 {
-  UINTN Count = 0;
+  UINTN   Count = 0;
+  BOOLEAN Oem   = FALSE;
 
-  if (TextContains (TextOf (PanelConfig), POCKET_FIT_PANEL)) {
-    Out[Count++] = (KERNEL_CMDLINE_PARAM){" androidboot.client_id=", "0x01"};
+  for (UINTN Index = 0; Index < sizeof (mOemPanels) / sizeof (mOemPanels[0]);
+       Index++) {
+    Oem |= TextContains (TextOf (PanelConfig), mOemPanels[Index]);
+  }
+  if (!Oem) {
+    return 0;
+  }
+  Param (&Out[Count++], " androidboot.board_id=", (UINT8)Subtype);
+  Param (&Out[Count++], " androidboot.project_id=", (UINT8)(Subtype >> 8));
+  Param (&Out[Count++], " androidboot.client_id=", (UINT8)(Subtype >> 16));
+  if (WithDisplayId) {
+    Param (&Out[Count++], " androidboot.display_id=", DisplayId);
   }
   return Count;
 }
