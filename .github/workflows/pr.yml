@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026-present Open Handheld Collective
+#   https://github.com/OpenHandheldCollective
+# Debug build of every chipset for each pull request.
+name: Pull request
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Restore the sources
+        run: |
+          key=sources-$(grep -E '^[A-Z0-9]+_(URL|TAG|COMMIT)=' Scripts/fetch.sh | sha256sum | cut -c1-16)
+          if curl -fsSL -o "$RUNNER_TEMP/$key.tar" \
+              "https://github.com/${{ github.repository }}/releases/download/sources/$key.tar" &&
+            tar -xf "$RUNNER_TEMP/$key.tar"; then
+            echo "restored $key"
+          fi
+
+      - name: Build
+        run: ./build.sh all --debug
+
+      - name: Keep the log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: abl-build-log
+          path: build/abl-build.log
+
+      - name: Collect the images
+        run: |
+          mkdir dist
+          for elf in build/out/abl_signed-*.elf; do
+            name=$(basename "$elf" .elf)-debug.elf
+            cp "$elf" "dist/$name"
+            (cd dist && sha256sum "$name" > "$name.sha256")
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openabl-debug-pr${{ github.event.pull_request.number }}
+          path: dist
+          retention-days: 14
+          compression-level: 0
