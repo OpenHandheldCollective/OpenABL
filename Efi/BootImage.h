@@ -96,8 +96,7 @@ CmdLineGet (
   IN OUT OABL_BUFFER *Out
 );
 
-// Appends the androidboot parameters for XBL's DisplayPanelConfiguration to
-// Out as key\0value\0 pairs. Caller frees Out.
+// Appends the OEM androidboot ids.
 VOID
 CmdLineAndroidParams (
   IN LOG_SINK         Log,

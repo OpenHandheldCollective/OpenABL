@@ -50,18 +50,19 @@ KernelCmdLineCombine (
 // Key has a leading space and a trailing '=', like the ABL's own keys.
 typedef struct _KERNEL_CMDLINE_PARAM {
   CONST CHAR8 *Key;
-  CONST CHAR8 *Value;
+  CHAR8        Value[8];
 } KERNEL_CMDLINE_PARAM;
 
 // Most parameters KernelCmdLineAndroidParams can return.
-#define KERNEL_CMDLINE_ANDROID_PARAMS 1
+#define KERNEL_CMDLINE_ANDROID_PARAMS 4
 
-// Returns the androidboot parameters for XBL's DisplayPanelConfiguration.
-// Android on the Pocket S2/FIT needs androidboot.client_id=0x01, and the
-// panel identifies that device even in off-mode charging.
+// The ids AYANEO/KONKR's stock ABLs pass Android, for their panels only:
 UINTN
 KernelCmdLineAndroidParams (
   IN CONST CHAR8          *PanelConfig,
+  IN UINT32                Subtype,
+  IN UINT8                 DisplayId,
+  IN BOOLEAN               WithDisplayId,
   OUT KERNEL_CMDLINE_PARAM Out[KERNEL_CMDLINE_ANDROID_PARAMS]
 );
 
