@@ -213,7 +213,6 @@ SettingsToVars (
   Put (&Out[Count++], SETTINGS_KEY_MODEL, Settings->Model, ModelLen);
   PutLe16 (&Out[Count++], SETTINGS_KEY_MODEL_ROTATION, Settings->ModelRotation);
   PutU8 (&Out[Count++], SETTINGS_KEY_CUSTOM_LOGO, Settings->CustomLogo);
-  PutU8 (&Out[Count++], SETTINGS_KEY_KEEP_LOGO, Settings->KeepLogo);
   return Count;
 }
 
@@ -388,9 +387,6 @@ SettingsFromVars (
   }
   if (Byte (Get, Context, SETTINGS_KEY_CUSTOM_LOGO, &Byte8) && Byte8 <= 1) {
     Settings.CustomLogo = Byte8 == 1;
-  }
-  if (Byte (Get, Context, SETTINGS_KEY_KEEP_LOGO, &Byte8) && Byte8 <= 1) {
-    Settings.KeepLogo = Byte8 == 1;
   }
   *Out = Settings;
 }

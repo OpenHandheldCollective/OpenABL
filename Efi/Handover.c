@@ -749,14 +749,11 @@ HandoverInstallDevicetree (
   EFI_PHYSICAL_ADDRESS Prev;
   UINTN                Pages;
   UINTN                PrevPages;
-  BOOLEAN              Declared;
 
   if (!UefiPaddedDtb (Dtb, DtbSize, DTB_PAD, &Blob)) {
     return "not a devicetree blob";
   }
-  Declared = SplashDeclare (Blob.Data, Blob.Len, Log);
   SplashReserveSplash (Blob.Data, Blob.Len, Log);
-  SplashMarkDisplayOn (Blob.Data, Blob.Len, Declared, Log);
   Pages = (Blob.Len + PAGE - 1) / PAGE;
   if (AllocateOutsideCarveouts (EfiACPIReclaimMemory, Pages, &Memory) !=
       EFI_SUCCESS) {

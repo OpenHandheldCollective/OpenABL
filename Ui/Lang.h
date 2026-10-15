@@ -43,7 +43,6 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *Off;
   CONST CHAR8 *Rotation;
   CONST CHAR8 *CustomLogo;
-  CONST CHAR8 *KeepLogo;
   CONST CHAR8 *RotationAuto;
   CONST CHAR8 *Timeout;
   CONST CHAR8 *Seconds;

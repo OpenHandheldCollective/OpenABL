@@ -57,29 +57,6 @@ Cstr (
   return FALSE;
 }
 
-// Returns the next NUL-separated piece of Value. n NULs give n + 1 pieces.
-// Start with *At = 0.
-STATIC BOOLEAN
-NextPiece (
-  IN CONST UINT8 *Value,
-  IN UINTN        Size,
-  IN OUT UINTN   *At,
-  OUT OABL_BYTES *Piece
-)
-{
-  UINTN End = *At;
-
-  if (End > Size) {
-    return FALSE;
-  }
-  while (End < Size && Value[End]) {
-    End++;
-  }
-  *Piece = (OABL_BYTES){Value + *At, End - *At};
-  *At    = End + 1;
-  return TRUE;
-}
-
 // Copies Bytes up to the first NUL. Returns NULL if that isn't UTF-8.
 STATIC CHAR8 *
 StringOf (IN OABL_BYTES Bytes)
@@ -403,38 +380,6 @@ Add (
   return DT_OK;
 }
 
-STATIC BOOLEAN
-Where (
-  IN CONST UINT8 *Fdt,
-  IN BOOLEAN (*Want) (
-    IN CONST UINT8 *Compatible,
-    IN UINTN        Length,
-    IN VOID        *Context
-  ),
-  IN VOID         *Context,
-  IN OUT DT_NODES *Found
-)
-{
-  for (INT32 Offset = fdt_next_node (Fdt, -1, NULL); Offset >= 0;
-       Offset       = fdt_next_node (Fdt, Offset, NULL)) {
-    OABL_BYTES Compatible;
-    OABL_BYTES Piece;
-    BOOLEAN    Any = FALSE;
-
-    if (!Get (Fdt, (UINTN)Offset, "compatible", &Compatible)) {
-      continue;
-    }
-    for (UINTN At = 0;
-         !Any && NextPiece (Compatible.Ptr, Compatible.Len, &At, &Piece);) {
-      Any = Piece.Len && Want (Piece.Ptr, Piece.Len, Context);
-    }
-    if (Any && !VecPush (Found, (UINTN)Offset)) {
-      return FALSE;
-    }
-  }
-  return TRUE;
-}
-
 // Returns the node's name, or "" if it can't be read.
 STATIC OABL_TEXT
 NameOf (
@@ -475,22 +420,6 @@ DtSetPropByCompatible (
     }
   }
   return DT_NOT_FOUND;
-}
-
-DT_ERROR
-DtSetPropAt (
-  IN OUT UINT8   *Fdt,
-  IN UINTN        Capacity,
-  IN UINTN        Node,
-  IN CONST CHAR8 *Name,
-  IN CONST VOID  *Value,
-  IN UINTN        Length
-)
-{
-  if (!Usable (Fdt, Capacity, Node)) {
-    return DT_BAD_BLOB;
-  }
-  return Set (Fdt, Node, Name, Value, Length);
 }
 
 // Lookups and subnodes
@@ -535,23 +464,6 @@ DtPropAt (
 )
 {
   return Usable (Fdt, Size, Node) && Get (Fdt, Node, Name, Value);
-}
-
-BOOLEAN
-DtNodesWhere (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN BOOLEAN (*Want) (
-    IN CONST UINT8 *Compatible,
-    IN UINTN        Length,
-    IN VOID        *Context
-  ),
-  IN VOID      *Context,
-  OUT DT_NODES *Found
-)
-{
-  *Found = (DT_NODES){0};
-  return !Usable (Fdt, Size, NO_NODE) || Where (Fdt, Want, Context, Found);
 }
 
 DT_ERROR
@@ -675,18 +587,6 @@ PushCells (
 }
 
 DT_ERROR
-DtReserveMemory (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Capacity,
-  IN UINT64     Base,
-  IN UINT64     Size,
-  OUT BOOLEAN  *Added
-)
-{
-  return DtReserveMemoryNamed (Fdt, Capacity, "framebuffer", Base, Size, Added);
-}
-
-DT_ERROR
 DtReserveMemoryNamed (
   IN OUT UINT8   *Fdt,
   IN UINTN        Capacity,
@@ -766,240 +666,4 @@ DtReserveMemoryNamed (
   }
   *Added = TRUE;
   return DT_OK;
-}
-
-// Splash framebuffer hand-over
-
-BOOLEAN
-DtIsDisplayNode (
-  IN CONST UINT8 *Compatible,
-  IN UINTN        Length
-)
-{
-  OABL_TEXT Text = {(CONST CHAR8 *)Compatible, Length};
-
-  return TextEndsWith (Text, "-mdss") || TextEndsWith (Text, "-dpu") ||
-         TextEndsWith (Text, "-dsi-ctrl") || TextContains (Text, "dsi-phy");
-}
-
-STATIC BOOLEAN
-DisplayNode (
-  IN CONST UINT8 *Compatible,
-  IN UINTN        Length,
-  IN VOID        *Context
-)
-{
-  (VOID)Context;
-  return DtIsDisplayNode (Compatible, Length);
-}
-
-// Byte length of each clock reference gathered, in order.
-typedef struct _CLOCK_LENGTHS
-OABL_VEC (UINTN) CLOCK_LENGTHS;
-
-// Returns TRUE if Clock is already among the references in Clocks.
-STATIC BOOLEAN
-HasClock (
-  IN CONST OABL_BUFFER   *Clocks,
-  IN CONST CLOCK_LENGTHS *Lengths,
-  IN CONST UINT8         *Clock,
-  IN UINTN                Length
-)
-{
-  UINTN At = 0;
-
-  for (UINTN Index = 0; Index < Lengths->Count; At += Lengths->Items[Index++]) {
-    if (Lengths->Items[Index] == Length &&
-        CompareMem (Clocks->Data + At, Clock, Length) == 0) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-// Returns #clock-cells of the provider with this phandle, or 1 if unknown.
-// Every Qualcomm display clock provider uses 1.
-STATIC UINT32
-ClockCells (
-  IN CONST UINT8 *Fdt,
-  IN UINT32       Phandle
-)
-{
-  for (INT32 Offset = fdt_next_node (Fdt, -1, NULL); Offset >= 0;
-       Offset       = fdt_next_node (Fdt, Offset, NULL)) {
-    OABL_BYTES Value;
-
-    if ((Get (Fdt, (UINTN)Offset, "phandle", &Value) ||
-         Get (Fdt, (UINTN)Offset, "linux,phandle", &Value)) &&
-        Value.Len == 4 && ReadBe32 (Value.Ptr) == Phandle) {
-      return Get (Fdt, (UINTN)Offset, "#clock-cells", &Value) && Value.Len == 4
-               ? ReadBe32 (Value.Ptr)
-               : 1;
-    }
-  }
-  return 1;
-}
-
-// Adds node Name to /chosen, or returns the existing one: Retroid's SM8250
-// trees already have framebuffer@9c000000, without the display clocks.
-STATIC DT_ERROR
-FramebufferNode (
-  IN OUT UINT8   *Fdt,
-  IN UINTN        Chosen,
-  IN CONST CHAR8 *Name,
-  OUT UINTN      *Node
-)
-{
-  INT32 Offset;
-
-  if ((Offset = fdt_add_subnode (Fdt, (INT32)Chosen, Name)) ==
-      -FDT_ERR_EXISTS) {
-    for (Offset = fdt_first_subnode (Fdt, (INT32)Chosen); Offset >= 0;
-         Offset = fdt_next_subnode (Fdt, Offset)) {
-      if (TextEqStr (NameOf (Fdt, Offset), Name)) {
-        break;
-      }
-    }
-  }
-  if (Offset < 0) {
-    return DtError (Offset);
-  }
-  *Node = (UINTN)Offset;
-  return DT_OK;
-}
-
-DT_ERROR
-DtAddFramebuffer (
-  IN OUT UINT8            *Fdt,
-  IN UINTN                 Capacity,
-  IN CONST DT_FRAMEBUFFER *Framebuffer,
-  OUT DT_FRAMEBUFFER_NODE *Out
-)
-{
-  OABL_BUFFER   Clocks       = {0};
-  CLOCK_LENGTHS Lengths      = {0};
-  OABL_BUFFER   Power        = {0};
-  DT_ERROR      Status       = DT_NO_SPACE;
-  DT_NODES      DisplayNodes = {0};
-  OABL_BYTES    Property;
-  OABL_BYTES    Piece;
-  BOOLEAN       HasPower = FALSE;
-  UINTN         Root;
-  UINTN         Chosen;
-  UINTN         Node;
-  CHAR8        *Name = NULL;
-  UINT8         Buffer[16];
-
-  if (!Usable (Fdt, Capacity, NO_NODE)) {
-    Status = DT_BAD_BLOB;
-    goto Done;
-  }
-  if (!Where (Fdt, DisplayNode, NULL, &DisplayNodes)) {
-    goto Done;
-  }
-  for (UINTN Index = 0; Index < DisplayNodes.Count; Index++) {
-    UINTN   Display = DisplayNodes.Items[Index];
-    BOOLEAN IsMdss  = FALSE;
-
-    // Skip disabled nodes, such as the second DSI link on a one-panel
-    // device. Their clocks must not be held on.
-    if (Get (Fdt, Display, "status", &Property) &&
-        TextStartsWith (AsStr (Property), "disabled")) {
-      continue;
-    }
-    // Each reference is a phandle and #clock-cells cells. A truncated
-    // reference ends the list.
-    if (Get (Fdt, Display, "clocks", &Property)) {
-      for (UINTN At = 0; At + 4 <= Property.Len;) {
-        UINT64 Length =
-          4 + 4 * (UINT64)ClockCells (Fdt, ReadBe32 (Property.Ptr + At));
-
-        if (Length > Property.Len - At) {
-          break;
-        }
-        if (!HasClock (&Clocks, &Lengths, Property.Ptr + At, (UINTN)Length) &&
-            (!BufferAppend (&Clocks, Property.Ptr + At, (UINTN)Length) ||
-             !VecPush (&Lengths, (UINTN)Length))) {
-          goto Done;
-        }
-        At += (UINTN)Length;
-      }
-    }
-    if (Get (Fdt, Display, "compatible", &Property)) {
-      for (UINTN At = 0;
-           !IsMdss && NextPiece (Property.Ptr, Property.Len, &At, &Piece);) {
-        IsMdss = TextEndsWith (AsStr (Piece), "-mdss");
-      }
-    }
-    if (!HasPower && IsMdss && Get (Fdt, Display, "power-domains", &Property)) {
-      if (!BufferFrom (&Power, Property.Ptr, Property.Len)) {
-        goto Done;
-      }
-      HasPower = TRUE;
-    }
-  }
-  Status = DT_BAD_BLOB;
-  if (!AtPath (Fdt, "/", &Root)) {
-    goto Done;
-  }
-  if (!AtPath (Fdt, "/chosen", &Chosen) &&
-      (Status = Add (Fdt, Root, "chosen", &Chosen))) {
-    goto Done;
-  }
-  WriteBe32 (Buffer, 2);
-  if ((Status = Set (Fdt, Chosen, "#address-cells", Buffer, 4)) ||
-      (Status = Set (Fdt, Chosen, "#size-cells", Buffer, 4)) ||
-      (Status = Set (Fdt, Chosen, "ranges", "", 0))) {
-    goto Done;
-  }
-  Status = DT_NO_SPACE;
-  if (!(Name = UnitName ("framebuffer", Framebuffer->Base)) ||
-      (Status = FramebufferNode (Fdt, Chosen, Name, &Node))) {
-    goto Done;
-  }
-  // libfdt puts a new property first, so set these in reverse to get the
-  // usual order.
-  if (HasPower &&
-      (Status = Set (Fdt, Node, "power-domains", Power.Data, Power.Len))) {
-    goto Done;
-  }
-  if (Clocks.Len &&
-      (Status = Set (Fdt, Node, "clocks", Clocks.Data, Clocks.Len))) {
-    goto Done;
-  }
-  if ((Status = Set (
-         Fdt, Node, "format", Framebuffer->Format,
-         AsciiStrLen (Framebuffer->Format) + 1
-       ))) {
-    goto Done;
-  }
-  WriteBe32 (Buffer, Framebuffer->Stride);
-  if ((Status = Set (Fdt, Node, "stride", Buffer, 4))) {
-    goto Done;
-  }
-  WriteBe32 (Buffer, Framebuffer->Height);
-  if ((Status = Set (Fdt, Node, "height", Buffer, 4))) {
-    goto Done;
-  }
-  WriteBe32 (Buffer, Framebuffer->Width);
-  if ((Status = Set (Fdt, Node, "width", Buffer, 4))) {
-    goto Done;
-  }
-  PushCells (Buffer, Framebuffer->Base, 2);
-  PushCells (Buffer + 8, Framebuffer->Size, 2);
-  if ((Status = Set (Fdt, Node, "reg", Buffer, 16)) ||
-      (Status = Set (
-         Fdt, Node, "compatible", "simple-framebuffer",
-         sizeof ("simple-framebuffer")
-       ))) {
-    goto Done;
-  }
-  *Out = (DT_FRAMEBUFFER_NODE){Lengths.Count, HasPower};
-Done:
-  FreePool (Name);
-  BufferFree (&Power);
-  BufferFree (&Clocks);
-  VecFree (&Lengths);
-  VecFree (&DisplayNodes);
-  return Status;
 }

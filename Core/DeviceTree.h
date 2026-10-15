@@ -73,17 +73,6 @@ DtSetPropByCompatible (
   IN UINTN               Length
 );
 
-// Like DtSetPropByCompatible, on the node at offset Node.
-DT_ERROR
-DtSetPropAt (
-  IN OUT UINT8   *Fdt,
-  IN UINTN        Capacity,
-  IN UINTN        Node,
-  IN CONST CHAR8 *Name,
-  IN CONST VOID  *Value,
-  IN UINTN        Length
-);
-
 // Finds the node at Path with fdt_path_offset. A component without a unit
 // address matches a node with one: /reserved-memory/cont_splash_region finds
 // cont_splash_region@9c000000.
@@ -117,21 +106,6 @@ DtPropAt (
 typedef struct _DT_NODES
 OABL_VEC (UINTN) DT_NODES;
 
-// Finds every node with a compatible string that Want accepts. On failure,
-// Found keeps the nodes found so far.
-BOOLEAN
-DtNodesWhere (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Size,
-  IN BOOLEAN (*Want) (
-    IN CONST UINT8 *Compatible,
-    IN UINTN        Length,
-    IN VOID        *Context
-  ),
-  IN VOID      *Context,
-  OUT DT_NODES *Found
-);
-
 // Adds an empty subnode after Parent's properties and before its subnodes.
 // Returns DT_BAD_BLOB if Parent already has a subnode of that name.
 DT_ERROR
@@ -162,20 +136,10 @@ DtNodeChildren (
   OUT DT_NODES   *Out
 );
 
-// Adds a no-map framebuffer@BASE node to /reserved-memory, creating it if
+// Adds a no-map Prefix@BASE node to /reserved-memory, creating it if
 // needed, unless a region there already covers the range. This keeps the
 // kernel off the scanned-out memory when it takes its memory layout from the
 // devicetree. Under EFI the firmware memory map already reserves it.
-DT_ERROR
-DtReserveMemory (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Capacity,
-  IN UINT64     Base,
-  IN UINT64     Size,
-  OUT BOOLEAN  *Added
-);
-
-// Like DtReserveMemory, with the node named Prefix@BASE.
 DT_ERROR
 DtReserveMemoryNamed (
   IN OUT UINT8   *Fdt,
@@ -184,46 +148,6 @@ DtReserveMemoryNamed (
   IN UINT64       Base,
   IN UINT64       Size,
   OUT BOOLEAN    *Added
-);
-
-typedef struct _DT_FRAMEBUFFER {
-  UINT64 Base;
-  UINT64 Size;
-  UINT32 Width;
-  UINT32 Height;
-  // Bytes per line.
-  UINT32 Stride;
-  // simple-framebuffer pixel format (a8r8g8b8, ...).
-  CONST CHAR8 *Format;
-} DT_FRAMEBUFFER;
-
-// Returns TRUE for the display nodes whose clocks the splash needs: MDSS,
-// DPU, DSI controllers and DSI PHYs (qcom,sm8250-mdss, qcom,dsi-phy-7nm, ...).
-BOOLEAN
-DtIsDisplayNode (
-  IN CONST UINT8 *Compatible,
-  IN UINTN        Length
-);
-
-// What DtAddFramebuffer put in the node.
-typedef struct _DT_FRAMEBUFFER_NODE {
-  // Number of clock references copied.
-  UINTN Clocks;
-  // TRUE if the MDSS power-domains was copied.
-  BOOLEAN PowerDomain;
-} DT_FRAMEBUFFER_NODE;
-
-// Adds a simple-framebuffer node, /chosen/framebuffer@BASE, so simpledrm
-// keeps the splash on screen until the display driver takes over. The node
-// gets the clocks of the enabled display nodes and the MDSS power-domains,
-// so the kernel's unused-clock cleanup leaves them alone. If the node exists
-// already, as in Retroid's SM8250 trees, the properties go on it.
-DT_ERROR
-DtAddFramebuffer (
-  IN OUT UINT8            *Fdt,
-  IN UINTN                 Capacity,
-  IN CONST DT_FRAMEBUFFER *Framebuffer,
-  OUT DT_FRAMEBUFFER_NODE *Out
 );
 
 #endif

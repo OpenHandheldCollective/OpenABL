@@ -25,7 +25,6 @@
 #include "Core/Settings.h"
 #include "Efi/Abl.h"
 #include "Efi/BootImage.h"
-#include "Efi/DisplayHandover.h"
 #include "Efi/Dxe.h"
 #include "Efi/MenuHost.h"
 #include "Efi/Qcom.h"
@@ -1426,19 +1425,12 @@ QuirksFixupDeviceTree (
   IN LOG_SINK   Log
 )
 {
-  BOOLEAN Declared;
-
   if (Usb) {
     UINT32 Chip = mInstalledChip ? mInstalledChip : QuirksChipId ();
 
     UsbBootFixDeviceTree (Fdt, Cap, Chip, Log);
   }
-  Declared = SplashDeclare (Fdt, Cap, Log);
-  if (Declared) {
-    DisplayHandoverSplashDeclared ();
-  }
   SplashReserveSplash (Fdt, Cap, Log);
-  SplashMarkDisplayOn (Fdt, Cap, Declared, Log);
 }
 
 STATIC EFI_STATUS EFIAPI

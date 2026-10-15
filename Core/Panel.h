@@ -56,13 +56,6 @@ PanelXmlNameAt (
 // DisplayQuiesce bit 1: turn the panel lines off, the backlight before the
 // display and the supplies after it.
 #define DISPLAY_HANDOVER_LINES_OFF 2
-// DisplayQuiesce bit 2: keep the display on and pass the splash to the
-// kernel as a /chosen simple-framebuffer.
-#define DISPLAY_HANDOVER_KEEP_SPLASH 4
-// Set in /chosen when the display is still on, so the panel driver can skip
-// its first reset. A reset wipes the panel's frame memory, which then shows
-// as static under a lit backlight.
-#define DISPLAY_HANDOVER_DISPLAY_ON_PROP "openabl,display-on"
 
 // PMIC lines are turned off with SPMI writes, TLMM lines through XBL's TLMM
 // protocol.

@@ -27,14 +27,9 @@
 #define OABL_DISPLAY_OFF
 #endif
 
-// Returns TRUE if the menu's "Keep logo through boot" is set, or the older
-// DisplayQuiesce bit 2 (KEEP_SPLASH).
-BOOLEAN
-DisplayHandoverKeepLogoSetting (VOID);
-
 // Returns the DisplayQuiesce byte, or 0 if it isn't set. Without
 // OABL_DISPLAY_QUIESCE the display-off bits (QUIESCE, LINES_OFF) read clear.
-// OABL_PARK_DISPLAY sets QUIESCE unless a byte is stored or the logo is kept.
+// OABL_PARK_DISPLAY sets QUIESCE unless a byte is stored.
 UINT8
 DisplayHandoverQuiesceSetting (VOID);
 
@@ -56,15 +51,9 @@ VOID
 DisplayHandoverSuppliesOff (IN OPENABL_STORAGE_LOG Log OPTIONAL);
 #endif
 
-// Records that the splash was declared in the kernel's devicetree, so the
-// display stays on.
-VOID
-DisplayHandoverSplashDeclared (VOID);
-
 // Called right before ExitBootServices on the boot-image path. KeepAlive is
 // TRUE when the ABL finds a splash region in the kernel's devicetree. A
-// display-off requested in DisplayQuiesce overrides it, unless the splash
-// was declared with DisplayHandoverSplashDeclared.
+// display-off requested in DisplayQuiesce overrides it.
 VOID
 DisplayHandoverBeforeExit (
   IN BOOLEAN             KeepAlive,

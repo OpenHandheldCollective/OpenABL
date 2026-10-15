@@ -37,9 +37,9 @@ extern CONST CHAR8 *CONST
 // Values SettingsStorePack writes: OablSettings, then the model entries.
 #define SETTINGS_STORE_ENTRIES (1 + SETTINGS_STORE_MODEL_ENTRIES)
 // Most variables that can fail to fit: each small setting and the model.
-#define SETTINGS_STORE_SKIPPED_MAX 15
+#define SETTINGS_STORE_SKIPPED_MAX 14
 // Each small setting, the schema, the model and DeviceModelRotationFor.
-#define SETTINGS_STORE_VARS 17
+#define SETTINGS_STORE_VARS 16
 
 // A devinfo value of the copy. Len 0 clears the entry.
 typedef struct _SETTINGS_STORE_VALUE {

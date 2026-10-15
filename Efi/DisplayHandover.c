@@ -77,23 +77,6 @@ Setting (
   return TRUE;
 }
 
-STATIC BOOLEAN
-KeepLogoSet (VOID)
-{
-  UINT8 Bytes[8];
-  UINTN Length;
-
-  return Setting (SETTINGS_KEY_KEEP_LOGO, Bytes, sizeof (Bytes), &Length) &&
-         Length == 1 && Bytes[0] == 1;
-}
-
-BOOLEAN
-DisplayHandoverKeepLogoSetting (VOID)
-{
-  return KeepLogoSet () ||
-         (DisplayHandoverQuiesceSetting () & DISPLAY_HANDOVER_KEEP_SPLASH) != 0;
-}
-
 UINT8
 DisplayHandoverQuiesceSetting (VOID)
 {
@@ -109,7 +92,7 @@ DisplayHandoverQuiesceSetting (VOID)
   Stored = FALSE;
 #endif
 #ifdef OABL_PARK_DISPLAY
-  if (!Stored && !(Byte & DISPLAY_HANDOVER_KEEP_SPLASH) && !KeepLogoSet ()) {
+  if (!Stored) {
     Byte |= DISPLAY_HANDOVER_QUIESCE;
   }
 #endif
@@ -571,15 +554,6 @@ DisplayHandoverSuppliesOff (IN OPENABL_STORAGE_LOG Log OPTIONAL)
 
 #endif // OABL_DISPLAY_OFF
 
-// Set when Efi/Splash declares the splash in the kernel's devicetree.
-STATIC BOOLEAN mSplashWasDeclared;
-
-VOID
-DisplayHandoverSplashDeclared (VOID)
-{
-  mSplashWasDeclared = TRUE;
-}
-
 VOID
 DisplayHandoverBeforeExit (
   IN BOOLEAN             KeepAlive,
@@ -592,9 +566,8 @@ DisplayHandoverBeforeExit (
   UINT8 Quiesce = DisplayHandoverQuiesceSetting ();
 
   KeepAlive =
-    mSplashWasDeclared ||
-    (KeepAlive &&
-     (Quiesce & (DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF)) == 0);
+    KeepAlive &&
+    (Quiesce & (DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF)) == 0;
   if (KeepAlive) {
     Say (Log, "the devicetree keeps the splash: the display stays on");
     return;
