@@ -12,7 +12,7 @@
 #include "Base/Print.h"
 #include "Base/Text.h"
 
-// AYANEO/KONKR panels, as XBL names tehm.
+// AYANEO/KONKR panels, as XBL names them.
 STATIC CONST CHAR8 *CONST mOemPanels[] = {
   "mdss_dsi_panel_ar14_", "mdss_dsi_ar06_",   "mdss_dsi_ar07_",
   "mdss_dsi_kr04_",       "mdss_dsi_wt0630_",
