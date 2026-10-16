@@ -110,6 +110,8 @@ SysInfoSocName (IN UINT32 ChipId)
     return "Snapdragon G2 Gen 2";
   case 706:
     return "Dragonwing Q8750";
+  case 732:
+    return "Dragonwing Q7790";
   default:
     return NULL;
   }
