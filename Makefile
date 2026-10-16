@@ -17,8 +17,8 @@
 #   devinfo-settings  keep the settings in devinfo, for XBL builds that
 #                     can't save UEFI variables (SDM845)
 #   loader-quirks     XBL workarounds needed by OS loaders (SDM845, SM6115)
-#   park-display      park the display before a Linux boot image starts,
-#                     unless the logo is kept (SM8650, SM8750)
+#   park-display      park the display before a Linux boot image starts
+#                     (SM8650, SM8750)
 #   zh-hans           Simplified Chinese menu
 #   debug             Debug section in the menu (adds sd-diagnostics and
 #                     display-quiesce)
