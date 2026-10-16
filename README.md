@@ -56,7 +56,6 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Off-mode charging | Shows the charger screen when plugged in while powered off. |
 | Display rotation | Auto (from the device model) or fixed at 0, 90, 180 or 270 degrees. |
 | Custom boot logo | Replaces the manufacturer's logo at boot with the pictures in a `\logo` folder (see below), or the OpenABL wordmark if there are none. Off by default. |
-| Keep logo through boot | Keeps the boot logo on screen until Linux draws. Off by default. |
 | Device model | Selects the devicetree Linux boots with, from the `.dtb` files in `\boot\grub`, `\dtbs`, `\dtbs\qcom`, `\dtb` or `\dtb\qcom` on the boot source's drives, or else the devicetrees appended to a drive's boot image. A boot entry's own devicetree takes precedence. *Firmware default* uses the firmware's own. |
 | Log | Shows the ABL's and the menu's log. |
 | Device info | Shows the chip, platform, PMICs, memory, storage, panel and firmware versions. |

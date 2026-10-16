@@ -139,8 +139,8 @@ BooterBoot (
 );
 
 // Installs Dtb as the devicetree configuration table, replacing the
-// firmware's, and declares the splash on screen in it. EBBR wants it in
-// EfiACPIReclaimMemory. Returns NULL on success, else a static error string.
+// firmware's. EBBR wants it in EfiACPIReclaimMemory. Returns NULL on
+// success, else a static error string.
 CONST CHAR8 *
 HandoffInstallDevicetree (
   IN CONST UINT8 *Dtb,

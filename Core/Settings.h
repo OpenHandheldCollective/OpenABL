@@ -64,8 +64,6 @@ typedef struct _SETTINGS {
   UINT16 ModelRotation;
   // Draw the card's /logo/ pictures, or the OpenABL wordmark, at boot.
   BOOLEAN CustomLogo;
-  // Keep the logo through the boot by passing the splash to the kernel.
-  BOOLEAN KeepLogo;
 } SETTINGS;
 
 // Menu timeout choices, in seconds.
@@ -94,9 +92,6 @@ extern CONST UINT8 gSettingsTimeoutChoices[4];
 // DISPLAY_HANDOVER_* bits from Core/Panel.h. Absent means 0.
 #define SETTINGS_KEY_DISPLAY_QUIESCE "DisplayQuiesce"
 #define SETTINGS_KEY_CUSTOM_LOGO     "CustomLogo"
-// 1 keeps the boot logo on screen into the kernel (as DisplayQuiesce bit 2
-// does).
-#define SETTINGS_KEY_KEEP_LOGO "KeepLogo"
 // Experimental, and no menu sets it yet: 1 starts USB host in the same
 // boot as fastboot instead of restarting. On the glink SoCs XBL died when a
 // drive was attached after the gadget had run.
@@ -153,7 +148,7 @@ typedef struct _SETTINGS_VAR {
   UINTN        Len;
 } SETTINGS_VAR;
 
-#define SETTINGS_VARS 12
+#define SETTINGS_VARS 11
 
 // Converts the settings to variables. Returns the count, SETTINGS_VARS.
 UINTN

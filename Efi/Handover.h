@@ -59,8 +59,8 @@ VOID
 HandoverHypUartOff (VOID);
 
 // Installs Dtb as the devicetree configuration table (gFdtTableGuid) in
-// ACPI-reclaim pages, as EBBR requires, with 8 KiB of padding and the
-// on-screen splash declared in it. Replaces and frees any table installed
+// ACPI-reclaim pages, as EBBR requires, with 8 KiB of padding and XBL's
+// splash memory reserved in it. Replaces and frees any table installed
 // earlier. Size and At get the installed blob. Returns NULL on success, else
 // a static error string.
 CONST CHAR8 *

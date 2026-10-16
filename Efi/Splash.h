@@ -4,13 +4,10 @@
  */
 
 /**
-  Splash - keeping the firmware's splash on screen through the hand-over.
+  Splash - keeping the firmware's splash memory out of the kernel's hands.
 
-  With "Keep logo through boot" on, the kernel gets /chosen/framebuffer@BASE,
-  a simple-framebuffer with the display's clocks and power domain taken from
-  the tree's display nodes, which simpledrm shows until the display driver
-  takes over. Downstream Android trees are left alone. The display stays on
-  into the kernel unless a display-off is asked for.
+  The display stays on through the hand-over unless a display-off is asked
+  for, so the memory it scans out is reserved in the kernel's devicetree.
 */
 
 #ifndef __EFI_SPLASH_H__
@@ -23,22 +20,6 @@
 #include "Core/DeviceTree.h"
 #include "Efi/Serial.h"
 
-// Finds the framebuffer the panel scans out, if a simple-framebuffer node
-// can describe it (a linear 32-bit mode). Prefers the graphics output whose
-// framebuffer lies in XBL's display region, else takes the first.
-BOOLEAN
-SplashFramebuffer (OUT DT_FRAMEBUFFER *Out);
-
-// Adds /chosen/openabl,display-on to tell the kernel the display is still
-// running, unless DisplayQuiesce asks for a display-off. Declared is unused.
-VOID
-SplashMarkDisplayOn (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Cap,
-  IN BOOLEAN    Declared,
-  IN LOG_SINK   Log
-);
-
 // Reserves XBL's display region, or else the framebuffer's pages, when the
 // tree has no splash_region or cont_splash_region. The display stays on
 // through the hand-over, so a kernel that allocated that memory would show
@@ -47,17 +28,6 @@ SplashMarkDisplayOn (
 // asked for.
 VOID
 SplashReserveSplash (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Cap,
-  IN LOG_SINK   Log
-);
-
-// Adds the framebuffer node and reserves its memory, so the kernel keeps
-// showing the splash. FALSE when the setting is off, a display-off is asked
-// for, the tree is a downstream one, there is no linear framebuffer, or the
-// node doesn't fit.
-BOOLEAN
-SplashDeclare (
   IN OUT UINT8 *Fdt,
   IN UINTN      Cap,
   IN LOG_SINK   Log

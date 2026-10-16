@@ -493,7 +493,6 @@ AppRows (
   ADD_ITEM (ITEM_CHARGING);
   ADD_ITEM (ITEM_ROTATION);
   ADD_ITEM (ITEM_CUSTOM_LOGO);
-  ADD_ITEM (ITEM_KEEP_LOGO);
   if (!Caps->Embedded) {
     ADD_ITEM (ITEM_TIMEOUT);
   }
@@ -693,13 +692,6 @@ AppItemView (
       Value, Cap, Settings->CustomLogo ? gStrings->On : gStrings->Off
     );
     break;
-  case ITEM_KEEP_LOGO:
-    View->Icon  = ICON_SWITCH;
-    View->Label = gStrings->KeepLogo;
-    AsciiStrCopy (
-      Value, Cap, Settings->KeepLogo ? gStrings->On : gStrings->Off
-    );
-    break;
   case ITEM_TIMEOUT:
     View->Icon  = ICON_CLOCK;
     View->Label = gStrings->Timeout;
@@ -812,9 +804,6 @@ Activate (
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_CUSTOM_LOGO:
     Settings->CustomLogo = !Settings->CustomLogo;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_KEEP_LOGO:
-    Settings->KeepLogo = !Settings->KeepLogo;
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_TIMEOUT:
     SettingsNextTimeout (Settings);
