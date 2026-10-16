@@ -114,7 +114,9 @@ BootContextOf (
     .VmEnabled     = (State.Flags & OPENABL_MENU_STATE_VM_ENABLED) != 0,
   };
   AsciiStrCopy (Ctx->Model, sizeof (Ctx->Model), Settings.Model);
-  MenuLoadPrefs (Settings.Model, &Ctx->Rotation, &Ctx->ModelRotation);
+  MenuLoadPrefs (
+    Settings.Model, &Ctx->Rotation, &Ctx->ModelRotation, &Settings.Language
+  );
   AsciiStrCopy (Ctx->Version, sizeof (Ctx->Version), MENU_VERSION);
   if (State.Version[0]) {
     CHAR8 *Version = MenuHostText (State.Version, sizeof (State.Version));

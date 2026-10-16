@@ -5,13 +5,19 @@
 
 /**
   Lang - the menu's strings in English and Simplified Chinese.
+
+  Scripts/mkfont.py reads the string literals here for the characters the
+  CJK face needs, so every string the menu draws belongs in this file.
 */
 
 #include "Ui/Lang.h"
 #include "Base/Text.h"
+#include "Core/Settings.h"
 
-#ifndef OABL_ZH_HANS
+_Static_assert (LANG_COUNT == SETTINGS_LANGUAGES, "languages");
+
 STATIC CONST LANG_STRINGS mEn = {
+  .Language          = "Language",
   .SectionBoot       = "Boot",
   .SectionSettings   = "Settings",
   .SectionSystem     = "System",
@@ -161,10 +167,9 @@ STATIC CONST LANG_STRINGS mEn = {
   .NotInserted         = "Not inserted",
   .SrcAblScan          = "the ABL's scan",
 };
-#endif
 
-#ifdef OABL_ZH_HANS
 STATIC CONST LANG_STRINGS mZhHans = {
+  .Language              = "语言",
   .SectionBoot           = "启动",
   .SectionSettings       = "设置",
   .SectionSystem         = "系统",
@@ -305,13 +310,31 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .NotInserted         = "未插入",
   .SrcAblScan          = "ABL 的扫描",
 };
-#endif
 
-#ifdef OABL_ZH_HANS
-CONST LANG_STRINGS *CONST gStrings = &mZhHans;
-#else
-CONST LANG_STRINGS *CONST gStrings = &mEn;
-#endif
+STATIC CONST LANG_STRINGS *CONST mLangs[LANG_COUNT] = {
+  [LANG_EN]      = &mEn,
+  [LANG_ZH_HANS] = &mZhHans,
+};
+
+// Each language's name in itself, for the Language setting.
+STATIC CONST CHAR8 *CONST mNames[LANG_COUNT] = {
+  [LANG_EN]      = "English",
+  [LANG_ZH_HANS] = "简体中文",
+};
+
+CONST LANG_STRINGS *gStrings = &mEn;
+
+VOID
+LangSet (IN UINT8 Lang)
+{
+  gStrings = mLangs[Lang < LANG_COUNT ? Lang : LANG_EN];
+}
+
+CONST CHAR8 *
+LangName (IN UINT8 Lang)
+{
+  return mNames[Lang < LANG_COUNT ? Lang : LANG_EN];
+}
 
 VOID
 LangFill (

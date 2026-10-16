@@ -4,10 +4,11 @@
  */
 
 /**
-  Lang - the menu's strings.
+  Lang - the menu's strings, in every language the menu offers.
 
-  English, or Simplified Chinese with OABL_ZH_HANS (that build also adds the
-  CJK font as a fallback). {}, {0} and {1} mark where LangFill puts values.
+  The Language setting picks one at run time. The CJK face (made from these
+  strings at build time) is a fallback for the characters the menu font
+  lacks. {}, {0} and {1} mark where LangFill puts values.
 */
 
 #ifndef __UI_LANG_H__
@@ -15,7 +16,11 @@
 
 #include "Base/OablBase.h"
 
+// The stored values of the Language setting. Add new ones at the end.
+typedef enum { LANG_EN, LANG_ZH_HANS, LANG_COUNT } LANG_ID;
+
 typedef struct _LANG_STRINGS {
+  CONST CHAR8 *Language;
   CONST CHAR8 *SectionBoot;
   CONST CHAR8 *SectionSettings;
   CONST CHAR8 *SectionSystem;
@@ -153,8 +158,16 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *SrcAblScan;
 } LANG_STRINGS;
 
-// Strings in the build's language.
-extern CONST LANG_STRINGS *CONST gStrings;
+// Strings in the current language, English until LangSet.
+extern CONST LANG_STRINGS *gStrings;
+
+// Switches the strings to Lang. An unknown Lang is English.
+VOID
+LangSet (IN UINT8 Lang);
+
+// Returns Lang's name, in Lang.
+CONST CHAR8 *
+LangName (IN UINT8 Lang);
 
 // Writes Template to Out with Args filled in. {} takes the next argument
 // and {0} or {1} a given one, so word order can differ between languages.

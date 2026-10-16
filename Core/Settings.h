@@ -64,7 +64,12 @@ typedef struct _SETTINGS {
   UINT16 ModelRotation;
   // Draw the card's /logo/ pictures, or the OpenABL wordmark, at boot.
   BOOLEAN CustomLogo;
+  // The menu's language, a LANG_ID from Ui/Lang.h.
+  UINT8 Language;
 } SETTINGS;
+
+// Languages the menu offers (LANG_COUNT).
+#define SETTINGS_LANGUAGES 2
 
 // Menu timeout choices, in seconds.
 extern CONST UINT8 gSettingsTimeoutChoices[4];
@@ -92,6 +97,7 @@ extern CONST UINT8 gSettingsTimeoutChoices[4];
 // DISPLAY_HANDOVER_* bits from Core/Panel.h. Absent means 0.
 #define SETTINGS_KEY_DISPLAY_QUIESCE "DisplayQuiesce"
 #define SETTINGS_KEY_CUSTOM_LOGO     "CustomLogo"
+#define SETTINGS_KEY_LANGUAGE        "MenuLanguage"
 // Experimental, and no menu sets it yet: 1 starts USB host in the same
 // boot as fastboot instead of restarting. On the glink SoCs XBL died when a
 // drive was attached after the gadget had run.
@@ -137,6 +143,10 @@ SettingsEffectiveRotation (IN CONST SETTINGS *Settings);
 VOID
 SettingsNextTimeout (IN OUT SETTINGS *Settings);
 
+// Moves to the next language.
+VOID
+SettingsNextLanguage (IN OUT SETTINGS *Settings);
+
 // Returns the menu label for what volume up does at boot.
 CONST CHAR8 *
 SettingsAltVolumeLabel (IN CONST SETTINGS *Settings);
@@ -148,7 +158,7 @@ typedef struct _SETTINGS_VAR {
   UINTN        Len;
 } SETTINGS_VAR;
 
-#define SETTINGS_VARS 11
+#define SETTINGS_VARS 12
 
 // Converts the settings to variables. Returns the count, SETTINGS_VARS.
 UINTN

@@ -105,15 +105,18 @@ MenuSettingsOf (
   OUT SETTINGS             *Out
 );
 
-// Reads the rotation choice, and Model's cached panel rotation if saved.
+// Reads the rotation choice, Model's cached panel rotation if saved, and
+// the language.
 VOID
 MenuLoadPrefs (
   IN CONST CHAR8 *Model,
   OUT UINT16     *Rotation,
-  OUT UINT16     *ModelRotation
+  OUT UINT16     *ModelRotation,
+  OUT UINT8      *Language
 );
 
-// Saves the rotation choice, the model and its panel rotation, and flushes.
+// Saves the rotation choice, the model and its panel rotation, and the
+// language, and flushes.
 VOID
 MenuSavePrefs (IN CONST SETTINGS *Settings);
 
