@@ -31,7 +31,8 @@ BootDecisionAndroid (
   IN BOOLEAN                    Charger
 )
 {
-  return AndroidSetting || BootDecisionUpHeld (Start) || Charger;
+  return AndroidSetting || BootDecisionUpHeld (Start) || Charger ||
+         Start->RecoveryReason;
 }
 
 BOOLEAN
@@ -52,7 +53,8 @@ BootDecisionRecovery (
   if (AndroidSetting) {
     return Start->Recovery || Start->Key == BOOT_DECISION_SCAN_HOME;
   }
-  return Start->Recovery && Start->Key != BOOT_DECISION_SCAN_UP;
+  return Start->RecoveryReason ||
+         (Start->Recovery && Start->Key != BOOT_DECISION_SCAN_UP);
 }
 
 // Boot sources

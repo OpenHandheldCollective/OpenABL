@@ -32,6 +32,8 @@ typedef struct _BOOT_DECISION_START {
   BOOLEAN Fastboot;
   // Set by Volume Up, the reboot reason or the misc partition.
   BOOLEAN Recovery;
+  // Set by the reboot reason alone: a restart into recovery was asked for.
+  BOOLEAN RecoveryReason;
 } BOOT_DECISION_START;
 
 // Returns TRUE for a fastboot boot: Qualcomm's flag, or Delete held.
@@ -43,7 +45,7 @@ BOOLEAN
 BootDecisionUpHeld (IN CONST BOOT_DECISION_START *Start);
 
 // Returns TRUE for the Android boot mode: set in the settings, Volume Up or
-// Home held, or a charger boot.
+// Home held, a charger boot, or a restart into recovery.
 BOOLEAN
 BootDecisionAndroid (
   IN CONST BOOT_DECISION_START *Start,
@@ -59,8 +61,9 @@ BootDecisionAltBoot (
 
 // Returns TRUE to boot Android's recovery instead of its normal boot. In the
 // Android boot mode, Qualcomm's recovery flag or Home held selects it. In
-// the Linux boot mode, Volume Up boots Android itself, and since Qualcomm's
-// flag can't tell Volume Up from its other sources, Volume Up wins.
+// the Linux boot mode, a restart into recovery selects it. Otherwise Volume
+// Up boots Android itself, and since Qualcomm's flag can't tell Volume Up
+// from misc, Volume Up wins.
 BOOLEAN
 BootDecisionRecovery (
   IN CONST BOOT_DECISION_START *Start,

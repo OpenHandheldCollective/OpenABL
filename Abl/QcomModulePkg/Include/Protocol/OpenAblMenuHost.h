@@ -28,6 +28,9 @@
 
 #define OPENABL_MENU_ENTRY_FASTBOOT BIT0
 #define OPENABL_MENU_ENTRY_RECOVERY BIT1
+/* The reboot reason asked for recovery (RECOVERY set by it, not by a key
+ * or misc). */
+#define OPENABL_MENU_ENTRY_RECOVERY_REASON BIT2
 
 #define OPENABL_MENU_ACTION_START                 1
 #define OPENABL_MENU_ACTION_RESTART_BOOTLOADER    2

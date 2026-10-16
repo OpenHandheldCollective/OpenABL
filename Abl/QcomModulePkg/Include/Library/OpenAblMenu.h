@@ -10,10 +10,10 @@
 #include <Library/BootLinux.h>
 #include <Protocol/OpenAblMenuHost.h>
 
-/* Lets the OpenABL program run the boot */
+/* Lets the OpenABL program run the boot. BootReason is GetRebootReason's. */
 EFI_STATUS
 OpenAblMenuMain (IN CONST BootInfo *Info, IN OUT BOOLEAN *Fastboot,
-                 IN OUT BOOLEAN *Recovery, IN UINT32 Key,
+                 IN OUT BOOLEAN *Recovery, IN UINT32 Key, IN UINT32 BootReason,
                  IN BOOLEAN SetRotAndBootStateAndVBH);
 
 VOID

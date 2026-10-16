@@ -219,8 +219,9 @@ BOOT_DECISION_START
 MenuHostStateStart (IN CONST MENU_HOST_STATE *State)
 {
   return (BOOT_DECISION_START){
-    .Key      = State->Key,
-    .Fastboot = (State->Entry & OPENABL_MENU_ENTRY_FASTBOOT) != 0,
-    .Recovery = (State->Entry & OPENABL_MENU_ENTRY_RECOVERY) != 0,
+    .Key            = State->Key,
+    .Fastboot       = (State->Entry & OPENABL_MENU_ENTRY_FASTBOOT) != 0,
+    .Recovery       = (State->Entry & OPENABL_MENU_ENTRY_RECOVERY) != 0,
+    .RecoveryReason = (State->Entry & OPENABL_MENU_ENTRY_RECOVERY_REASON) != 0,
   };
 }

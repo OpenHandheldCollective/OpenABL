@@ -474,7 +474,7 @@ index 9b243a5..a824120 100644
 +    Info.FlashlessBoot = FlashlessBoot;
 +    Info.SilentBootMode = SilentBootMode;
 +    Status = OpenAblMenuMain (&Info, &BootIntoFastboot, &BootIntoRecovery,
-+                              KeyPressed, SetRotAndBootStateAndVBH);
++                              KeyPressed, BootReason, SetRotAndBootStateAndVBH);
 +    if (Status != EFI_UNSUPPORTED) {
 +      goto stack_guard_update_default;
 +    }

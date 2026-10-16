@@ -357,7 +357,7 @@ StartMenu (IN UINT32 Flags)
 
 EFI_STATUS
 OpenAblMenuMain (IN CONST BootInfo *Info, IN OUT BOOLEAN *Fastboot,
-                 IN OUT BOOLEAN *Recovery, IN UINT32 Key,
+                 IN OUT BOOLEAN *Recovery, IN UINT32 Key, IN UINT32 BootReason,
                  IN BOOLEAN SetRotAndBootStateAndVBH)
 {
   EFI_STATUS Status;
@@ -368,7 +368,9 @@ OpenAblMenuMain (IN CONST BootInfo *Info, IN OUT BOOLEAN *Fastboot,
   }
   mInfo = *Info;
   mEntry = (*Fastboot ? OPENABL_MENU_ENTRY_FASTBOOT : 0) |
-           (*Recovery ? OPENABL_MENU_ENTRY_RECOVERY : 0);
+           (*Recovery ? OPENABL_MENU_ENTRY_RECOVERY : 0) |
+           (BootReason == RECOVERY_MODE ? OPENABL_MENU_ENTRY_RECOVERY_REASON
+                                        : 0);
   mFastboot = Fastboot;
   mRecovery = Recovery;
   mKey = (UINT16)Key;
