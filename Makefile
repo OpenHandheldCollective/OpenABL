@@ -19,9 +19,14 @@
 #   loader-quirks     XBL workarounds needed by OS loaders (SDM845, SM6115)
 #   park-display      park the display before a Linux boot image starts
 #                     (SM8650, SM8750)
-#   zh-hans           Simplified Chinese menu
 #   debug             Debug section in the menu (adds sd-diagnostics and
 #                     display-quiesce)
+#
+# The menu has every language in Ui/Lang.c. Its CJK face is made at build
+# time from Assets/SourceHanSansSC-Normal.otf by Scripts/mkfont.py with just
+# the characters those strings use (needs fontTools: pip install fonttools).
+# The ABL image is 512 KiB and the abl partition 1 MiB, so the program is
+# kept small.
 #
 # `make sim` builds a host simulator that renders the menu's screens to PNG
 # (needs a host C compiler and zlib).
@@ -44,7 +49,7 @@ OUT      ?= build/menu
 
 KNOWN := standard-boot sysfont card-logo sdcc-sm4450 sdcc-sm6450 sdcc-sm7675 \
 	sd-diagnostics display-quiesce devinfo-settings loader-quirks park-display \
-	debug zh-hans
+	debug
 comma := ,
 LIST := $(subst $(comma), ,$(FEATURES))
 LIST += $(if $(filter debug,$(LIST)),sd-diagnostics display-quiesce)
@@ -75,7 +80,8 @@ EDK2_INCLUDES := MdePkg/Include MdePkg/Include/AArch64 MdeModulePkg/Include \
 OWN_FLAGS := $(BASE_FLAGS) $(DEFINES) $(foreach d,$(EDK2_INCLUDES),-isystem $(EDK2)/$(d)) \
 	-Wall -Wextra -Wno-unused-parameter -Werror -MMD -MP
 
-ASSETS := Font=Assets/montserrat.oablf FontCjk=Assets/cjk-sc.oablf
+CJK_FONT := $(OBJ)/cjk-sc.oablf
+ASSETS := Font=Assets/montserrat.oablf FontCjk=$(CJK_FONT)
 
 .PHONY: all sim clean
 all: $(OUT)/openabl-menu.efi
@@ -97,7 +103,13 @@ $(OBJ)/$(VARIANT)/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(OWN_FLAGS) -c $< -o $@
 
-$(OBJ)/$(VARIANT)/assets.c: Scripts/bin2c.py $(wildcard Assets/*.oablf)
+# The CJK face: the characters the strings use, from the full font.
+$(CJK_FONT): Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf Ui/Lang.c
+	@mkdir -p $(@D)
+	$(PYTHON) Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf Ui/Lang.c > $@.tmp
+	@mv $@.tmp $@
+
+$(OBJ)/$(VARIANT)/assets.c: Scripts/bin2c.py $(wildcard Assets/*.oablf) $(CJK_FONT)
 	@mkdir -p $(@D)
 	$(PYTHON) Scripts/bin2c.py $(ASSETS) > $@
 
@@ -110,14 +122,14 @@ $(OBJ)/$(VARIANT)/assets.o: $(OBJ)/$(VARIANT)/assets.c
 SIM_DIRS := Base Ui Gfx View Sim Host
 SIM_SRCS := $(sort $(foreach d,$(SIM_DIRS),$(shell find $(d) -name '*.c'))) Core/Settings.c
 SIM_FLAGS := -O1 -g -std=gnu11 -I. -I$(MICROUI)/src \
-	$(filter -DOABL_ZH_HANS -DMENU_VERSION=%,$(DEFINES))
+	$(filter -DMENU_VERSION=%,$(DEFINES))
 SIM_OBJS := $(OBJ)/sim-microui/microui.o \
 	$(patsubst %.c,$(OBJ)/sim-$(VARIANT)/%.o,$(SIM_SRCS)) $(OBJ)/sim-$(VARIANT)/assets.o
 
 sim: build/sim/openabl-menu-sim
 build/sim/openabl-menu-sim: $(SIM_OBJS)
 	@mkdir -p $(@D)
-	$(HOSTCC) -o $@ $^ -lz
+	$(HOSTCC) -o $@ $^ -lz -lm
 
 $(OBJ)/sim-microui/microui.o: $(MICROUI)/src/microui.c
 	@mkdir -p $(@D)

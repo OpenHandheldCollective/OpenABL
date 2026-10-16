@@ -15,7 +15,7 @@
     a little-endian bitfield with every small setting, bytes 10-13 the
     FNV-1a hash of the model DeviceModelRotation was looked up for, and
     bytes 14-31 are reserved (zero). Each setting in the bitfield is 0 when
-    unset, else 1 + its value. Bits 37-63 are free. Later formats only add
+    unset, else 1 + its value. Bits 40-63 are free. Later formats only add
     fields, so older code can still read a newer copy.
   - OablModel0 to OablModel2: the device model name, 32 bytes each.
 */
@@ -37,9 +37,9 @@ extern CONST CHAR8 *CONST
 // Values SettingsStorePack writes: OablSettings, then the model entries.
 #define SETTINGS_STORE_ENTRIES (1 + SETTINGS_STORE_MODEL_ENTRIES)
 // Most variables that can fail to fit: each small setting and the model.
-#define SETTINGS_STORE_SKIPPED_MAX 14
+#define SETTINGS_STORE_SKIPPED_MAX 15
 // Each small setting, the schema, the model and DeviceModelRotationFor.
-#define SETTINGS_STORE_VARS 16
+#define SETTINGS_STORE_VARS 17
 
 // A devinfo value of the copy. Len 0 clears the entry.
 typedef struct _SETTINGS_STORE_VALUE {

@@ -65,6 +65,7 @@ AppInit (
   A->LinesFrom  = ITEM_DEVICE_INFO;
   A->Booting    = -1;
   A->Dirty      = TRUE;
+  LangSet (Settings->Language);
 }
 
 VOID
@@ -75,6 +76,7 @@ AppSetSettings (
 {
   A->Settings = *Settings;
   A->Dirty    = TRUE;
+  LangSet (Settings->Language);
 }
 
 VOID
@@ -482,6 +484,8 @@ AppRows (
     ADD_ITEM (ITEM_OTHER_SLOT);
   }
   ADD_HEADER (gStrings->SectionSettings);
+  // First, so it is easy to find in a language one can't read.
+  ADD_ITEM (ITEM_LANGUAGE);
   // Without Android support the row stays visible, read-only, so it's
   // clear where the choice went.
   ADD_ITEM (ITEM_BOOT_MODE);
@@ -642,6 +646,11 @@ AppItemView (
     View->Tone     = TONE_DANGER;
     View->Trailing = TRAILING_NONE;
     break;
+  case ITEM_LANGUAGE:
+    View->Icon  = ICON_SWITCH;
+    View->Label = gStrings->Language;
+    AsciiStrCopy (Value, Cap, LangName (Settings->Language));
+    break;
   case ITEM_BOOT_MODE:
     View->Icon  = ICON_SWITCH;
     View->Label = gStrings->BootMode;
@@ -779,6 +788,10 @@ Activate (
     A->Confirm    = CONFIRM_EDL;
     A->ConfirmYes = FALSE;
     return None ();
+  case ITEM_LANGUAGE:
+    SettingsNextLanguage (Settings);
+    LangSet (Settings->Language);
+    return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_BOOT_MODE:
     if (!A->Caps.Android) {
       ShowToast (A, gStrings->ToastAndroidInAbl);

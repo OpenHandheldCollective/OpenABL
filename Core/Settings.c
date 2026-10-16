@@ -134,6 +134,12 @@ SettingsNextTimeout (IN OUT SETTINGS *Settings)
   Settings->MenuTimeoutS = gSettingsTimeoutChoices[(Index + 1) % Count];
 }
 
+VOID
+SettingsNextLanguage (IN OUT SETTINGS *Settings)
+{
+  Settings->Language = (UINT8)((Settings->Language + 1) % SETTINGS_LANGUAGES);
+}
+
 CONST CHAR8 *
 SettingsAltVolumeLabel (IN CONST SETTINGS *Settings)
 {
@@ -213,6 +219,7 @@ SettingsToVars (
   Put (&Out[Count++], SETTINGS_KEY_MODEL, Settings->Model, ModelLen);
   PutLe16 (&Out[Count++], SETTINGS_KEY_MODEL_ROTATION, Settings->ModelRotation);
   PutU8 (&Out[Count++], SETTINGS_KEY_CUSTOM_LOGO, Settings->CustomLogo);
+  PutU8 (&Out[Count++], SETTINGS_KEY_LANGUAGE, Settings->Language);
   return Count;
 }
 
@@ -387,6 +394,10 @@ SettingsFromVars (
   }
   if (Byte (Get, Context, SETTINGS_KEY_CUSTOM_LOGO, &Byte8) && Byte8 <= 1) {
     Settings.CustomLogo = Byte8 == 1;
+  }
+  if (Byte (Get, Context, SETTINGS_KEY_LANGUAGE, &Byte8) &&
+      Byte8 < SETTINGS_LANGUAGES) {
+    Settings.Language = Byte8;
   }
   *Out = Settings;
 }

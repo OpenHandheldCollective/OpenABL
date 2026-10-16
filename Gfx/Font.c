@@ -5,7 +5,7 @@
 
 /**
   Font - the menu font at any size, with fallback faces for missing
-  characters (the CJK glyphs in the Chinese build).
+  characters (the CJK glyphs for the Chinese strings).
 
   .oablf format, little-endian:
     "OABF", u16 version (1), u16 units per em, i16 ascender, i16 descender,

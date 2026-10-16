@@ -234,10 +234,12 @@ VOID
 MenuLoadPrefs (
   IN CONST CHAR8 *Model,
   OUT UINT16     *Rotation,
-  OUT UINT16     *ModelRotation
+  OUT UINT16     *ModelRotation,
+  OUT UINT8      *Language
 )
 {
-  OABL_BUFFER Owner = {0};
+  OABL_BUFFER Owner  = {0};
+  OABL_BUFFER Stored = {0};
   UINT16      Degrees;
 
   *Rotation =
@@ -256,6 +258,11 @@ MenuLoadPrefs (
     *ModelRotation = Degrees;
   }
   BufferFree (&Owner);
+  *Language = MenuVarGet (SETTINGS_KEY_LANGUAGE, &Stored) && Stored.Len == 1 &&
+                  Stored.Data[0] < SETTINGS_LANGUAGES
+                ? Stored.Data[0]
+                : LANG_EN;
+  BufferFree (&Stored);
 }
 
 VOID
@@ -273,6 +280,7 @@ MenuSavePrefs (IN CONST SETTINGS *Settings)
   );
   WriteLe16 (Bytes, Settings->ModelRotation);
   VarSet (SETTINGS_KEY_MODEL_ROTATION, Bytes, 2);
+  VarSet (SETTINGS_KEY_LANGUAGE, &Settings->Language, 1);
   MenuFlush ();
 }
 
@@ -401,8 +409,10 @@ MenuNew (
     MenuSettingsOf (&State, &M->Stored);
   }
   MenuLoadPrefs (
-    M->Stored.Model, &M->Stored.Rotation, &M->Stored.ModelRotation
+    M->Stored.Model, &M->Stored.Rotation, &M->Stored.ModelRotation,
+    &M->Stored.Language
   );
+  LangSet (M->Stored.Language);
   Version = MenuHostText (State.Version, sizeof (State.Version));
   AsciiStrCopy (M->AblVersion, sizeof (M->AblVersion), Version ? Version : "");
   FreePool (Version);
@@ -433,6 +443,7 @@ Refresh (IN OUT MENU_STATE *M)
                          ? M->Stored.ModelRotation
                          : ROTATION_NONE;
   Base.Rotation      = M->Stored.Rotation;
+  Base.Language      = M->Stored.Language;
   M->Stored          = Base;
   return EFI_SUCCESS;
 }
@@ -505,6 +516,7 @@ Save (
   M->Stored.Rotation = Want->Rotation;
   AsciiStrCopy (M->Stored.Model, sizeof (M->Stored.Model), Want->Model);
   M->Stored.ModelRotation = Want->ModelRotation;
+  M->Stored.Language      = Want->Language;
   MenuSavePrefs (Want);
   if (EFI_ERROR (Refresh (M))) {
     return gStrings->AblNotAnswering;

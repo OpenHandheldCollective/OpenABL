@@ -4,7 +4,7 @@
 #   https://github.com/OpenHandheldCollective
 # Builds the ABL with the menu program for one or more chipsets:
 #
-#   ./build.sh <chipset...|all> [--lang zh-hans] [--debug] [--no-standard-boot] [--clean]
+#   ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]
 #
 # Needs git and Docker. The sources are fetched by Scripts/fetch.sh; the
 # program (Makefile) and the ABL (Scripts/abl.sh) are built in the tianocore
@@ -24,7 +24,7 @@ WORKSPACE=/workspaces/LinuxLoader
 CHIPSETS="sdm845 sm4450 sm6115 sm6450 sm7675 sm8250 sm8550 sm8650 sm8750"
 
 usage() {
-  echo "usage: ./build.sh <chipset...|all> [--lang zh-hans] [--debug] [--no-standard-boot] [--clean]" >&2
+  echo "usage: ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]" >&2
   echo "chipsets: $CHIPSETS" >&2
   exit 1
 }
@@ -49,12 +49,9 @@ chipset() {
   esac
 }
 
-LANG_FEATURE="" DEBUG=0 STANDARD_BOOT=1 CLEAN=0 ASKED=()
+DEBUG=0 STANDARD_BOOT=1 CLEAN=0 ASKED=()
 while [ $# -gt 0 ]; do
   case $1 in
-    --lang)
-      [ "${2:-}" = zh-hans ] || { echo "--lang zh-hans (English is the default)" >&2; exit 1; }
-      LANG_FEATURE=zh-hans; shift ;;
     --debug) DEBUG=1 ;;
     --no-standard-boot) STANDARD_BOOT=0 ;;
     --clean) CLEAN=1 ;;
@@ -80,6 +77,7 @@ cp build/edk2/pip-requirements.txt build/image/ 2> /dev/null || : > build/image/
 cat > build/image/Dockerfile << EOF
 FROM $IMAGE
 RUN dnf --assumeyes -q install glibc-devel.i686 python3-setuptools && dnf clean all
+RUN pip install -q fonttools==4.67.0
 COPY pip-requirements.txt /tmp/
 RUN pip install -q -r /tmp/pip-requirements.txt || true
 RUN git config --global --add safe.directory '*'
@@ -107,7 +105,7 @@ for soc in "${ASKED[@]}"; do
   chipset "$soc"
   features=""
   [ "$STANDARD_BOOT" = 1 ] && features="standard-boot,card-logo${OWN_FULL:+,$OWN_FULL}"
-  for f in $OWN ${LANG_FEATURE} $([ "$DEBUG" = 1 ] && echo debug); do
+  for f in $OWN $([ "$DEBUG" = 1 ] && echo debug); do
     features="${features:+$features,}$f"
   done
   params=("${COMMON[@]}" "PVMFW_ENABLED=$PVMFW" "DISABLE_KERNEL_PROTOCOL=$((1 - KERNEL_PROTOCOL))")
