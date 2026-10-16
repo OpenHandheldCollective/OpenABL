@@ -61,8 +61,8 @@ QuirksFatCache (
   IN LOG_SINK Log
 );
 
-// Connects every controller, with the GPT quirk before and the FAT quirk
-// after.
+// Connects every controller, with the GPT quirk before, and an image in
+// userdata and the FAT quirk after.
 VOID
 QuirksConnectAll (
   IN UINT32   Chip,

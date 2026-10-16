@@ -106,6 +106,10 @@ order:
   lacks: `SetVirtualAddressMap` on SDM845, all of them on SM6115.
 - Boot sources are internal storage (UFS or eMMC), the SD card and USB
   drives. For USB the port is switched to host mode.
+- A disk image written to `userdata` boots too: its ESP is found
+  automatically. Linux doesn't read a partition table inside a partition,
+  so the initramfs must map the image's root itself (for example
+  `losetup -P`, with `--sector-size 4096` for a 4096-byte image on UFS).
 
 **Android** boots from the device's own boot partitions, the same way as
 with Qualcomm's ABL, including verified boot and recovery.
