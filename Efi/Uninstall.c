@@ -11,6 +11,7 @@
 #include "Base/Memory.h"
 
 #include "Core/AndroidImage.h"
+#include "Efi/NestedDisk.h"
 #include "Efi/Quirks.h"
 
 // Allocates whole pages for Length bytes (at least one), so the buffer
@@ -224,18 +225,26 @@ UninstallCfwOnInternal (
   IN LOG_SINK Log
 )
 {
-  BOOLEAN Installed;
+  BOOLEAN    Installed;
+  BOOLEAN    Image;
+  NESTED_GPT Nested;
 
   if (mFoundCfw) {
     return mFoundCfw == 2;
   }
   QuirksConnectAll (Chip, Log);
   Installed = Find () != NULL;
-  mFoundCfw = Installed ? 2 : 1;
+  Image     = NestedDiskFind (&Nested);
+  if (Image) {
+    BufferFree (&Nested.Array);
+  }
   LogLine (
     Log, Installed ? "cfw: Linux is installed on internal storage"
+         : Image   ? "cfw: Linux is installed as an image in userdata"
                    : "cfw: not on internal storage"
   );
+  Installed = Installed || Image;
+  mFoundCfw = Installed ? 2 : 1;
   return Installed;
 }
 

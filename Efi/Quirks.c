@@ -27,6 +27,7 @@
 #include "Efi/BootImage.h"
 #include "Efi/Dxe.h"
 #include "Efi/MenuHost.h"
+#include "Efi/NestedDisk.h"
 #include "Efi/Qcom.h"
 #include "Efi/Splash.h"
 #include "Efi/Uninstall.h"
@@ -1298,6 +1299,7 @@ QuirksConnectAll (
 {
   QuirksGptClobber (Chip, Log);
   InventoryConnectAll ();
+  NestedDiskPublish (Log);
   QuirksFatCache (Chip, Log);
 }
 

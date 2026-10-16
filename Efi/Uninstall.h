@@ -50,9 +50,9 @@ UninstallTable (
   OUT OABL_BUFFER          *Array
 );
 
-// Whether Linux is installed on internal storage. The first call connects
-// the storage (QuirksConnectAll), looks and logs the answer; later calls
-// return the same answer.
+// Whether Linux is installed on internal storage, after userdata or as an
+// image in it. The first call connects the storage
+//looks and logs the answer; later calls return the,same answer.
 BOOLEAN
 UninstallCfwOnInternal (
   IN UINT32   Chip,
