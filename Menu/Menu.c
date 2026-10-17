@@ -785,7 +785,9 @@ AddRow (
 }
 
 // Lists what Start would try on the allowed drives, in its order: each
-// drive's entries, then the first boot image. Only in Linux boot mode.
+// drive's entries, then the first boot image. Only in Linux boot mode. USB
+// drives are skipped unless USB host is up, since fastboot owns the
+// controller.
 STATIC VOID
 FillEntries (
   IN MENU_STATE *M,
@@ -798,7 +800,8 @@ FillEntries (
   BOOLEAN             Image  = FALSE;
 
   BootEntriesVolumesFree (&mVolumes);
-  if (M->Stored.BootMode == BOOT_MODE_LINUX) {
+  if (M->Stored.BootMode == BOOT_MODE_LINUX &&
+      (M->Stored.BootSource != BOOT_SOURCE_USB || UsbHostIsUp ())) {
     QuirksPrepareStorage (QuirksChipId (), gMenuEfiLog);
     VolumesAllowed (
       M->Stored.BootSource, M->Caps.CfwOnInternal, FALSE, &Drives
@@ -1332,8 +1335,6 @@ RunCommand (
     break;
   }
   case COMMAND_POWER_OFF:
-    // Turn VBUS off first, if a USB host bring-up turned it on.
-    UsbHostReleaseVbus ();
     if (Act (M, OPENABL_MENU_ACTION_POWER_OFF) != EFI_SUCCESS) {
       AppOnFailed (&mApp, gStrings->PowerOffFailed);
     }

@@ -1138,7 +1138,8 @@ StartBundled (
 }
 
 // The bring-up on Board: the core into host mode, VBUS, the stack, then
-// the wait for a drive. Returns to device mode without one.
+// the wait for a drive. Without one, unbinds the stack and goes back to
+// device mode.
 STATIC BOOLEAN
 Run (
   IN USB_HOST_BOARD Board,
@@ -1277,6 +1278,12 @@ Run (
   }
   Found = WaitForDrive (Io, Base, Before, Log);
   if (!Found) {
+    if (mDevice) {
+      say (
+        Log, "disconnect the XHCI device: %s",
+        ST (gBS->DisconnectController (mDevice, NULL, NULL))
+      );
+    }
     RevertToDevice (Config, Log);
   }
   return Found;
@@ -1371,6 +1378,15 @@ VOID
 UsbHostOsHandoff (VOID)
 {
   AdspShutdown ();
+}
+
+VOID
+UsbHostBeforeReset (VOID)
+{
+  UsbHostTeardown ();
+  
+  mAdspLoaded = FALSE;
+  UsbHostReleaseVbus ();
 }
 
 STATIC VOID EFIAPI
