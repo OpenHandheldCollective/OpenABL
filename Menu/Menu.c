@@ -797,7 +797,7 @@ FillEntries (
       M->Stored.BootSource, M->Caps.CfwOnInternal, FALSE, &Drives
     );
     BootEntriesDiscover (
-      BytesOf (NULL, 0), TRUE, Drives.Items, Drives.Count, TRUE, &mVolumes
+      BytesOf (NULL, 0), TRUE, Drives.Items, Drives.Count, FALSE, &mVolumes
     );
   }
   for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
@@ -1253,6 +1253,11 @@ RunCommand (
       return TRUE;
     }
     Status  = Act (M, OPENABL_MENU_ACTION_START);
+#ifdef OABL_STANDARD_BOOT
+    // The restart didn't happen: don't leave the pick for a later Start.
+    MenuVarPut (MENU_PICK_VAR, NULL, 0);
+    MenuFlush ();
+#endif
     Args[0] = MENU_STATUS (Status);
     LangFill (Why, sizeof (Why), gStrings->AblRestartFailed, Args, 1);
     AppOnBootResult (&mApp, FALSE, BOOT_ERROR_LOAD_FAILED, Why);
