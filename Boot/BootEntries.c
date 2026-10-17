@@ -374,7 +374,9 @@ BootEntriesDiscover (
     BufferFree (&DefaultPath);
     V.DefaultFile =
       DefaultFiles && !IsSelf && FilesExists (Fs, UEFI_DEFAULT_BOOT_FILE);
-    V.Name = FilesVolumeLabel (Fs);
+    V.Name     = FilesVolumeLabel (Fs);
+    V.HasLabel = V.Name != NULL;
+    V.Index    = Index;
     if (!V.Name) {
       V.Name = SPrintAlloc ("drive %zu", Index);
     }
