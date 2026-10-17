@@ -18,7 +18,6 @@
 #include "Base/Buffer.h"
 #include "Efi/Files.h"
 #include "Efi/Serial.h"
-#include "Ui/Lang.h"
 
 // Size limit for entry files and loader.conf.
 #define TEXT_LIMIT ((UINTN)64 << 10)
@@ -34,10 +33,7 @@ BootEntriesVolumeKind (IN CONST BOOT_ENTRIES_VOLUME *V)
 CHAR8 *
 BootEntriesVolumeDescribe (IN CONST BOOT_ENTRIES_VOLUME *V)
 {
-  return SPrintAlloc (
-    "%s (%s)", V->Name,
-    V->Removable ? gStrings->DriveRemovable : gStrings->DriveInternal
-  );
+  return SPrintAlloc ("%s (%s)", V->Name, BootEntriesVolumeKind (V));
 }
 
 VOID
@@ -378,9 +374,11 @@ BootEntriesDiscover (
     BufferFree (&DefaultPath);
     V.DefaultFile =
       DefaultFiles && !IsSelf && FilesExists (Fs, UEFI_DEFAULT_BOOT_FILE);
-    V.Name = FilesVolumeLabel (Fs);
+    V.Name     = FilesVolumeLabel (Fs);
+    V.HasLabel = V.Name != NULL;
+    V.Index    = Index;
     if (!V.Name) {
-      V.Name = SPrintAlloc (gStrings->UnnamedDrive, Index);
+      V.Name = SPrintAlloc ("drive %zu", Index);
     }
     V.PartUuid  = PartUuid (&V.Dev);
     V.Removable = Removable (Fs);

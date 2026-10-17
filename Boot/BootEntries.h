@@ -30,6 +30,10 @@ typedef struct _BOOT_ENTRIES_VOLUME {
   OABL_BUFFER Dev;
   // Volume label, or "drive N" if there is none.
   CHAR8  *Name;
+  // Name came from an actual volume label.
+  BOOLEAN HasLabel;
+  // Filesystem scan index, for the fallback display name.
+  UINTN Index;
   BOOLEAN Removable;
   // GPT partition GUID in LoaderDevicePartUUID format, or NULL.
   CHAR8 *PartUuid;

@@ -175,7 +175,6 @@ STATIC CONST LANG_STRINGS mEn = {
   .PlatformSubtype      = " · subtype %u",
   .StorageManufacturer  = "mfr 0x%x",
   .ErrorPrefix          = "error ",
-  .PressAnyKeyEnterMenu = "Press any key to go to the menu",
 };
 
 STATIC CONST LANG_STRINGS mZhHans = {
@@ -328,7 +327,6 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .PlatformSubtype      = " · 子类型 %u",
   .StorageManufacturer  = "厂商编号 0x%x",
   .ErrorPrefix          = "错误 ",
-  .PressAnyKeyEnterMenu = "按任意键进入菜单",
 };
 
 STATIC CONST LANG_STRINGS *CONST mLangs[LANG_COUNT] = {
@@ -344,10 +342,16 @@ STATIC CONST CHAR8 *CONST mNames[LANG_COUNT] = {
 
 CONST LANG_STRINGS *gStrings = &mEn;
 
+CONST LANG_STRINGS *
+LangGet (IN UINT8 Lang)
+{
+  return mLangs[Lang < LANG_COUNT ? Lang : LANG_EN];
+}
+
 VOID
 LangSet (IN UINT8 Lang)
 {
-  gStrings = mLangs[Lang < LANG_COUNT ? Lang : LANG_EN];
+  gStrings = LangGet (Lang);
 }
 
 CONST CHAR8 *

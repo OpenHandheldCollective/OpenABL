@@ -760,6 +760,23 @@ STATIC BOOT_ENTRIES_VOLUMES mVolumes;
 STATIC UINTN                mEntryVolume[MAX_ENTRIES];
 STATIC CHAR8                mEntryIds[MAX_ENTRIES][256];
 
+// Returns the volume's menu description, localizing only a fallback name.
+STATIC CHAR8 *
+EntryVolumeDescribe (IN CONST BOOT_ENTRIES_VOLUME *V)
+{
+  CHAR8        Unnamed[64];
+  CONST CHAR8 *Name = V->Name;
+
+  if (!V->HasLabel) {
+    SPrint (Unnamed, sizeof (Unnamed), gStrings->UnnamedDrive, V->Index);
+    Name = Unnamed;
+  }
+  return SPrintAlloc (
+    "%s (%s)", Name,
+    V->Removable ? gStrings->DriveRemovable : gStrings->DriveInternal
+  );
+}
+
 // Adds a row for drive Volume of mVolumes, if there is room.
 STATIC VOID
 AddRow (
@@ -773,7 +790,7 @@ AddRow (
   IN CONST CHAR8    *Id
 )
 {
-  CHAR8 *Name = BootEntriesVolumeDescribe (&mVolumes.Items[Volume]);
+  CHAR8 *Name = EntryVolumeDescribe (&mVolumes.Items[Volume]);
 
   if (*Count < MAX_ENTRIES) {
     AsciiStrCopy (Views[*Count].Title, sizeof (Views[*Count].Title), Title);
@@ -976,12 +993,14 @@ Sized (
   return Out;
 }
 
-// Fills Rows with the device's details. Returns the number of rows.
+// Fills Rows with the device's details, with the labels in Strings.
+// Returns the number of rows.
 STATIC UINTN
 DeviceInfo (
-  IN CONST MENU_STATE *M,
-  OUT TEXT_LINE       *Rows,
-  IN UINTN             Capacity
+  IN CONST MENU_STATE   *M,
+  OUT TEXT_LINE         *Rows,
+  IN UINTN               Capacity,
+  IN CONST LANG_STRINGS *Strings
 )
 {
   LINE_LIST                           List = {Rows, 0, Capacity};
@@ -1002,8 +1021,8 @@ DeviceInfo (
       StringAppend (&Text, " v");
       VersionText (&Text, Chip.Version.Value);
     }
-    StringPrint (&Text, gStrings->ChipIds, Chip.Id.Value, Chip.RawId.Value);
-    Push (&List, gStrings->InfoChip, StringTake (&Text));
+    StringPrint (&Text, Strings->ChipIds, Chip.Id.Value, Chip.RawId.Value);
+    Push (&List, Strings->InfoChip, StringTake (&Text));
   }
   if (QcomPlatform (&Platform)) {
     OABL_STRING  Text = {0};
@@ -1015,11 +1034,11 @@ DeviceInfo (
     }
     StringAppend (&Text, " v");
     VersionText (&Text, Platform.version);
-    StringPrint (&Text, gStrings->PlatformSubtype, Platform.subtype);
+    StringPrint (&Text, Strings->PlatformSubtype, Platform.subtype);
     if (Platform.OEMVariantID) {
       StringPrint (&Text, " \xc2\xb7 OEM %u", Platform.OEMVariantID);
     }
-    Push (&List, gStrings->InfoPlatform, StringTake (&Text));
+    Push (&List, Strings->InfoPlatform, StringTake (&Text));
   }
   PmicCount = QcomPmics (Pmics);
   {
@@ -1031,11 +1050,11 @@ DeviceInfo (
         Pmics[Index].PmicMetalRevision
       );
     }
-    Push (&List, gStrings->InfoPmic, StringTake (&Text));
+    Push (&List, Strings->InfoPmic, StringTake (&Text));
   }
   SysInfoRawSizes (&RamSize, &StorageSize, &CardSize);
-  Push (&List, gStrings->InfoRam, Sized (SysInfoRam (), RamSize));
-  Push (&List, gStrings->InfoStorage, Sized (SysInfoStorage (), StorageSize));
+  Push (&List, Strings->InfoRam, Sized (SysInfoRam (), RamSize));
+  Push (&List, Strings->InfoStorage, Sized (SysInfoStorage (), StorageSize));
   QcomCards (&Cards);
   {
     // UFS has one card per LUN. List the device once.
@@ -1050,7 +1069,7 @@ DeviceInfo (
       }
       StringPrint (&One, "%s \xc2\xb7 ", Card->Kind ? Card->Kind : "");
       if (!Card->Inquiry || !Card->Inquiry[0]) {
-        StringPrint (&One, gStrings->StorageManufacturer, Card->MfrId);
+        StringPrint (&One, Strings->StorageManufacturer, Card->MfrId);
       } else {
         StringAppend (&One, Card->Inquiry);
       }
@@ -1063,18 +1082,18 @@ DeviceInfo (
       StringFree (&One);
     }
     StringFree (&Last);
-    Push (&List, gStrings->InfoStorageChip, StringTake (&Text));
+    Push (&List, Strings->InfoStorageChip, StringTake (&Text));
   }
   QcomCardsFree (&Cards);
   {
     CHAR8 *Sd = Sized (SysInfoSdCard (), CardSize);
     Push (
-      &List, gStrings->SdCard, Sd ? Sd : AsciiStrDup (gStrings->NotInserted)
+      &List, Strings->SdCard, Sd ? Sd : AsciiStrDup (Strings->NotInserted)
     );
   }
   if (M->DisplayW > 0) {
     Push (
-      &List, gStrings->InfoDisplay,
+      &List, Strings->InfoDisplay,
       SPrintAlloc (
         "%llu \xc3\x97 %llu", (UINT64)M->DisplayW, (UINT64)M->DisplayH
       )
@@ -1083,19 +1102,19 @@ DeviceInfo (
   {
     CHAR8 *Panel = SysInfoPanel (M->DisplayW, M->DisplayH);
     Push (
-      &List, gStrings->InfoPanel,
-      Panel ? Panel : AsciiStrDup (gStrings->Unknown)
+      &List, Strings->InfoPanel,
+      Panel ? Panel : AsciiStrDup (Strings->Unknown)
     );
   }
   // XBL's DSI panel detection, as it hands it to the kernel.
   Push (&List, "DSI", QcomDisplayPanelConfig ());
-  Push (&List, gStrings->InfoAndroid, SysInfoAndroidBuild ());
+  Push (&List, Strings->InfoAndroid, SysInfoAndroidBuild ());
   Push (
-    &List, gStrings->InfoModel,
-    AsciiStrDup (M->Stored.Model[0] ? M->Stored.Model : gStrings->NotSet)
+    &List, Strings->InfoModel,
+    AsciiStrDup (M->Stored.Model[0] ? M->Stored.Model : Strings->NotSet)
   );
   Push (
-    &List, gStrings->InfoBootloader,
+    &List, Strings->InfoBootloader,
     SPrintAlloc ("OpenABL %s", M->AblVersion[0] ? M->AblVersion : MENU_VERSION)
   );
   {
@@ -1105,7 +1124,7 @@ DeviceInfo (
     FreePool (Firmware);
     StringAppendChar (&Text, ' ');
     VersionText (&Text, gST->FirmwareRevision);
-    Push (&List, gStrings->InfoUefi, StringTake (&Text));
+    Push (&List, Strings->InfoUefi, StringTake (&Text));
   }
   return List.Count;
 }
@@ -1211,6 +1230,21 @@ SaveExperiments (IN EXPERIMENTS Want)
 
 // Commands
 
+// Formats Status for the menu's own messages, in the current language.
+// Logs keep MenuStatus, whose prefix is English.
+STATIC CONST CHAR8 *
+UiStatus (
+  IN EFI_STATUS Status,
+  OUT CHAR8     Out[MENU_STATUS_SIZE]
+)
+{
+  SPrint (
+    Out, MENU_STATUS_SIZE, "%s%llu",
+    EFI_ERROR (Status) ? gStrings->ErrorPrefix : "", (UINT64)(Status & 0xffff)
+  );
+  return Out;
+}
+
 // Returns TRUE if Start Linux may boot without a restart. Only from
 // fastboot's menu. Android, the alternate Volume Up boot, and a USB boot
 // on an ABL without USB host need a restart.
@@ -1267,7 +1301,7 @@ RunCommand (
     MenuVarPut (MENU_PICK_VAR, NULL, 0);
     MenuFlush ();
 #endif
-    Args[0] = MENU_STATUS (Status);
+    Args[0] = UiStatus (Status, (CHAR8[MENU_STATUS_SIZE]){0});
     LangFill (Why, sizeof (Why), gStrings->AblRestartFailed, Args, 1);
     AppOnBootResult (&mApp, FALSE, BOOT_ERROR_LOAD_FAILED, Why);
     break;
@@ -1359,7 +1393,7 @@ RunCommand (
             : Status == EFI_CRC_ERROR        ? gStrings->UninstallReadBack
             : Status == EFI_OUT_OF_RESOURCES ? gStrings->UninstallError
                                              : gStrings->UninstallWriteFailed;
-      Args[0] = MENU_STATUS (Status);
+      Args[0] = UiStatus (Status, (CHAR8[MENU_STATUS_SIZE]){0});
       LangFill (Text, sizeof (Text), Why, Args, 1);
       AppOnUninstallFailed (&mApp, Text);
       break;
@@ -1425,12 +1459,18 @@ RunCommand (
     break;
   }
   case COMMAND_DEVICE_INFO: {
-    TEXT_LINE *Rows  = AllocateZeroArray (24, sizeof (*Rows));
-    UINTN      Count = Rows ? DeviceInfo (M, Rows, 24) : 0;
+    TEXT_LINE          *Rows    = AllocateZeroArray (24, sizeof (*Rows));
+    CONST LANG_STRINGS *English = LangGet (LANG_EN);
+    UINTN               Count   = Rows ? DeviceInfo (M, Rows, 24, English) : 0;
 
+    // The log is English in every language. Only the page the menu draws
+    // uses the current language, refilled below.
     MenuLog ("device info: %llu lines", (UINT64)Count);
     for (UINTN Index = 0; Index < Count; Index++) {
       MenuLog ("  %s: %s", Rows[Index].Label, Rows[Index].Value);
+    }
+    if (Rows && gStrings != English) {
+      Count = DeviceInfo (M, Rows, 24, gStrings);
     }
     AppOnDeviceInfo (&mApp, Rows, Count);
     FreePool (Rows);

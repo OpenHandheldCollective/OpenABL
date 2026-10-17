@@ -165,11 +165,14 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *PlatformSubtype;
   CONST CHAR8 *StorageManufacturer;
   CONST CHAR8 *ErrorPrefix;
-  CONST CHAR8 *PressAnyKeyEnterMenu;
 } LANG_STRINGS;
 
 // Strings in the current language, English until LangSet.
 extern CONST LANG_STRINGS *gStrings;
+
+// Returns Lang's strings without changing the current language.
+CONST LANG_STRINGS *
+LangGet (IN UINT8 Lang);
 
 // Switches the strings to Lang. An unknown Lang is English.
 VOID
