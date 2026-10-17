@@ -30,6 +30,9 @@
 #include "Ui/Lang.h"
 #include "Ui/Ui.h"
 #include "View/View.h"
+#ifdef OABL_STANDARD_BOOT
+#include "Boot/BootEntries.h"
+#endif
 
 extern CONST UINT8 gOablAssetFont[];
 extern CONST UINTN gOablAssetFontSize;
@@ -739,6 +742,116 @@ Scan (
   return EFI_SUCCESS;
 }
 
+#ifdef OABL_STANDARD_BOOT
+// The drives Boot entries lists, and each row's drive and id.
+STATIC BOOT_ENTRIES_VOLUMES mVolumes;
+STATIC UINTN                mEntryVolume[MAX_ENTRIES];
+STATIC CHAR8                mEntryIds[MAX_ENTRIES][256];
+
+// Adds a row for drive Volume of mVolumes, if there is room.
+STATIC VOID
+AddRow (
+  IN OUT ENTRY_VIEW *Views,
+  IN OUT UINTN      *Count,
+  IN UINTN           Volume,
+  IN CONST CHAR8    *Title,
+  IN CONST CHAR8    *Kind,
+  IN CONST CHAR8    *Version OPTIONAL,
+  IN BOOLEAN         Bad,
+  IN CONST CHAR8    *Id
+)
+{
+  CHAR8 *Name = BootEntriesVolumeDescribe (&mVolumes.Items[Volume]);
+
+  if (*Count < MAX_ENTRIES) {
+    AsciiStrCopy (Views[*Count].Title, sizeof (Views[*Count].Title), Title);
+    SPrint (
+      Views[*Count].Detail, sizeof (Views[*Count].Detail), "%s%s%s \xc2\xb7 %s",
+      Version ? Version : "", Version ? " \xc2\xb7 " : "", Kind,
+      Name ? Name : ""
+    );
+    Views[*Count].Bad    = Bad;
+    mEntryVolume[*Count] = Volume;
+    AsciiStrCopy (mEntryIds[(*Count)++], sizeof (mEntryIds[0]), Id);
+  }
+  FreePool (Name);
+}
+
+// Lists what Start would try on the allowed drives, in its order: each
+// drive's entries, then the first boot image. Only in Linux boot mode.
+STATIC VOID
+FillEntries (
+  IN MENU_STATE *M,
+  IN OUT APP    *A
+)
+{
+  STATIC ENTRY_VIEW   Views[MAX_ENTRIES];
+  VOLUMES_HANDLE_LIST Drives = {0};
+  UINTN               Count  = 0;
+  BOOLEAN             Image  = FALSE;
+
+  BootEntriesVolumesFree (&mVolumes);
+  if (M->Stored.BootMode == BOOT_MODE_LINUX) {
+    QuirksPrepareStorage (QuirksChipId (), gMenuEfiLog);
+    VolumesAllowed (
+      M->Stored.BootSource, M->Caps.CfwOnInternal, FALSE, &Drives
+    );
+    BootEntriesDiscover (
+      BytesOf (NULL, 0), TRUE, Drives.Items, Drives.Count, TRUE, &mVolumes
+    );
+  }
+  for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
+    CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Index];
+
+    for (UINTN Index2 = 0; Index2 < V->Entries.Count; Index2++) {
+      CONST BOOT_ENTRY *Entry = &V->Entries.Items[Index2];
+
+      AddRow (
+        Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
+        BootEntrySourceName (Entry->Source), Entry->Version,
+        BootEntryIsBad (Entry), Entry->Id
+      );
+    }
+  }
+  // Start reaches a boot image only after every drive's entries.
+  for (UINTN Index = 0; Index < mVolumes.Count && !Image; Index++) {
+    for (UINTN Index2 = 0;
+         Index2 < sizeof (gModelsBootImages) / sizeof (*gModelsBootImages) &&
+         !Image;
+         Index2++) {
+      if (FilesExists (mVolumes.Items[Index].Fs, gModelsBootImages[Index2])) {
+        // The path without its backslash, such as KERNEL.
+        AddRow (
+          Views, &Count, Index, gModelsBootImages[Index2] + 1,
+          gStrings->BootImage, NULL, FALSE, MENU_PICK_BOOT_IMAGE
+        );
+        Image = TRUE;
+      }
+    }
+  }
+  MenuLog ("Boot entries: %llu", (UINT64)Count);
+  AppSetEntries (A, Views, Count);
+  VecFree (&Drives);
+}
+
+// Stores row Index of Boot entries as the next Start's pick.
+STATIC VOID
+PickEntry (IN UINTN Index)
+{
+  CONST OABL_BUFFER *Dev  = &mVolumes.Items[mEntryVolume[Index]].Dev;
+  OABL_BUFFER        Pick = {0};
+  EFI_STATUS         Status;
+
+  BufferAppendLe16 (&Pick, (UINT16)Dev->Len);
+  BufferAppend (&Pick, Dev->Data, Dev->Len);
+  BufferAppend (&Pick, mEntryIds[Index], AsciiStrLen (mEntryIds[Index]));
+  Status = MenuVarPut (MENU_PICK_VAR, Pick.Data, Pick.Len);
+  MenuFlush ();
+  BufferFree (&Pick);
+  MenuLog ("Boot entries: %s (%s)", mEntryIds[Index], MENU_STATUS (Status));
+}
+#endif
+
 // Returns TRUE if Start Linux can boot without a restart. A USB drive also
 // needs live USB host, since fastboot holds the controller.
 STATIC BOOLEAN
@@ -1129,6 +1242,12 @@ RunCommand (
     CONST CHAR8 *Args[1];
     CHAR8        Why[192];
 
+#ifdef OABL_STANDARD_BOOT
+    if (Command.Kind == COMMAND_BOOT_ENTRY &&
+        (UINTN)Command.Arg < mApp.EntryCount) {
+      PickEntry ((UINTN)Command.Arg);
+    }
+#endif
     if (StartsHere (M) && MayStartHere (M)) {
       // Shut down as when the ABL asks the menu to leave.
       return TRUE;
@@ -1141,9 +1260,17 @@ RunCommand (
   }
   case COMMAND_SAVE_SETTINGS: {
     SETTINGS     Want    = mApp.Settings;
+    SETTINGS     Was     = M->Stored;
     CONST CHAR8 *Failure = Save (M, &Want);
     AppSetSettings (&mApp, &M->Stored);
     AppSetCaps (&mApp, &M->Caps);
+#ifdef OABL_STANDARD_BOOT
+    // Only these change what Start would try.
+    if (M->Stored.BootMode != Was.BootMode ||
+        M->Stored.BootSource != Was.BootSource) {
+      FillEntries (M, &mApp);
+    }
+#endif
     if (Failure) {
       AppOnFailed (&mApp, Failure);
     }
@@ -1420,6 +1547,9 @@ MenuRun (
     UINTN               Count = UninstallCfwParts (&Parts);
     AppSetCfwParts (&mApp, Parts, Count);
   }
+#ifdef OABL_STANDARD_BOOT
+  FillEntries (&M, &mApp);
+#endif
 #ifdef OABL_DEBUG
   mApp.Debug = TRUE;
 #endif
