@@ -105,6 +105,8 @@ Matches (
 }
 
 // Unaligned reads from a mapped image.
+#if defined(OABL_SDCC_SM4450) || defined(OABL_SDCC_SM6450) ||                  \
+  defined(OABL_SDCC_SM7675) || defined(OABL_SD_DIAGNOSTICS)
 STATIC UINT32
 ReadU32 (IN UINT64 Address)
 {
@@ -113,6 +115,7 @@ ReadU32 (IN UINT64 Address)
   CopyMem (&Value, (CONST VOID *)(UINTN)Address, sizeof (Value));
   return Value;
 }
+#endif
 
 STATIC UINT64
 ReadU64 (IN UINT64 Address)
@@ -312,21 +315,16 @@ STATIC CONST UINT8 mAcmd41Mask[2][24] = {
 #define MOVK_S18R_CLEAR 0x72a81ff5u
 // Also sets XPC (OCR bit 28, SDXC power control).
 #define MOVK_XPC_S18R_CLEAR 0x72aa1ff5u
-// On the SM8750 build the word after the movk is mov w22, #200: ACMD41 is
-// tried 200 times, 5 ms apart. It becomes #800 (four seconds) for the one
-// detection signalled here, then is put back.
-#define ACMD41_TRIES_200 0x52801916u
-#define ACMD41_TRIES_800 0x52806416u
-// SM8750 chip ids, whose cards get XPC and the longer wait.
-STATIC CONST UINT32 mSlowCardChips[] = {639, 706};
+// SM8650 and SM8750 chip ids, whose cards get XPC.
+STATIC CONST UINT32 mXpcChips[] = {682, 639, 706};
 #define MAX_SITES 16
 
 STATIC BOOLEAN
-IsSlowCard (IN UINT32 Chip)
+WantsXpc (IN UINT32 Chip)
 {
-  for (UINTN Index = 0;
-       Index < sizeof (mSlowCardChips) / sizeof (*mSlowCardChips); Index++) {
-    if (mSlowCardChips[Index] == Chip) {
+  for (UINTN Index = 0; Index < sizeof (mXpcChips) / sizeof (*mXpcChips);
+       Index++) {
+    if (mXpcChips[Index] == Chip) {
       return TRUE;
     }
   }
@@ -367,6 +365,172 @@ Acmd41Sites (VOID)
         if (!VecPush (&Sites, Start + Offset + MOVK_AT)) {
           break;
         }
+      }
+    }
+  }
+  VecFree (&Regions);
+  return Sites;
+}
+
+// SdccDxe: the card's power-up time
+
+// Every SdccDxe build tries ACMD41 200 times, 5 ms apart, so a card has a
+// second to power up, and one still busy then is never found.
+#define HIDE32(x)    ((UINT32)((x) ^ 0x5a5a5a5au))
+#define SETUP_WORDS  16
+#define LOOP_WORDS   32
+#define ANY_REGISTER 0x1fu
+STATIC CONST UINT32 mCmd8Check = HIDE32 (0x7106a91fu);
+STATIC CONST UINT32 mWait5Ms   = HIDE32 (0x52827114u);
+STATIC CONST UINT32 mAcmd41Index = HIDE32 (0x52800520u);
+STATIC CONST UINT32 mCountDown[2] = {HIDE32 (0x52801916u),
+                                     HIDE32 (0x52806416u)};
+STATIC CONST UINT32 mCountUp[2][2] = {
+  {HIDE32 (0x710322dfu), HIDE32 (0x710c82dfu)},
+  {HIDE32 (0x71031edfu), HIDE32 (0x710c7edfu)},
+};
+
+STATIC UINT32
+Reveal32 (IN UINT32 Hidden)
+{
+  volatile UINT32 Key = HIDE32 (0);
+
+  return Hidden ^ Key;
+}
+
+typedef struct _TRIES_WORD {
+  UINT64  At;
+  UINT32  Built;
+  UINT32  Longer;
+  BOOLEAN Patched;
+} TRIES_WORD;
+typedef struct _TRIES_WORDS
+OABL_VEC (TRIES_WORD) TRIES_WORDS;
+
+// Returns the offset of the first of Count words of Code from Offset, ending
+// before End, that is Want once the Ignore bits are cleared, or End if none
+// is.
+STATIC UINTN
+FindWord (
+  IN CONST UINT32 *Code,
+  IN UINTN         End,
+  IN UINTN         Offset,
+  IN UINTN         Count,
+  IN UINT32        Want,
+  IN UINT32        Ignore
+)
+{
+  for (UINTN Index = 0; Index < Count && Offset + 4 <= End;
+       Index++, Offset += 4) {
+    if ((Code[Offset / 4] & ~Ignore) == Want) {
+      return Offset;
+    }
+  }
+  return End;
+}
+
+// Finds every ACMD41 power up limit in firmware code outside this image.
+// Caller frees the result with VecFree.
+STATIC TRIES_WORDS
+TriesWords (VOID)
+{
+  TRIES_WORDS  Words   = {0};
+  CODE_REGIONS Regions = CodeRegions ();
+  UINT64       OwnBase = 0;
+  UINT64       OwnSize = 0;
+  BOOLEAN      HaveOwn = ImageRange (gImageHandle, &OwnBase, &OwnSize);
+  UINT32       Cmd8    = Reveal32 (mCmd8Check);
+  UINT32       Wait    = Reveal32 (mWait5Ms);
+  UINT32       Acmd41  = Reveal32 (mAcmd41Index);
+
+  for (UINTN Index = 0; Index < Regions.Count; Index++) {
+    UINT64        Start = Regions.Items[Index].Start;
+    UINTN         Len   = (UINTN)Regions.Items[Index].Len;
+    CONST UINT32 *Code  = (CONST UINT32 *)(UINTN)Start;
+
+    for (UINTN Offset = 0; Offset + 4 <= Len; Offset += 4) {
+      TRIES_WORD Found = {0};
+      UINTN      Delay;
+      UINTN      At;
+
+      if (Code[Offset / 4] != Cmd8 ||
+          Inside (Start + Offset, HaveOwn, OwnBase, OwnSize)) {
+        continue;
+      }
+      Delay = FindWord (Code, Len, Offset, SETUP_WORDS, Wait, 0);
+      if (Delay == Len || FindWord (
+                            Code, Delay, Offset, SETUP_WORDS, Acmd41,
+                            ANY_REGISTER
+                          ) == Delay) {
+        continue;
+      }
+
+      At = FindWord (
+        Code, Delay, Offset, SETUP_WORDS, Reveal32 (mCountDown[0]), 0
+      );
+      if (At != Delay) {
+        Found = (TRIES_WORD){Start + At, Reveal32 (mCountDown[0]),
+                             Reveal32 (mCountDown[1]), FALSE};
+      }
+      for (UINTN Form = 0; Form < 2 && !Found.At; Form++) {
+        At = FindWord (
+          Code, Len, Delay, LOOP_WORDS, Reveal32 (mCountUp[Form][0]), 0
+        );
+        if (At != Len) {
+          Found = (TRIES_WORD){Start + At, Reveal32 (mCountUp[Form][0]),
+                               Reveal32 (mCountUp[Form][1]), FALSE};
+        }
+      }
+      if (Found.At && !VecPush (&Words, Found)) {
+        break;
+      }
+    }
+  }
+  VecFree (&Regions);
+  return Words;
+}
+
+// SdccDxe: the bus speed at 3.3 V
+#define SPEED_WORDS 5
+STATIC CONST UINT32 mSpeedSelect[SPEED_WORDS] = {
+  HIDE32 (0xb9400298u), HIDE32 (0x7100171fu), HIDE32 (0x54000001u),
+  HIDE32 (0x52800119u), HIDE32 (0x52800076u)};
+STATIC CONST UINT32 mSpeedSelectIgnore[SPEED_WORDS] = {0, 0, 0x00ffffe0u, 0,
+                                                       0};
+STATIC CONST UINT32 mHighSpeed = HIDE32 (0x52800058u);
+
+// Finds every speed selection in firmware code outside this image and
+// returns the addresses of its loads. Caller frees the result with VecFree.
+STATIC U64_LIST
+SpeedSelects (VOID)
+{
+  U64_LIST     Sites   = {0};
+  CODE_REGIONS Regions = CodeRegions ();
+  UINT64       OwnBase = 0;
+  UINT64       OwnSize = 0;
+  BOOLEAN      HaveOwn = ImageRange (gImageHandle, &OwnBase, &OwnSize);
+  UINT32       Want[SPEED_WORDS];
+
+  for (UINTN Word = 0; Word < SPEED_WORDS; Word++) {
+    Want[Word] = Reveal32 (mSpeedSelect[Word]);
+  }
+  for (UINTN Index = 0; Index < Regions.Count; Index++) {
+    UINT64        Start = Regions.Items[Index].Start;
+    UINTN         Len   = (UINTN)Regions.Items[Index].Len;
+    CONST UINT32 *Code  = (CONST UINT32 *)(UINTN)Start;
+
+    for (UINTN Offset = 0; Offset + 4 * SPEED_WORDS <= Len; Offset += 4) {
+      UINTN Word = 0;
+
+      while (Word < SPEED_WORDS &&
+             (Code[Offset / 4 + Word] & ~mSpeedSelectIgnore[Word]) ==
+               Want[Word]) {
+        Word++;
+      }
+      if (Word == SPEED_WORDS &&
+          !Inside (Start + Offset, HaveOwn, OwnBase, OwnSize) &&
+          !VecPush (&Sites, Start + Offset)) {
+        break;
       }
     }
   }
@@ -938,45 +1102,73 @@ QuirksSdccUhs (
   IN LOG_SINK Log
 )
 {
-  U64_LIST Sites     = Acmd41Sites ();
-  BOOLEAN  Slow      = IsSlowCard (Chip);
-  UINT32   Patched   = 0;
-  U64_LIST LongWaits = {0};
-  BOOLEAN  Pulled    = FALSE;
+  U64_LIST    Sites   = Acmd41Sites ();
+  TRIES_WORDS Tries   = TriesWords ();
+  BOOLEAN     Xpc     = WantsXpc (Chip);
+  UINT32      Patched = 0;
+  UINTN       Longer  = 0;
+  BOOLEAN     Pulled  = FALSE;
 
   if (Sites.Count > MAX_SITES) {
     Sites.Count = MAX_SITES;
   }
+  if (Tries.Count > MAX_SITES) {
+    Tries.Count = MAX_SITES;
+  }
   for (UINTN Index = 0; Index < Sites.Count; Index++) {
     UINT64       Site    = Sites.Items[Index];
-    UINT32       NewWord = Slow ? MOVK_XPC_S18R_CLEAR : MOVK_S18R_CLEAR;
+    UINT32       NewWord = Xpc ? MOVK_XPC_S18R_CLEAR : MOVK_S18R_CLEAR;
     BOOLEAN      Ok      = WriteWord (Site, TRUE, MOVK_S18R_SET, NewWord);
-    CONST CHAR8 *What    = !Ok     ? "REFUSED"
-                           : !Slow ? "patched"
-                                   : "patched (S18R clear, XPC set)";
+    CONST CHAR8 *What    = !Ok    ? "REFUSED"
+                           : !Xpc ? "patched"
+                                  : "patched (S18R clear, XPC set)";
 
     LogPrint (
       Log, "sdcc: site %llu @0x%llx -> %s", (UINT64)Index, (UINT64)Site, What
     );
     Patched += Ok ? 1 : 0;
-    if (Slow && ReadU32 (Site + 4) == ACMD41_TRIES_200) {
-      BOOLEAN Ok2 =
-        WriteWord (Site + 4, TRUE, ACMD41_TRIES_200, ACMD41_TRIES_800);
-
-      LogPrint (
-        Log, "sdcc: site %llu ACMD41 tries 200 -> 800: %s", (UINT64)Index,
-        Ok2 ? "patched" : "REFUSED"
-      );
-      if (Ok2) {
-        VecPush (&LongWaits, Site + 4);
-      }
-    }
   }
   if (Sites.Count == 0) {
     LogPrint (
       Log,
       "sdcc: no ACMD41 site found, signature does not match this firmware build"
     );
+  }
+  for (UINTN Index = 0; Index < Tries.Count; Index++) {
+    TRIES_WORD *Word = &Tries.Items[Index];
+
+    Word->Patched = WriteWord (Word->At, TRUE, Word->Built, Word->Longer);
+    LogPrint (
+      Log, "sdcc: ACMD41 tries 200 -> 800 @0x%llx: %s", (UINT64)Word->At,
+      Word->Patched ? "patched" : "REFUSED"
+    );
+    Longer += Word->Patched ? 1 : 0;
+  }
+  if (Tries.Count == 0) {
+    LogPrint (Log, "sdcc: no ACMD41 power-up limit found");
+  }
+  // Only with S18R clear do cards stay at 3.3 V.
+  if (Patched > 0) {
+    U64_LIST Speeds = SpeedSelects ();
+
+    if (Speeds.Count > MAX_SITES) {
+      Speeds.Count = MAX_SITES;
+    }
+    for (UINTN Index = 0; Index < Speeds.Count; Index++) {
+      BOOLEAN Ok = WriteWord (
+        Speeds.Items[Index], TRUE, Reveal32 (mSpeedSelect[0]),
+        Reveal32 (mHighSpeed)
+      );
+
+      LogPrint (
+        Log, "sdcc: bus speed @0x%llx: the slot's -> high speed: %s",
+        (UINT64)Speeds.Items[Index], Ok ? "patched" : "REFUSED"
+      );
+    }
+    if (Speeds.Count == 0) {
+      LogPrint (Log, "sdcc: no bus speed selection found");
+    }
+    VecFree (&Speeds);
   }
 #if defined(OABL_SDCC_SM4450) || defined(OABL_SDCC_SM6450) ||                  \
   defined(OABL_SDCC_SM7675)
@@ -1003,16 +1195,20 @@ QuirksSdccUhs (
 #ifdef OABL_SDCC_SM7675
   Pulled = Chip == SM7675_G2 && SdCmdPullup (Log);
 #endif
-  if (Patched > 0 || Pulled) {
+  if (Patched > 0 || Longer > 0 || Pulled) {
     // Detection runs inside SignalEvent, as its notify TPL is above ours.
     QuirksSignalSdDetect ();
   }
-  for (UINTN Index = 0; Index < LongWaits.Count; Index++) {
-    UINT64  Site = LongWaits.Items[Index];
-    BOOLEAN Ok   = WriteWord (Site, TRUE, ACMD41_TRIES_800, ACMD41_TRIES_200);
+  for (UINTN Index = 0; Index < Tries.Count; Index++) {
+    CONST TRIES_WORD *Word = &Tries.Items[Index];
+    BOOLEAN           Ok;
 
+    if (!Word->Patched) {
+      continue;
+    }
+    Ok = WriteWord (Word->At, TRUE, Word->Longer, Word->Built);
     LogPrint (
-      Log, "sdcc: ACMD41 tries back to 200 @0x%llx: %s", (UINT64)Site,
+      Log, "sdcc: ACMD41 tries back to 200 @0x%llx: %s", (UINT64)Word->At,
       Ok ? "done" : "REFUSED"
     );
   }
@@ -1021,7 +1217,7 @@ QuirksSdccUhs (
     SdSlotReport (Sites.Items[0], "after", Log);
   }
 #endif
-  VecFree (&LongWaits);
+  VecFree (&Tries);
   VecFree (&Sites);
   return Patched;
 }
