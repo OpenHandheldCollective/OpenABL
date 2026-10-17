@@ -298,36 +298,31 @@ MenuCapsOf (IN CONST MENU_HOST_STATE *State)
   };
 }
 
-// Copies Text into Out, or None when Text is NULL, and frees Text.
+// Copies Text into Out, or "" when Text is NULL, and frees Text.
 STATIC VOID
 Take (
-  OUT CHAR8      *Out,
-  IN UINTN        OutSize,
-  IN CHAR8       *Text OPTIONAL,
-  IN CONST CHAR8 *None
+  OUT CHAR8 *Out,
+  IN UINTN   OutSize,
+  IN CHAR8  *Text OPTIONAL
 )
 {
-  AsciiStrCopy (Out, OutSize, Text ? Text : None);
+  AsciiStrCopy (Out, OutSize, Text ? Text : "");
   FreePool (Text);
 }
 
-// Fills the info card.
+// Fills the info card. A value that isn't known is left empty, and the view
+// draws it in the current language.
 STATIC VOID
 InfoOf (OUT DEVICE_INFO *Info)
 {
   *Info = (DEVICE_INFO){0};
   Take (
-    Info->Firmware, sizeof (Info->Firmware), Utf16ToStr (gST->FirmwareVendor),
-    ""
+    Info->Firmware, sizeof (Info->Firmware), Utf16ToStr (gST->FirmwareVendor)
   );
-  Take (Info->Soc, sizeof (Info->Soc), SysInfoSoc (), gStrings->Unknown);
-  Take (Info->Ram, sizeof (Info->Ram), SysInfoRam (), gStrings->Unknown);
-  Take (
-    Info->Storage, sizeof (Info->Storage), SysInfoStorage (), gStrings->Unknown
-  );
-  Take (
-    Info->SdCard, sizeof (Info->SdCard), SysInfoSdCard (), gStrings->NotInserted
-  );
+  Take (Info->Soc, sizeof (Info->Soc), SysInfoSoc ());
+  Take (Info->Ram, sizeof (Info->Ram), SysInfoRam ());
+  Take (Info->Storage, sizeof (Info->Storage), SysInfoStorage ());
+  Take (Info->SdCard, sizeof (Info->SdCard), SysInfoSdCard ());
 }
 
 VOID
