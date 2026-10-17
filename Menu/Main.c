@@ -33,6 +33,7 @@
 #include "Efi/SysFont.h"
 #endif
 #ifdef OABL_STANDARD_BOOT
+#include "Boot/Bli.h"
 #include "Boot/Booter.h"
 #endif
 
@@ -342,6 +343,56 @@ HandOverBootImage (
   return TRUE;
 }
 
+#ifdef OABL_STANDARD_BOOT
+// Starts what Boot entries picked and clears the pick. Returns TRUE if it
+// started, or the boot image went to the ABL (*HasImage).
+STATIC BOOLEAN
+BootPick (
+  IN CONST MENU_HOST         *Host,
+  IN CONST MENU_BOOT_CONTEXT *Ctx,
+  IN CONST EFI_HANDLE        *Volumes,
+  IN UINTN                    Count,
+  OUT BOOLEAN                *HasImage,
+  OUT BOOT_IMAGE_FOUND       *Image
+)
+{
+  OABL_BUFFER Pick    = {0};
+  OABL_BUFFER Path    = {0};
+  EFI_HANDLE  Drive   = NULL;
+  CHAR8       Id[256] = {0};
+  UINT16      Len;
+
+  if (!MenuVarGet (MENU_PICK_VAR, &Pick)) {
+    return FALSE;
+  }
+  MenuVarPut (MENU_PICK_VAR, NULL, 0);
+  MenuFlush ();
+  // A damaged pick matches nothing.
+  if (GetLe16 (Pick.Data, Pick.Len, 0, &Len) && Pick.Len > 2u + Len &&
+      Pick.Len - 2 - Len < sizeof (Id)) {
+    CopyMem (Id, Pick.Data + 2 + Len, Pick.Len - 2 - Len);
+    for (UINTN Index = 0; Index < Count && !Drive; Index++) {
+      if (PathsHandlePath (Volumes[Index], &Path) && Path.Len == Len &&
+          CompareMem (Path.Data, Pick.Data + 2, Len) == 0) {
+        Drive = Volumes[Index];
+      }
+      BufferFree (&Path);
+    }
+  }
+  BufferFree (&Pick);
+  MenuLog ("Boot entries pick: %s", Id);
+  // The list only offers the first boot image, the one Start would take.
+  if (AsciiStrEq (Id, MENU_PICK_BOOT_IMAGE)) {
+    return *HasImage = HandOverBootImage (Host, Ctx, Image);
+  }
+  if (!Drive) {
+    return FALSE;
+  }
+  BliSet ("LoaderEntryOneShot", Id);
+  return StandardBoot (Host, &Drive, 1, Ctx) == EFI_SUCCESS;
+}
+#endif
+
 // Runs the Linux boot. If a boot image was handed to the ABL, returns it in
 // *Image with *HasImage set, and the selected model in Model.
 STATIC EFI_STATUS
@@ -378,6 +429,13 @@ BootWithImage (
     MenuLog ("no drive the boot source allows");
     return EFI_NOT_FOUND;
   }
+#ifdef OABL_STANDARD_BOOT
+  if (BootPick (Host, &Ctx, Volumes, Count, HasImage, Image)) {
+    FreePool (Volumes);
+    Status = EFI_SUCCESS;
+    goto Picked;
+  }
+#endif
   Status = StandardBoot (Host, Volumes, Count, &Ctx);
   FreePool (Volumes);
   MenuBootVolumes (&Ctx, &Volumes, &Count);
@@ -390,6 +448,9 @@ BootWithImage (
   }
   FreePool (Volumes);
   *HasImage = HandOverBootImage (Host, &Ctx, Image);
+#ifdef OABL_STANDARD_BOOT
+Picked:
+#endif
   if (*HasImage) {
     AsciiStrCopy (Model, ModelSize, Ctx.Model);
   }
