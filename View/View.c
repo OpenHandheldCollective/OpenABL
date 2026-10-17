@@ -937,6 +937,16 @@ typedef struct _INFO_ROW {
   CHAR8        Value[MODEL_LEN + 16];
 } INFO_ROW;
 
+// Value, or None when it is empty.
+STATIC CONST CHAR8 *
+OrElse (
+  IN CONST CHAR8 *Value,
+  IN CONST CHAR8 *None
+)
+{
+  return Value[0] ? Value : None;
+}
+
 STATIC VOID
 InfoRows (
   IN CONST APP *A,
@@ -946,13 +956,25 @@ InfoRows (
   CHAR8 Number[12];
 
   Out[0] = (INFO_ROW){.Icon = ICON_CPU, .Label = "SoC"};
-  AsciiStrCopy (Out[0].Value, sizeof (Out[0].Value), A->Info.Soc);
+  AsciiStrCopy (
+    Out[0].Value, sizeof (Out[0].Value),
+    OrElse (A->Info.Soc, gStrings->Unknown)
+  );
   Out[1] = (INFO_ROW){.Icon = ICON_STACK, .Label = gStrings->InfoRam};
-  AsciiStrCopy (Out[1].Value, sizeof (Out[1].Value), A->Info.Ram);
+  AsciiStrCopy (
+    Out[1].Value, sizeof (Out[1].Value),
+    OrElse (A->Info.Ram, gStrings->Unknown)
+  );
   Out[2] = (INFO_ROW){.Icon = ICON_DATABASE, .Label = gStrings->InfoStorage};
-  AsciiStrCopy (Out[2].Value, sizeof (Out[2].Value), A->Info.Storage);
+  AsciiStrCopy (
+    Out[2].Value, sizeof (Out[2].Value),
+    OrElse (A->Info.Storage, gStrings->Unknown)
+  );
   Out[3] = (INFO_ROW){.Icon = ICON_SD_CARD, .Label = gStrings->SdCard};
-  AsciiStrCopy (Out[3].Value, sizeof (Out[3].Value), A->Info.SdCard);
+  AsciiStrCopy (
+    Out[3].Value, sizeof (Out[3].Value),
+    OrElse (A->Info.SdCard, gStrings->NotInserted)
+  );
   Out[4] = (INFO_ROW){.Icon = ICON_MONITOR, .Label = gStrings->InfoDisplay};
   AsciiStrFromU64 (Out[4].Value, sizeof (Out[4].Value), A->PhysicalW);
   AsciiStrAppend (Out[4].Value, sizeof (Out[4].Value), " × ");
