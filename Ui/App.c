@@ -652,7 +652,7 @@ AppItemView (
     AsciiStrCopy (Value, Cap, LangName (Settings->Language));
     break;
   case ITEM_BOOT_MODE:
-    View->Icon  = ICON_SWITCH;
+    View->Icon  = ICON_FORK;
     View->Label = gStrings->BootMode;
     AsciiStrCopy (
       Value, Cap, Settings->BootMode == BOOT_MODE_ANDROID ? "Android" : "Linux"
@@ -660,7 +660,7 @@ AppItemView (
     View->Trailing = A->Caps.Android ? TRAILING_CYCLE : TRAILING_NONE;
     break;
   case ITEM_ABL_MODE:
-    View->Icon  = ICON_TERMINAL;
+    View->Icon  = ICON_MESSAGE;
     View->Label = gStrings->AblMode;
     AsciiStrCopy (
       Value, Cap,
@@ -695,7 +695,7 @@ AppItemView (
     RotationLabel (A, Value, Cap);
     break;
   case ITEM_CUSTOM_LOGO:
-    View->Icon  = ICON_SWITCH;
+    View->Icon  = ICON_PHOTO;
     View->Label = gStrings->CustomLogo;
     AsciiStrCopy (
       Value, Cap, Settings->CustomLogo ? gStrings->On : gStrings->Off
@@ -743,7 +743,9 @@ AppItemView (
     BOOLEAN On  = Item == ITEM_USB_LIVE  ? A->Experiments.UsbLive
                   : Item == ITEM_QUIESCE ? A->Experiments.Quiesce
                                          : A->Experiments.PanelLinesOff;
-    View->Icon  = ICON_SWITCH;
+    View->Icon  = Item == ITEM_USB_LIVE  ? ICON_USB
+                  : Item == ITEM_QUIESCE ? ICON_MONITOR_OFF
+                                         : ICON_PLUG;
     View->Label = Item == ITEM_USB_LIVE  ? gStrings->DbgUsbLive
                   : Item == ITEM_QUIESCE ? gStrings->DbgQuiesce
                                          : gStrings->DbgPanelLines;
