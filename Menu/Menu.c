@@ -769,20 +769,20 @@ AddRow (
   IN CONST CHAR8    *Id
 )
 {
-  CHAR8 *Name = BootEntriesVolumeDescribe (&mVolumes.Items[Volume]);
+  CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Volume];
 
   if (*Count < MAX_ENTRIES) {
     AsciiStrCopy (Views[*Count].Title, sizeof (Views[*Count].Title), Title);
     SPrint (
-      Views[*Count].Detail, sizeof (Views[*Count].Detail), "%s%s%s \xc2\xb7 %s",
-      Version ? Version : "", Version ? " \xc2\xb7 " : "", Kind,
-      Name ? Name : ""
+      Views[*Count].Detail, sizeof (Views[*Count].Detail),
+      "%s%s%s \xc2\xb7 %s (%s)", Version ? Version : "",
+      Version ? " \xc2\xb7 " : "", Kind, V->Name ? V->Name : "",
+      V->Removable ? gStrings->RemovableStorage : gStrings->InternalStorage
     );
     Views[*Count].Bad    = Bad;
     mEntryVolume[*Count] = Volume;
     AsciiStrCopy (mEntryIds[(*Count)++], sizeof (mEntryIds[0]), Id);
   }
-  FreePool (Name);
 }
 
 // Lists what Start would try on the allowed drives, in its order: each

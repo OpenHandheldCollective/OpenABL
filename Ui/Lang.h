@@ -157,6 +157,10 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *Unknown;
   CONST CHAR8 *NotInserted;
   CONST CHAR8 *SrcAblScan;
+  CONST CHAR8 *EntryType1;
+  CONST CHAR8 *EntryUki;
+  CONST CHAR8 *InternalStorage;
+  CONST CHAR8 *RemovableStorage;
 } LANG_STRINGS;
 
 // Strings in the current language, English until LangSet.
