@@ -13,6 +13,7 @@
 #include "Base/Text.h"
 #include "Efi/Abl.h"
 #include "Efi/Quirks.h"
+#include "Efi/UsbHost.h"
 
 BOOLEAN gMenuHostChargerBoot;
 
@@ -123,12 +124,32 @@ MenuHostState (
   return EFI_SUCCESS;
 }
 
+// Actions that restart or power off the device.
+STATIC BOOLEAN
+Resets (IN UINT32 Action)
+{
+  switch (Action) {
+  case OPENABL_MENU_ACTION_START:
+  case OPENABL_MENU_ACTION_RESTART_BOOTLOADER:
+  case OPENABL_MENU_ACTION_RECOVERY:
+  case OPENABL_MENU_ACTION_EMERGENCY:
+  case OPENABL_MENU_ACTION_POWER_OFF:
+  case OPENABL_MENU_ACTION_ALTERNATE_SLOT:
+    return TRUE;
+  }
+  return FALSE;
+}
+
 EFI_STATUS
 MenuHostAction (
   IN CONST MENU_HOST *Host,
   IN UINT32           Action
 )
 {
+  // Undo any USB host bring-up before the device resets.
+  if (Resets (Action)) {
+    UsbHostBeforeReset ();
+  }
   return Host->Protocol->DoAction (Host->Protocol, Action);
 }
 

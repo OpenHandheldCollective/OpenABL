@@ -92,7 +92,7 @@ UsbHostBringUp (
 // bring-up may be gone.
 
 // Unbinds the stack and returns to device mode with VBUS off, when nothing
-// booted. Does nothing unless host is up.
+// booted. Does nothing unless host is up. The ADSP stays loaded.
 VOID
 UsbHostTeardown (VOID);
 
@@ -108,6 +108,11 @@ UsbHostIsUp (VOID);
 // Shuts down the ADSP the bring-up loaded, before the OS loads its own.
 VOID
 UsbHostOsHandoff (VOID);
+
+// Undoes a bring up before a restart or power-off. The ADSP is left for the
+// reset to stop.
+VOID
+UsbHostBeforeReset (VOID);
 
 // Installs the protocol for the ABL on a new handle, once; later calls only
 // update its flags. It is never freed, so the menu must stay loaded.
