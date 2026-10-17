@@ -34,7 +34,7 @@ usage() {
 # doesn't), whether to bundle edk2's USB host stack (where XBL has none),
 # extra ABL make parameters, and extra program features.
 chipset() {
-  SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1 BUNDLED_USB=0 ABL_EXTRA="" OWN="" OWN_FULL="" SMALL=0
+  SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1 BUNDLED_USB=0 ABL_EXTRA="" OWN="" OWN_FULL=""
   case $1 in
     sdm845) SIGN=-v5 PVMFW=false KERNEL_PROTOCOL=0 OWN=devinfo-settings,loader-quirks ;;
     sm4450) OWN=sdcc-sm4450 ;;
@@ -44,8 +44,7 @@ chipset() {
     sm8550) ;;
     sm8650) OWN=park-display ;;
     sm8750) OWN=park-display OWN_FULL=sysfont ;;
-    # The usual 244 KiB image.
-    sm8250) SIGN=-v6 PVMFW=false SMALL=1 ;;
+    sm8250) SIGN=-v6 PVMFW=false ;;
     *) echo "unknown chipset $1" >&2; usage ;;
   esac
 }
@@ -114,7 +113,6 @@ for soc in "${ASKED[@]}"; do
   params=("${COMMON[@]}" "PVMFW_ENABLED=$PVMFW" "DISABLE_KERNEL_PROTOCOL=$((1 - KERNEL_PROTOCOL))")
   [ "$BUNDLED_USB" = 1 ] && params+=(ABL_USB_HOST_BUNDLED_STACK=1)
   [ -n "$ABL_EXTRA" ] && params+=("$ABL_EXTRA")
-  [ "$SMALL" = 1 ] || params+=(ABL_LARGE_IMAGE=1)
   quoted=$(printf " '%s'" "${params[@]}")
   SCRIPT+="echo \"Building the program for $soc ($features)\"
 make -s -C /openabl FEATURES='$features' OBJ=build/obj-abl OUT=build/menu/$soc || { echo \"ERROR: the program didn't build for $soc.\"; exit 1; }
