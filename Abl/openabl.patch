@@ -1348,42 +1348,33 @@ index 395087e..97b00ae 100644
  	}
 +!endif
 diff --git a/QcomModulePkg/QcomModulePkg.fdf b/QcomModulePkg/QcomModulePkg.fdf
-index 226f6fb..a4f1044 100755
+index 226f6fb..e9efd48 100755
 --- a/QcomModulePkg/QcomModulePkg.fdf
 +++ b/QcomModulePkg/QcomModulePkg.fdf
-@@ -56,10 +56,19 @@
+@@ -56,10 +56,11 @@
  
  [FD.QcomModule_EFI]
  BaseAddress   = 0x80200000|gEmbeddedTokenSpaceGuid.PcdEmbeddedFdBaseAddress  #The base address of the FLASH Device.
-+# ABL_LARGE_IMAGE: 512 KiB; abl_a/abl_b are 1 MiB on every device.
-+!if $(ABL_LARGE_IMAGE) == 1
+-Size          = 0x0003D000|gEmbeddedTokenSpaceGuid.PcdEmbeddedFdSize         #The size in bytes of the FLASH Device
++# OpenABL: 512 KiB on every chip; abl_a/abl_b are 1 MiB on every device.
 +Size          = 0x00080000|gEmbeddedTokenSpaceGuid.PcdEmbeddedFdSize         #The size in bytes of the FLASH Device
-+!else
- Size          = 0x0003D000|gEmbeddedTokenSpaceGuid.PcdEmbeddedFdSize         #The size in bytes of the FLASH Device
-+!endif
  ErasePolarity = 1
  BlockSize     = 0x200
-+!if $(ABL_LARGE_IMAGE) == 1
+-NumBlocks     = 0x1E8
 +NumBlocks     = 0x400
-+!else
- NumBlocks     = 0x1E8
-+!endif
  
  ################################################################################
  #
-@@ -78,7 +87,11 @@ NumBlocks     = 0x1E8
+@@ -78,7 +79,7 @@ NumBlocks     = 0x1E8
  ################################################################################
  
  # 512 bytes of configuration header & 8 bytes of image header
-+!if $(ABL_LARGE_IMAGE) == 1
+-0x00000000|0x0003D000
 +0x00000000|0x00080000
-+!else
- 0x00000000|0x0003D000
-+!endif
  gEmbeddedTokenSpaceGuid.PcdFlashFvMainBase|gEmbeddedTokenSpaceGuid.PcdFlashFvMainSize
  FV = FVMAIN_COMPACT
  
-@@ -115,6 +128,21 @@ READ_LOCK_STATUS   = TRUE
+@@ -115,6 +116,21 @@ READ_LOCK_STATUS   = TRUE
  FvNameGuid         = 046fae99-cf2e-49ed-a6a8-a1488b7e80d3
  
  INF QcomModulePkg/Application/LinuxLoader/LinuxLoader.inf
@@ -1406,7 +1397,7 @@ index 226f6fb..a4f1044 100755
  [FV.FVMAIN_COMPACT]
  FvAlignment        = 8
 diff --git a/makefile b/makefile
-index 8904640..81dedb0 100644
+index 8904640..3e01979 100644
 --- a/makefile
 +++ b/makefile
 @@ -22,7 +22,7 @@ ifeq ($(BUILD_NATIVE_AARCH64),true)
@@ -1442,7 +1433,7 @@ index 8904640..81dedb0 100644
  ifeq ($(TARGET_ARCHITECTURE), arm)
  	LOAD_ADDRESS := 0X8F700000
  else
-@@ -229,6 +237,17 @@ else
+@@ -229,6 +237,15 @@ else
  	AUTO_VIRT_ABL := 0
  endif
  
@@ -1452,22 +1443,19 @@ index 8904640..81dedb0 100644
 +ABL_USB_HOST_BUNDLED_STACK ?= 0
 +# The menu program (QcomModulePkg/Prebuilt/OpenAblMenu/openabl-menu.efi).
 +OPENABL_MENU ?= 0
-+# A 512 KiB image instead of 244 KiB.
-+ABL_LARGE_IMAGE ?= 0
 +# sm6115: off-mode charging from the PMIC power-on reason.
 +TARGET_SOC_SM6115 ?= 0
 +
  ifeq ($(DISABLE_KERNEL_PROTOCOL), 1)
  	DISABLE_KERNEL_PROTOCOL := 1
  else
-@@ -381,6 +400,11 @@ ABL_FV_IMG: $(EDK_TOOLS_PATH_MARK_FILE)
+@@ -381,6 +398,10 @@ ABL_FV_IMG: $(EDK_TOOLS_PATH_MARK_FILE)
  	-D REMOVE_CARVEOUT_REGION=$(REMOVE_CARVEOUT_REGION) \
  	-D QSPA_BOOTCONFIG_ENABLE=$(QSPA_BOOTCONFIG_ENABLE) \
  	-D AUTO_VIRT_ABL=$(AUTO_VIRT_ABL) \
 +	-D ABL_USB_HOST=$(ABL_USB_HOST) \
 +	-D ABL_USB_HOST_BUNDLED_STACK=$(ABL_USB_HOST_BUNDLED_STACK) \
 +	-D OPENABL_MENU=$(OPENABL_MENU) \
-+	-D ABL_LARGE_IMAGE=$(ABL_LARGE_IMAGE) \
 +	-D TARGET_SOC_SM6115=$(TARGET_SOC_SM6115) \
  	-D DDR_SUPPORTS_SCT_CONFIG=$(DDR_SUPPORTS_SCT_CONFIG) \
  	-j build_modulepkg.log $*
