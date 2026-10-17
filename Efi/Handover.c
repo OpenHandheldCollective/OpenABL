@@ -22,6 +22,7 @@
 #include "Base/Memory.h"
 #include "Core/Carveouts.h"
 #include "Core/EfiData.h"
+#include "Efi/DisplayHandover.h"
 #include "Efi/Dxe.h"
 #include "Efi/Models.h"
 #include "Efi/Qcom.h"
@@ -645,6 +646,21 @@ ReleaseDeadRegions (
   IN LOG_SINK Log
 );
 
+#ifdef OABL_DISPLAY_OFF
+STATIC EFI_EVENT mDisplayAtExit;
+
+STATIC VOID EFIAPI
+DisplayAtExit (
+  IN EFI_EVENT Event,
+  IN VOID     *Context
+)
+{
+  (VOID)Event;
+  (VOID)Context;
+  DisplayHandoverBeforeExit (TRUE, NULL);
+}
+#endif
+
 VOID
 HandoverPrepare (
   IN CONST HANDOVER_PREPARE *Prepare,
@@ -685,6 +701,22 @@ HandoverPrepare (
   ExecMemoryEnsure (Log);
   VirtualMapRefuseOnTheseChips (Log);
 #endif
+#ifdef OABL_DISPLAY_OFF
+  if (!mDisplayAtExit) {
+    EFI_STATUS Status = gBS->CreateEvent (
+      EVT_SIGNAL_EXIT_BOOT_SERVICES, TPL_CALLBACK, DisplayAtExit, NULL,
+      &mDisplayAtExit
+    );
+
+    if (EFI_ERROR (Status)) {
+      mDisplayAtExit = NULL;
+    }
+    LogPrint (
+      Log, "handover: display handover at ExitBootServices: %s",
+      STATUS_STR (Status)
+    );
+  }
+#endif
 }
 
 VOID
@@ -694,6 +726,12 @@ HandoverBootReturned (IN LOG_SINK Log)
   UINT64               Len  = mStagingLen;
   EFI_STATUS           Status;
 
+#ifdef OABL_DISPLAY_OFF
+  if (mDisplayAtExit) {
+    gBS->CloseEvent (mDisplayAtExit);
+    mDisplayAtExit = NULL;
+  }
+#endif
   mStagingBase = mStagingLen = 0;
   if (Len == 0) {
     return;
