@@ -166,6 +166,16 @@ STATIC CONST LANG_STRINGS mEn = {
   .Unknown             = "Unknown",
   .NotInserted         = "Not inserted",
   .SrcAblScan          = "the ABL's scan",
+  .EntryType1           = "Boot Loader Spec entry",
+  .EntryUki             = "Unified kernel image",
+  .DriveInternal        = "internal drive",
+  .DriveRemovable       = "removable drive",
+  .UnnamedDrive         = "drive %zu",
+  .ChipIds              = " · id %u · raw 0x%x",
+  .PlatformSubtype      = " · subtype %u",
+  .StorageManufacturer  = "mfr 0x%x",
+  .ErrorPrefix          = "error ",
+  .PressAnyKeyEnterMenu = "Press any key to go to the menu",
 };
 
 STATIC CONST LANG_STRINGS mZhHans = {
@@ -309,6 +319,16 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .Unknown             = "未知",
   .NotInserted         = "未插入",
   .SrcAblScan          = "ABL 的扫描",
+  .EntryType1           = "配置文件启动项（BLS）",
+  .EntryUki             = "统一内核镜像（UKI）",
+  .DriveInternal        = "内部存储",
+  .DriveRemovable       = "外置存储",
+  .UnnamedDrive         = "驱动器 %zu",
+  .ChipIds              = " · 编号 %u · 原始值 0x%x",
+  .PlatformSubtype      = " · 子类型 %u",
+  .StorageManufacturer  = "厂商编号 0x%x",
+  .ErrorPrefix          = "错误 ",
+  .PressAnyKeyEnterMenu = "按任意键进入菜单",
 };
 
 STATIC CONST LANG_STRINGS *CONST mLangs[LANG_COUNT] = {

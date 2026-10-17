@@ -1002,10 +1002,7 @@ DeviceInfo (
       StringAppend (&Text, " v");
       VersionText (&Text, Chip.Version.Value);
     }
-    StringPrint (
-      &Text, " \xc2\xb7 id %u \xc2\xb7 raw 0x%x", Chip.Id.Value,
-      Chip.RawId.Value
-    );
+    StringPrint (&Text, gStrings->ChipIds, Chip.Id.Value, Chip.RawId.Value);
     Push (&List, gStrings->InfoChip, StringTake (&Text));
   }
   if (QcomPlatform (&Platform)) {
@@ -1018,7 +1015,7 @@ DeviceInfo (
     }
     StringAppend (&Text, " v");
     VersionText (&Text, Platform.version);
-    StringPrint (&Text, " \xc2\xb7 subtype %u", Platform.subtype);
+    StringPrint (&Text, gStrings->PlatformSubtype, Platform.subtype);
     if (Platform.OEMVariantID) {
       StringPrint (&Text, " \xc2\xb7 OEM %u", Platform.OEMVariantID);
     }
@@ -1053,7 +1050,7 @@ DeviceInfo (
       }
       StringPrint (&One, "%s \xc2\xb7 ", Card->Kind ? Card->Kind : "");
       if (!Card->Inquiry || !Card->Inquiry[0]) {
-        StringPrint (&One, "mfr 0x%x", Card->MfrId);
+        StringPrint (&One, gStrings->StorageManufacturer, Card->MfrId);
       } else {
         StringAppend (&One, Card->Inquiry);
       }

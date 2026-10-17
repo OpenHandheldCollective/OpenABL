@@ -10,15 +10,16 @@
 #include "Core/BootEntry.h"
 
 #include "Base/Memory.h"
+#include "Ui/Lang.h"
 
 CONST CHAR8 *
 BootEntrySourceName (IN BOOT_ENTRY_SOURCE Source)
 {
   switch (Source) {
   case BOOT_ENTRY_SOURCE_TYPE1:
-    return "Boot Loader Spec entry";
+    return gStrings->EntryType1;
   case BOOT_ENTRY_SOURCE_UKI:
-    return "Unified kernel image";
+    return gStrings->EntryUki;
   case BOOT_ENTRY_SOURCE_EXTLINUX:
     break;
   }

@@ -29,6 +29,7 @@
 #include "Efi/Variables.h"
 #include "Efi/UsbHost.h"
 #include "Efi/Files.h"
+#include "Ui/Lang.h"
 #ifdef OABL_SYSFONT
 #include "Efi/SysFont.h"
 #endif
@@ -81,8 +82,8 @@ MenuStatus (
 )
 {
   SPrint (
-    Out, MENU_STATUS_SIZE, "%s%llu", EFI_ERROR (Status) ? "error " : "",
-    (UINT64)(Status & 0xffff)
+    Out, MENU_STATUS_SIZE, "%s%llu",
+    EFI_ERROR (Status) ? gStrings->ErrorPrefix : "", (UINT64)(Status & 0xffff)
   );
   return Out;
 }
@@ -593,7 +594,7 @@ HoldLogUntilKey (IN CONST MENU_HOST_STATE *State)
   if (State->AblMode == 0) {
     return;
   }
-  MenuLog ("Press any key to go to the menu");
+  MenuLog ("%s", gStrings->PressAnyKeyEnterMenu);
   for (;;) {
     INPUT_EVENTS Events = {0};
     UINTN        Count;
