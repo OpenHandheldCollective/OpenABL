@@ -23,11 +23,13 @@
 // XBL's SdccDxe asks every SD card for 1.8 V signalling (S18R in ACMD41)
 // but never sends CMD11, so UHS cards that wait for it are never found.
 // Clears S18R at every ACMD41 site in firmware code outside this image (at
-// most 16), then signals card detection again. On SM8750 (ids 639 and 706)
-// it also sets XPC and gives the card four seconds to power up during that
-// detection. The OABL_SDCC_* builds patch more SdccDxe words, and the G2 Gen
-// 2 also gets its SD command line pull-up. With OABL_SD_DIAGNOSTICS the SD
-// slot is logged before and after. Returns the number of sites patched.
+// most 16), and on SM8650 and SM8750 sets XPC there too. With S18R clear, 
+// the builds that would then ask a card for the slot's UHS speed ask for 
+// high speed instead. Every build gives a card one second to power up; that 
+// becomes four seconds. Then signals card detection again, and puts the second back.
+// The OABL_SDCC_* builds patch more SdccDxe words, and the G2 Gen 2 also gets
+// its SD command line pull-up. With OABL_SD_DIAGNOSTICS the SD slot is logged
+// before and after. Returns the number of S18R sites patched.
 UINT32
 QuirksSdccUhs (
   IN UINT32   Chip,
