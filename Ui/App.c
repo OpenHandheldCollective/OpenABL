@@ -474,7 +474,8 @@ AppRows (
 #define ADD_ITEM(Id)      (Rows[Count++] = (ROW){.Item = (Id)})
   ADD_HEADER (gStrings->SectionBoot);
   ADD_ITEM (ITEM_START);
-  if (A->EntryCount) {
+  // With one entry, Start already boots it and names it.
+  if (A->EntryCount > 1) {
     ADD_ITEM (ITEM_ENTRIES);
   }
   ADD_ITEM (ITEM_RESTART_LOADER);

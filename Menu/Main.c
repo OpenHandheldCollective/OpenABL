@@ -346,8 +346,9 @@ HandOverBootImage (
 }
 
 #ifdef OABL_STANDARD_BOOT
-// Starts what Boot entries picked and clears the pick. Returns TRUE if it
-// started, or the boot image went to the ABL (*HasImage).
+// Starts what Boot entries picked (an entry, a drive's default file or the
+// boot image) and clears the pick. Returns TRUE if it started, or the boot
+// image went to the ABL (*HasImage).
 STATIC BOOLEAN
 BootPick (
   IN CONST MENU_HOST         *Host,
@@ -389,6 +390,12 @@ BootPick (
   }
   if (!Drive) {
     return FALSE;
+  }
+  if (AsciiStrEq (Id, MENU_PICK_DEFAULT_FILE)) {
+    DEFAULT_FILES_HOST Files = FilesHost (Ctx);
+
+    return DefaultFilesBoot (&Drive, 1, &Files, NULL) ==
+           DEFAULT_FILES_OUTCOME_RETURNED;
   }
   BliSet ("LoaderEntryOneShot", Id);
   return StandardBoot (Host, &Drive, 1, Ctx) == EFI_SUCCESS;

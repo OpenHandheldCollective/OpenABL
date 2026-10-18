@@ -29,6 +29,7 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *StartAndroid;
   CONST CHAR8 *BootEntries;
   CONST CHAR8 *BootImage;
+  CONST CHAR8 *DefaultFile;
   CONST CHAR8 *RestartBootloader;
   CONST CHAR8 *RecoveryMode;
   CONST CHAR8 *Edl;
