@@ -756,6 +756,20 @@ STATIC BOOT_ENTRIES_VOLUMES mVolumes;
 STATIC UINTN                mEntryVolume[MAX_ENTRIES];
 STATIC CHAR8                mEntryIds[MAX_ENTRIES][256];
 
+STATIC ENTRY_KIND
+EntryKind (IN BOOT_ENTRY_SOURCE Source)
+{
+  switch (Source) {
+  case BOOT_ENTRY_SOURCE_TYPE1:
+    return ENTRY_KIND_BLS;
+  case BOOT_ENTRY_SOURCE_UKI:
+    return ENTRY_KIND_UKI;
+  case BOOT_ENTRY_SOURCE_EXTLINUX:
+    break;
+  }
+  return ENTRY_KIND_EXTLINUX;
+}
+
 // Adds a row for drive Volume of mVolumes, if there is room.
 STATIC VOID
 AddRow (
@@ -763,7 +777,7 @@ AddRow (
   IN OUT UINTN      *Count,
   IN UINTN           Volume,
   IN CONST CHAR8    *Title,
-  IN CONST CHAR8    *Kind,
+  IN ENTRY_KIND      Kind,
   IN CONST CHAR8    *Version OPTIONAL,
   IN BOOLEAN         Bad,
   IN CONST CHAR8    *Id
@@ -772,14 +786,16 @@ AddRow (
   CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Volume];
 
   if (*Count < MAX_ENTRIES) {
-    AsciiStrCopy (Views[*Count].Title, sizeof (Views[*Count].Title), Title);
-    SPrint (
-      Views[*Count].Detail, sizeof (Views[*Count].Detail),
-      "%s%s%s \xc2\xb7 %s (%s)", Version ? Version : "",
-      Version ? " \xc2\xb7 " : "", Kind, V->Name ? V->Name : "",
-      V->Removable ? gStrings->RemovableStorage : gStrings->InternalStorage
+    ENTRY_VIEW *View = &Views[*Count];
+
+    AsciiStrCopy (View->Title, sizeof (View->Title), Title);
+    AsciiStrCopy (
+      View->Version, sizeof (View->Version), Version ? Version : ""
     );
-    Views[*Count].Bad    = Bad;
+    AsciiStrCopy (View->Drive, sizeof (View->Drive), V->Name ? V->Name : "");
+    View->Kind           = Kind;
+    View->Removable      = V->Removable;
+    View->Bad            = Bad;
     mEntryVolume[*Count] = Volume;
     AsciiStrCopy (mEntryIds[(*Count)++], sizeof (mEntryIds[0]), Id);
   }
@@ -819,7 +835,7 @@ FillEntries (
 
       AddRow (
         Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
-        BootEntrySourceName (Entry->Source), Entry->Version,
+        EntryKind (Entry->Source), Entry->Version,
         BootEntryIsBad (Entry), Entry->Id
       );
     }
@@ -834,7 +850,7 @@ FillEntries (
         AddRow (
           Views, &Count, Index,
           gDefaultFilesPaths[Index2] + sizeof ("\\EFI\\BOOT\\") - 1,
-          gStrings->DefaultFile, NULL, FALSE, MENU_PICK_DEFAULT_FILE
+          ENTRY_KIND_DEFAULT_FILE, NULL, FALSE, MENU_PICK_DEFAULT_FILE
         );
         break;
       }
@@ -851,7 +867,7 @@ FillEntries (
         // The path without its backslash, such as KERNEL.
         AddRow (
           Views, &Count, Index, gModelsBootImages[Index2] + 1,
-          gStrings->BootImage, NULL, FALSE, MENU_PICK_BOOT_IMAGE
+          ENTRY_KIND_BOOT_IMAGE, NULL, FALSE, MENU_PICK_BOOT_IMAGE
         );
         Image = TRUE;
       }

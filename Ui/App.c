@@ -431,6 +431,47 @@ AppBootTitle (IN CONST APP *A)
 }
 
 VOID
+AppEntryDetail (
+  IN CONST ENTRY_VIEW *Entry,
+  OUT CHAR8           *Out,
+  IN UINTN             Cap
+)
+{
+  CONST CHAR8 *Kind = gStrings->BootImage;
+
+  switch (Entry->Kind) {
+  case ENTRY_KIND_BLS:
+    Kind = gStrings->EntryType1;
+    break;
+  case ENTRY_KIND_UKI:
+    Kind = gStrings->EntryUki;
+    break;
+  case ENTRY_KIND_EXTLINUX:
+    Kind = "extlinux.conf";
+    break;
+  case ENTRY_KIND_DEFAULT_FILE:
+    Kind = gStrings->DefaultFile;
+    break;
+  case ENTRY_KIND_BOOT_IMAGE:
+    break;
+  }
+  Out[0] = 0;
+  if (Entry->Version[0]) {
+    AsciiStrAppend (Out, Cap, Entry->Version);
+    AsciiStrAppend (Out, Cap, " \xc2\xb7 ");
+  }
+  AsciiStrAppend (Out, Cap, Kind);
+  AsciiStrAppend (Out, Cap, " \xc2\xb7 ");
+  AsciiStrAppend (Out, Cap, Entry->Drive);
+  AsciiStrAppend (Out, Cap, " (");
+  AsciiStrAppend (
+    Out, Cap,
+    Entry->Removable ? gStrings->RemovableStorage : gStrings->InternalStorage
+  );
+  AsciiStrAppend (Out, Cap, ")");
+}
+
+VOID
 AppBootDetail (
   IN CONST APP *A,
   OUT CHAR8    *Out,
@@ -441,7 +482,7 @@ AppBootDetail (
   CONST CHAR8 *Source = "USB";
 
   if (Index < A->EntryCount) {
-    AsciiStrCopy (Out, Cap, A->Entries[Index].Detail);
+    AppEntryDetail (&A->Entries[Index], Out, Cap);
     return;
   }
   switch (A->Settings.BootSource) {
