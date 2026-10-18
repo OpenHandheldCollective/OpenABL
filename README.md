@@ -21,7 +21,10 @@ SM8650 and SM8750.
 ## Using it
 
 Flash the image for your chipset to the ABL partition (both slots on A/B
-devices):
+devices). On a rooted handheld the Android app in `Installer/` does this and
+saves a backup first.
+
+With fastboot:
 
 ```bash
 fastboot flash abl_a abl_signed-SM8550.elf

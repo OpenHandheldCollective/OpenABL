@@ -32,6 +32,9 @@ GPL-3.0-or-later, with two differences:
 | `Core/LibFdt.h` | libfdt declarations | GPL-2.0-or-later OR BSD-2-Clause | Copyright (C) 2006 David Gibson, IBM Corporation; Copyright 2012 Kim Phillips, Freescale Semiconductor |
 | `Assets/montserrat.oablf` | Montserrat, converted | OFL-1.1 (`Assets/Montserrat-OFL.txt`) | Copyright 2011 The Montserrat Project Authors |
 | `Assets/SourceHanSansSC-Normal.otf` | Source Han Sans SC Normal 2.005, unmodified; the build subsets and converts it to `cjk-sc.oablf`, which is not named with the Reserved Font Name | OFL-1.1 (`Assets/SourceHanSans-OFL.txt`) | Copyright 2014-2025 Adobe |
+| `Installer/app/src/main/res/font/montserrat.ttf` | Montserrat variable font, unmodified | OFL-1.1 (`Assets/Montserrat-OFL.txt`) | Copyright 2011 The Montserrat Project Authors |
+| `Installer/` APK | AndroidX, Jetpack Compose and Kotlin libraries, linked into the app | Apache-2.0 | Copyright The Android Open Source Project; Copyright JetBrains s.r.o. |
+| `Installer/app/src/main/kotlin/.../ui/Icons.kt` | icon designs after Tabler Icons | MIT | Copyright (c) Paweł Kuna |
 
 ## Fetched at build time
 

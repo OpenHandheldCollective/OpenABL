@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+app/src/main/assets/images/
+app/src/main/assets/known-images.txt
+app/src/main/assets/licenses/
+.cache/
+*.apk
