@@ -17,6 +17,9 @@ class Release(val version: String, val archive: Asset, val sums: Asset?) {
     class Asset(val name: String, val url: String, val digest: String?)
 }
 
+// A newer installer APK, opened in the browser.
+class AppRelease(val version: String, val page: String)
+
 class UpdateException(message: String) : Exception(message)
 
 object Update {
@@ -24,10 +27,19 @@ object Update {
     private const val MAX_SUMS = 64 * 1024
     private const val MAX_ARCHIVE = 64L * 1024 * 1024
 
-    // The latest release if it is newer than [have], else null.
-    fun check(have: String): Release? {
+    // The latest release's images if newer than [images], and its APK if newer than [app].
+    fun check(images: String, app: String): Pair<Release?, AppRelease?> {
         val json = JSONObject(String(fetch(LATEST, 1 shl 20)))
-        return parse(json, have)
+        return parse(json, images) to parseApp(json, app)
+    }
+
+    fun parseApp(json: JSONObject, have: String): AppRelease? {
+        val tag = json.getString("tag_name")
+        if (Versions.compare(tag, have) <= 0) return null
+        val assets = json.getJSONArray("assets")
+        val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
+            .firstOrNull { it.getString("name") == "openabl-installer-$tag.apk" } ?: return null
+        return AppRelease(tag.removePrefix("v"), json.optString("html_url").ifEmpty { apk.getString("browser_download_url") })
     }
 
     fun parse(json: JSONObject, have: String): Release? {

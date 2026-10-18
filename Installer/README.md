@@ -25,6 +25,10 @@ then:
 `SHA256SUMS` and writes it back to both slots; it only takes backups made on
 the same model. Delete removes the folder.
 
+*Reboot to bootloader* restarts into the bootloader, OpenABL's menu once it
+is installed. The version at the top right checks for a newer installer and
+opens its release page when there is one.
+
 Supported chipsets are those of the images in the release: SDM845, SM4450,
 SM6115, SM6450, SM7675, SM8250, SM8550, SM8650 and SM8750. The chip comes
 from `ro.soc.model`, or from `ro.board.platform` if that is empty. The app

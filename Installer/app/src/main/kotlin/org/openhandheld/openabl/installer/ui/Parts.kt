@@ -74,9 +74,9 @@ fun Txt(
 }
 
 @Composable
-fun Header(version: String, modifier: Modifier = Modifier) {
+fun Header(version: String, newer: String?, checking: Boolean, onClick: () -> Unit) {
     val un = LocalUnits.current
-    Row(modifier.fillMaxWidth().height(un.dp(55f)), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(un.dp(44f)), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             val mark = buildAnnotatedString {
                 withStyle(SpanStyle(color = Colors.Text)) { append("Open") }
@@ -88,11 +88,31 @@ fun Header(version: String, modifier: Modifier = Modifier) {
                 style = TextStyle(fontSize = un.sp(20f), fontFamily = Montserrat, fontWeight = FontWeight.Medium),
             )
         }
-        Box(
-            Modifier.height(un.dp(24f)).border(BorderStroke(un.dp(1f), Colors.Line), RoundedCornerShape(un.dp(12f)))
+        // The app's version; checks for a newer installer, or opens it.
+        var focused by remember { mutableStateOf(false) }
+        val shape = RoundedCornerShape(un.dp(12f))
+        val edge = if (focused) Colors.Accent else if (newer != null) Colors.Brand else Colors.Line
+        Row(
+            Modifier.height(un.dp(24f)).clip(shape).background(if (focused) Colors.AccentBg else Color.Transparent)
+                .border(BorderStroke(un.dp(if (focused) 1.5f else 1f), edge), shape)
+                .onFocusChanged { focused = it.isFocused }
+                .onKeyEvent {
+                    if (it.key in selectKeys) {
+                        if (it.type == KeyEventType.KeyUp) onClick()
+                        true
+                    } else false
+                }
+                .pointerInput(onClick) { detectTapGestures { onClick() } }.focusable()
                 .padding(horizontal = un.dp(10f)),
-            contentAlignment = Alignment.Center,
-        ) { Txt("v$version", 12.5f, Colors.Text2) }
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val fg = if (focused) Colors.AccentText else if (newer != null) Colors.Brand else Colors.Text2
+            Txt(if (newer != null) "v$newer available" else "v$version", 12.5f, fg)
+            if (newer == null) {
+                Spacer(Modifier.width(un.dp(6f)))
+                Glyph(Icon.Refresh, un.dp(12f), if (checking) Colors.Text3 else fg)
+            }
+        }
     }
 }
 
@@ -139,9 +159,9 @@ fun SystemPanel(facts: List<Fact>, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun Section(text: String) {
+fun Section(text: String, first: Boolean = false) {
     val un = LocalUnits.current
-    Txt(text, 12.5f, Colors.Text3, FontWeight.Medium, Modifier.padding(start = un.dp(10f), top = un.dp(9f), bottom = un.dp(2f)))
+    Txt(text, 12.5f, Colors.Text3, FontWeight.Medium, Modifier.padding(start = un.dp(10f), top = un.dp(if (first) 0f else 6f), bottom = un.dp(2f)))
 }
 
 @Composable

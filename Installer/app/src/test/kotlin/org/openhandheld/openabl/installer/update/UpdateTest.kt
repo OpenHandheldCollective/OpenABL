@@ -76,4 +76,10 @@ class UpdateTest {
         assertEquals("SM8550", k.find("a".repeat(64), 532480)!!.chip)
         assertNull(k.find("a".repeat(64), 258048))
     }
+
+    @Test fun newerInstallerOnlyWithItsApk() {
+        assertNull(Update.parseApp(release("v1.1", listOf("openabl-v1.1.tar.gz")), "1.0"))
+        assertNull(Update.parseApp(release("v1.0", listOf("openabl-installer-v1.0.apk")), "1.0"))
+        assertEquals("1.1", Update.parseApp(release("v1.1", listOf("openabl-installer-v1.1.apk")), "1.0")!!.version)
+    }
 }

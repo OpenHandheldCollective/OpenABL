@@ -21,6 +21,7 @@ import org.openhandheld.openabl.installer.root.Launch
 import org.openhandheld.openabl.installer.root.Root
 import org.openhandheld.openabl.installer.root.Route
 import org.openhandheld.openabl.installer.root.Status
+import org.openhandheld.openabl.installer.update.AppRelease
 import org.openhandheld.openabl.installer.update.Release
 import org.openhandheld.openabl.installer.update.Update
 import kotlinx.coroutines.CoroutineScope
@@ -73,6 +74,7 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
     var confirm by mutableStateOf<Confirm?>(null)
     var running by mutableStateOf<Running?>(null)
     var ready by mutableStateOf<Ready?>(null)
+    var app by mutableStateOf<AppRelease?>(null)
 
     private var jobs: Jobs? = null
     private var busy = false
@@ -190,6 +192,12 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
         }
     }
 
+    fun askReboot() {
+        confirm = Confirm("Reboot to bootloader", "Restarts the handheld into the bootloader, OpenABL's menu once it's installed.", "Reboot") {
+            runJob("Rebooting", "reboot") { j, id -> Scripts.reboot(env, id, j.statusPath) }
+        }
+    }
+
     private fun runJob(title: String, name: String, build: (Jobs, String) -> String) {
         val j = jobs ?: return
         if (busy || reading) return
@@ -208,7 +216,7 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
             if (launched !is Launch.Failed) {
                 val s = await(j, id) { s -> if (running?.result == null) running = Running(title, s.message, running?.script) }
                 if (s != null) {
-                    running = Running(title, s.message, result = s, keys = s.done && name != "delete")
+                    running = Running(title, s.message, result = s, keys = s.done && name != "delete" && name != "reboot")
                     afterJob(name, s)
                 }
             }
@@ -236,7 +244,8 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
         updates = Updates.Checking
         scope.launch {
             updates = try {
-                val r = withContext(Dispatchers.IO) { Update.check(bundledOrNewer()) }
+                val (r, a) = withContext(Dispatchers.IO) { Update.check(bundledOrNewer(), bundled) }
+                app = a
                 if (r == null) Updates.Current else Updates.Found(r)
             } catch (e: Exception) {
                 Updates.Offline

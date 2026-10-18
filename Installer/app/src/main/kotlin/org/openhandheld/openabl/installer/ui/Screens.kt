@@ -5,6 +5,8 @@
 package org.openhandheld.openabl.installer.ui
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -112,6 +114,8 @@ private fun homeLines(i: Installer, context: Context, finish: () -> Unit): List<
     }
     out += Line.Head("Backups")
     out += Line.Item(Icon.History, "Restore a backup", i.inspection?.backups?.size?.toString(), chevron = true, enabled = i.route != null) { i.screen = Screen.Restore }
+    out += Line.Head("Device")
+    out += Line.Item(Icon.Power, "Reboot to bootloader", enabled = i.route != null && !i.reading) { i.askReboot() }
     out += Line.Head("About")
     out += Line.Item(Icon.File, "Credits", chevron = true) { i.screen = Screen.Licenses }
     i.inspectNote?.let { out += Line.Text(it, danger = true) }
@@ -150,12 +154,12 @@ private fun Lines(lines: List<Line>, resetKey: Any, overlay: Boolean, modifier: 
     }
     val un = LocalUnits.current
     val scroll = rememberScrollState()
-    Column(modifier) {
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).focusProperties { canFocus = !overlay }) {
+    Box(modifier) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).focusProperties { canFocus = !overlay }) {
             var n = 0
             lines.forEach { l ->
                 when (l) {
-                    is Line.Head -> Section(l.text)
+                    is Line.Head -> Section(l.text, first = l === lines.first())
                     is Line.Text -> Note(l.text, if (l.danger) Colors.Danger else Colors.Text3)
                     is Line.Item -> {
                         val idx = n++
@@ -164,8 +168,8 @@ private fun Lines(lines: List<Line>, resetKey: Any, overlay: Boolean, modifier: 
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(un.dp(14f)), contentAlignment = Alignment.Center) {
-            if (scroll.canScrollForward) Glyph(Icon.Down, un.dp(13f), Colors.Text3)
+        if (scroll.canScrollForward) {
+            Glyph(Icon.Down, un.dp(13f), Colors.Text3, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
@@ -183,7 +187,12 @@ fun App(i: Installer, finish: () -> Unit) {
         }
         Box(Modifier.fillMaxSize().background(Colors.Background)) {
             Column(Modifier.fillMaxSize().padding(horizontal = un.dp(if (landscape) 13f else 12f))) {
-                Header(i.bundled)
+                val checking = i.updates == Updates.Checking || i.updates == Updates.Idle
+                Header(i.bundled, i.app?.version, checking) {
+                    val a = i.app
+                    if (a != null) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(a.page))) }
+                    else i.checkUpdates()
+                }
                 if (i.screen == Screen.Licenses) {
                     Licenses(context, Modifier.weight(1f).fillMaxWidth())
                 } else if (landscape) {
