@@ -14,10 +14,15 @@ data class Device(
     val platform: String,
     val chip: Chip?,
 ) {
-    // The models OpenABL's panel table lists (Core/Panel.c).
-    val listed get() = LISTED.any { it.equals(model, ignoreCase = true) }
+    // The models OpenABL's panel table lists (Core/Panel.c). Android often
+    // leaves the maker out or spells the name differently.
+    val listed get() = listOf(model, "$maker $model").map(::squash).let { names ->
+        LISTED.any { l -> squash(l).let { it in names || names.any { n -> n.length >= 6 && it.endsWith(n) } } }
+    }
 
     companion object {
+        private fun squash(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+
         private val LISTED = listOf(
             "MANGMI Pocket Max", "MANGMI Air Y Pro", "Retroid Pocket 5", "AYN Odin 2 Portal",
             "Retroid Pocket 6", "Retroid Pocket Nova", "KONKR Pocket FIT", "AYN Odin 3",

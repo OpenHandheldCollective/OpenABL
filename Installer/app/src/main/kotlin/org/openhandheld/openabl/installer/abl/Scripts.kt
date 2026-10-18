@@ -22,6 +22,7 @@ object Scripts {
     const val BACKUP = "backup"
     const val INSTALL = "install"
     const val RESTORE = "restore"
+    const val DELETE = "delete"
 
     fun quote(s: String) = "'" + s.replace("'", "'\\''") + "'"
 
@@ -78,5 +79,10 @@ object Scripts {
     fun restore(env: Env, job: String, status: String, model: String, folder: String): String {
         check(Regex("backup-[0-9_-]+").matches(folder)) { "bad folder" }
         return build(RESTORE, env, job, status, null, mapOf("FOLDER" to quote(folder), "MODEL" to quote(model)))
+    }
+
+    fun delete(env: Env, job: String, status: String, folder: String): String {
+        check(Regex("backup-[0-9_-]+").matches(folder)) { "bad folder" }
+        return build(DELETE, env, job, status, null, mapOf("FOLDER" to quote(folder)))
     }
 }

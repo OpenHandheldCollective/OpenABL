@@ -54,4 +54,7 @@ for elf in "$assets"/images/abl_signed-*.elf; do
 done
 
 mkdir -p "$assets/licenses"
-cp "$here/../Assets/Montserrat-OFL.txt" "$here/../LICENSES/MIT.txt" "$here/../LICENSES/Apache-2.0.txt" "$assets/licenses/"
+cp "$here/../Assets/Montserrat-OFL.txt" "$assets/licenses/"
+# The MIT text is for Tabler Icons; Apache's appendix is a template.
+sed 's/^Copyright (c) <year> <copyright holders>$/Copyright (c) 2020-2024 Paweł Kuna/' "$here/../LICENSES/MIT.txt" > "$assets/licenses/MIT.txt"
+sed '/^ *APPENDIX: How to apply/,$d' "$here/../LICENSES/Apache-2.0.txt" > "$assets/licenses/Apache-2.0.txt"

@@ -6,6 +6,7 @@ package org.openhandheld.openabl.installer.ui
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,7 +84,7 @@ private fun homeLines(i: Installer, context: Context, finish: () -> Unit): List<
         out += Line.Head("Not supported")
         out += Line.Text("OpenABL has no image for this chip. It supports $SUPPORTED.")
         out += Line.Head("About")
-        out += Line.Item(Icon.File, "Licenses", chevron = true) { i.screen = Screen.Licenses }
+        out += Line.Item(Icon.File, "Credits", chevron = true) { i.screen = Screen.Licenses }
         out += Line.Item(Icon.Exit, "Close") { finish() }
         return out
     }
@@ -110,10 +111,9 @@ private fun homeLines(i: Installer, context: Context, finish: () -> Unit): List<
         ) { i.checkUpdates() }
     }
     out += Line.Head("Backups")
-    out += Line.Item(Icon.Save, "Back up now", enabled = i.route != null && !i.reading) { i.askBackup() }
     out += Line.Item(Icon.History, "Restore a backup", i.inspection?.backups?.size?.toString(), chevron = true, enabled = i.route != null) { i.screen = Screen.Restore }
     out += Line.Head("About")
-    out += Line.Item(Icon.File, "Licenses", chevron = true) { i.screen = Screen.Licenses }
+    out += Line.Item(Icon.File, "Credits", chevron = true) { i.screen = Screen.Licenses }
     i.inspectNote?.let { out += Line.Text(it, danger = true) }
     (i.updates as? Updates.Failed)?.let { out += Line.Text(it.why, danger = true) }
     if (!i.device.listed) out += Line.Text("OpenABL doesn't list this model. Check that it has abl_a and abl_b.")
@@ -198,7 +198,7 @@ fun App(i: Installer, finish: () -> Unit) {
                 Footer(hints, Modifier.height(un.dp(36f)))
             }
             i.confirm?.let { c ->
-                Dialog(c.title, c.text, c.action, { c.run() }, { i.confirm = null })
+                Dialog(c.title, c.text, c.action, { c.run() }, { i.confirm = null }, c.other, { c.runOther() })
             }
         }
     }
@@ -299,22 +299,37 @@ private fun Licenses(context: Context, modifier: Modifier) {
     ) {
         Spacer(Modifier.height(un.dp(8f)))
         Txt("OpenABL", 14.5f, Colors.Text, FontWeight.Medium)
-        Para("OpenABL is free software, licensed GPL-3.0-or-later. Copyright (C) 2026-present Open Handheld Collective. It comes with no warranty.")
-        Para("Source: https://github.com/OpenHandheldCollective/OpenABL")
-        Spacer(Modifier.height(un.dp(8f)))
-        Txt("Montserrat", 14.5f, Colors.Text, FontWeight.Medium)
-        Para("The font. Copyright 2011 The Montserrat Project Authors. SIL Open Font License 1.1.")
-        if (ofl.isNotEmpty()) Para(ofl, Colors.Text3)
-        Spacer(Modifier.height(un.dp(8f)))
-        Txt("Tabler Icons", 14.5f, Colors.Text, FontWeight.Medium)
-        Para("The icons are drawn after Tabler Icons. MIT licence, Copyright (c) Paweł Kuna.")
-        if (mit.isNotEmpty()) Para(mit, Colors.Text3)
-        Spacer(Modifier.height(un.dp(8f)))
-        Txt("Android libraries", 14.5f, Colors.Text, FontWeight.Medium)
-        Para("AndroidX, Jetpack Compose and Kotlin, Apache License 2.0.")
-        if (apache.isNotEmpty()) Para(apache, Colors.Text3)
+        Para("Developed by the Open Handheld Collective. Free software under the GPL-3.0-or-later, with no warranty.")
+        Link("github.com/OpenHandheldCollective/OpenABL")
+        Spacer(Modifier.height(un.dp(10f)))
+        Txt("Android Installer", 14.5f, Colors.Text, FontWeight.Medium)
+        Para("Developed by Aimal (hashtagbasit). Installs, updates, backs up and restores OpenABL on your handheld from Android, without a PC.")
+        Link("github.com/hashtagbasit")
+        Spacer(Modifier.height(un.dp(14f)))
+        Txt("Also uses", 12.5f, Colors.Text3, FontWeight.Medium)
+        Minor("Montserrat font", "Copyright 2011 The Montserrat Project Authors. SIL Open Font License 1.1.", ofl)
+        Minor("Tabler Icons", "The icons are drawn after Tabler Icons by Paweł Kuna. MIT License.", mit)
+        Minor("AndroidX, Jetpack Compose and Kotlin", "Apache License 2.0.", apache)
         Spacer(Modifier.height(un.dp(12f)))
     }
+}
+
+@Composable
+private fun Link(text: String) {
+    val un = LocalUnits.current
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    Txt(
+        text, 12.5f, Colors.Brand,
+        modifier = Modifier.padding(top = un.dp(2f)).clickable { runCatching { uri.openUri("https://$text") } },
+    )
+}
+
+@Composable
+private fun Minor(name: String, line: String, license: String) {
+    val un = LocalUnits.current
+    Txt(name, 11f, Colors.Text2, FontWeight.Medium, Modifier.padding(top = un.dp(8f)))
+    Txt(line, 11f, Colors.Text3, modifier = Modifier.padding(top = un.dp(2f)))
+    if (license.isNotEmpty()) Txt(license, 10f, Colors.Text3, modifier = Modifier.padding(top = un.dp(3f)))
 }
 
 @Composable

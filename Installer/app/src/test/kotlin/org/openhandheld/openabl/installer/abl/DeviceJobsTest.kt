@@ -56,6 +56,22 @@ class DeviceJobsTest {
         untouched()
     }
 
+    @Test fun deleteRemovesOnlyThatBackup() {
+        d.run(Scripts.backup(d.env, "j", d.status.path, "2026-10-18_190000", "Model: x"))
+        d.run(Scripts.backup(d.env, "j", d.status.path, "2026-10-18_190100", "Model: x"))
+        val s = d.run(Scripts.delete(d.env, "j", d.status.path, "backup-2026-10-18_190000"))
+        assertTrue(s.message, s.done)
+        assertEquals("backup-2026-10-18_190000", s.get("deleted"))
+        assertEquals(listOf("backup-2026-10-18_190100"), d.backups().map { it.name })
+        untouched()
+    }
+
+    @Test fun inspectLeavesACopyOfEachSlot() {
+        d.run(Scripts.inspect(d.env, "j", d.status.path, listOf(1000L)))
+        assertArrayEquals(d.stockA, File(d.status.parentFile, "slot_a.img").readBytes())
+        assertArrayEquals(d.stockB, File(d.status.parentFile, "slot_b.img").readBytes())
+    }
+
     @Test fun installWritesBothSlotsAfterTheBackup() {
         val img = d.image(12345)
         val s = d.install(img)

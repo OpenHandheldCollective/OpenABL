@@ -27,6 +27,9 @@ class Jobs(private val context: Context, val route: Route) {
 
     val statusPath get() = rootPath(status)
 
+    // A file the scripts leave next to the status file.
+    fun left(name: String) = File(dir, name)
+
     fun newId() = UUID.randomUUID().toString()
 
     // Saves the script and starts it, or saves the one-line launcher for the user.

@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import org.openhandheld.openabl.installer.abl.Env
 import org.openhandheld.openabl.installer.abl.Images
 import org.openhandheld.openabl.installer.abl.Inspection
+import org.openhandheld.openabl.installer.abl.Marker
 import org.openhandheld.openabl.installer.abl.Ready
 import org.openhandheld.openabl.installer.abl.Scripts
 import org.openhandheld.openabl.installer.device.Chip
@@ -39,7 +40,11 @@ sealed interface Screen {
     data object Job : Screen
 }
 
-class Confirm(val title: String, val text: String, val action: String, val run: () -> Unit)
+class Confirm(
+    val title: String, val text: String, val action: String,
+    val other: String? = null, val runOther: () -> Unit = {},
+    val run: () -> Unit,
+)
 
 // A job on screen: what it is doing, or how it ended.
 class Running(val title: String, val message: String, val script: String? = null, val result: Status? = null, val keys: Boolean = false)
@@ -128,7 +133,10 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
     }
 
     private fun finishInspect(s: Status) {
-        if (s.done) inspection = Inspection.from(s, images.known) else inspectNote = s.message
+        val j = jobs
+        if (s.done) {
+            inspection = Inspection.from(s, images.known) { slot -> j?.left("slot_$slot.img")?.let { Marker.version(it) } }
+        } else inspectNote = s.message
         if (screen == Screen.Job && running?.script != null) leaveJob()
     }
 
@@ -158,7 +166,7 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
         val listed = if (device.listed) "" else " This model isn't one OpenABL lists. Go on only if it has abl_a and abl_b."
         confirm = Confirm(
             "Install OpenABL ${r.version}",
-            "Saves both slots to Download/OpenABL, then writes ${c.image} to abl_a and abl_b.$listed",
+            "Backs up both slots to Download/OpenABL, then writes OpenABL (${c.image}) to abl_a and abl_b.$listed",
             "Install",
         ) { install(r, c) }
     }
@@ -169,15 +177,16 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
         }
     }
 
-    fun askBackup() {
-        confirm = Confirm("Back up", "Saves abl_a and abl_b to Download/OpenABL.", "Back up") {
-            runJob("Backing up", "backup") { j, id -> Scripts.backup(env, id, j.statusPath, stamp(), info()) }
-        }
+    fun askRestore(name: String) {
+        confirm = Confirm(
+            pretty(name), "Restore checks the backup, then writes it to abl_a and abl_b. Delete removes it from Download/OpenABL.", "Restore",
+            "Delete", { askDelete(name) },
+        ) { runJob("Restoring", "restore") { j, id -> Scripts.restore(env, id, j.statusPath, device.model, name) } }
     }
 
-    fun askRestore(name: String) {
-        confirm = Confirm("Restore ${pretty(name)}", "Checks the backup, then writes it to abl_a and abl_b.", "Restore") {
-            runJob("Restoring", "restore") { j, id -> Scripts.restore(env, id, j.statusPath, device.model, name) }
+    private fun askDelete(name: String) {
+        confirm = Confirm("Delete ${pretty(name)}", "The backup is gone for good after this.", "Delete") {
+            runJob("Deleting", "delete") { j, id -> Scripts.delete(env, id, j.statusPath, name) }
         }
     }
 
@@ -199,7 +208,7 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
             if (launched !is Launch.Failed) {
                 val s = await(j, id) { s -> if (running?.result == null) running = Running(title, s.message, running?.script) }
                 if (s != null) {
-                    running = Running(title, s.message, result = s, keys = s.done && name != "backup")
+                    running = Running(title, s.message, result = s, keys = s.done && name != "delete")
                     afterJob(name, s)
                 }
             }
@@ -215,6 +224,9 @@ class Installer(private val context: Context, private val scope: CoroutineScope,
             inspection = (inspection ?: Inspection("", "", "", emptyList())).copy(slotA = label, slotB = label)
         }
         if (s.done && name == "restore") inspection = null
+        if (s.done && name == "delete") s.get("deleted")?.let { gone ->
+            inspection = inspection?.let { it.copy(backups = it.backups - gone) }
+        }
     }
 
     fun finish() = leaveJob()

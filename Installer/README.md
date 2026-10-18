@@ -10,18 +10,20 @@ you to run as root yourself.
 ## Using it
 
 Open the app. It shows the chip, the model, how it gets root and what each
-slot holds ("OpenABL 1.0" or "Not OpenABL"). *Install OpenABL* asks first,
+slot holds ("OpenABL 1.0", "OpenABL 1.0 build" for a build that isn't a
+release, or "Not OpenABL"). *Install OpenABL* asks first,
 then:
 
-1. Saves both slots to `Download/OpenABL/backup-<date>_<time>/` (`abl_a.img`,
+1. Backs up both slots to `Download/OpenABL/backup-<date>_<time>/` (`abl_a.img`,
    `abl_b.img`, `SHA256SUMS` and `info.txt`) and checks the copies. If this
    fails nothing is written.
 2. Writes the image for the chip to the slot the device isn't running
    first, then the other, and reads each back. A slot that doesn't match is
    written back from the backup.
 
-*Restore a backup* checks a backup folder against its `SHA256SUMS` and
-writes it back to both slots. It only takes backups made on the same model.
+*Restore a backup* lists the backups. Restore checks one against its
+`SHA256SUMS` and writes it back to both slots; it only takes backups made on
+the same model. Delete removes the folder.
 
 Supported chipsets are those of the images in the release: SDM845, SM4450,
 SM6115, SM6450, SM7675, SM8250, SM8550, SM8650 and SM8750. The chip comes

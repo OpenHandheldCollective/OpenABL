@@ -81,12 +81,12 @@ fun Header(version: String, modifier: Modifier = Modifier) {
             val mark = buildAnnotatedString {
                 withStyle(SpanStyle(color = Colors.Text)) { append("Open") }
                 withStyle(SpanStyle(color = Colors.Brand)) { append("ABL") }
+                withStyle(SpanStyle(color = Colors.Text2)) { append(" Installer") }
             }
             BasicText(
                 mark,
                 style = TextStyle(fontSize = un.sp(20f), fontFamily = Montserrat, fontWeight = FontWeight.Medium),
             )
-            Txt("Installer by hashtagbasit", 10f, Colors.Text3, modifier = Modifier.padding(top = un.dp(1f)))
         }
         Box(
             Modifier.height(un.dp(24f)).border(BorderStroke(un.dp(1f), Colors.Line), RoundedCornerShape(un.dp(12f)))
@@ -206,7 +206,7 @@ fun Entry(
 }
 
 @Composable
-fun Dialog(title: String, text: String, action: String, onAction: () -> Unit, onCancel: () -> Unit) {
+fun Dialog(title: String, text: String, action: String, onAction: () -> Unit, onCancel: () -> Unit, other: String? = null, onOther: () -> Unit = {}) {
     val un = LocalUnits.current
     val first = remember { FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(Unit) { first.requestFocus() }
@@ -222,6 +222,7 @@ fun Dialog(title: String, text: String, action: String, onAction: () -> Unit, on
             Txt(text, 12.5f, Colors.Text2, modifier = Modifier.padding(top = un.dp(5f), bottom = un.dp(8f)))
             Entry(Icon.Back, "Cancel", requester = first, onClick = onCancel)
             Entry(Icon.Check, action, onClick = onAction)
+            if (other != null) Entry(Icon.Trash, other, tone = Tone.Danger, onClick = onOther)
         }
     }
 }
