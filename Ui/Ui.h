@@ -210,12 +210,27 @@ typedef struct _MODEL {
   CHAR8  Source[64]; // where the devicetree was found
 } MODEL;
 
+// What a boot entry is. Named in the current language when drawn.
+typedef enum {
+  ENTRY_KIND_BLS,
+  ENTRY_KIND_UKI,
+  ENTRY_KIND_EXTLINUX,
+  ENTRY_KIND_DEFAULT_FILE,
+  ENTRY_KIND_BOOT_IMAGE,
+} ENTRY_KIND;
+
 // A boot entry the platform found. Start boots the first.
 typedef struct _ENTRY_VIEW {
-  CHAR8   Title[96];
-  CHAR8   Detail[192]; // version, kind and drive
-  BOOLEAN Bad;         // no tries left (Automatic Boot Assessment)
+  CHAR8      Title[96];
+  CHAR8      Version[64]; // "" for none
+  CHAR8      Drive[64];   // the drive's name
+  ENTRY_KIND Kind;
+  BOOLEAN    Removable; // the drive is removable
+  BOOLEAN    Bad;       // no tries left (Automatic Boot Assessment)
 } ENTRY_VIEW;
+
+// Size for AppEntryDetail's text.
+#define ENTRY_DETAIL_SIZE 192
 
 typedef struct _TEXT_LINE {
   CONST CHAR8 *Label; // "" for a bare line (the log)
@@ -472,6 +487,14 @@ AppItemView (
 // or NULL when there are no entries.
 CONST CHAR8 *
 AppBootTitle (IN CONST APP *A);
+
+// Writes an entry's version, kind and drive in the current language.
+VOID
+AppEntryDetail (
+  IN CONST ENTRY_VIEW *Entry,
+  OUT CHAR8           *Out,
+  IN UINTN             Cap
+);
 
 // Writes the line under the boot screen's title: the entry's detail, or
 // where the boot looks.

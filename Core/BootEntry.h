@@ -25,10 +25,6 @@ typedef enum {
   BOOT_ENTRY_SOURCE_EXTLINUX,
 } BOOT_ENTRY_SOURCE;
 
-// Name of the source for the menu.
-CONST CHAR8 *
-BootEntrySourceName (IN BOOT_ENTRY_SOURCE Source);
-
 // Name of the source for the log.
 CONST CHAR8 *
 BootEntrySourceDebug (IN BOOT_ENTRY_SOURCE Source);

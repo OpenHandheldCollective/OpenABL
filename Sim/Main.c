@@ -163,19 +163,12 @@ SampleModels (OUT CONST MODEL **Models)
 
 // The entries of a card with a Linux image, a UKI and a fallback kernel.
 STATIC CONST ENTRY_VIEW mEntries[] = {
-  {"Linux",
-   "Version 20261003 · Boot Loader Spec entry · Linux (removable drive) · 3 "
-   "tries left",
-   FALSE},
-  {"Linux (previous)",
-   "Version 20260901 · Boot Loader Spec entry · Linux (removable drive)",
-   FALSE},
-  {"Debian GNU/Linux 13",
-   "Version 6.12 · Unified kernel image · ESP (internal drive)", FALSE},
-  {"Linux nightly",
-   "Version 20261004 · Boot Loader Spec entry · Linux (removable drive)", TRUE},
-  {"Recovery shell", "extlinux.conf · Linux (removable drive)", FALSE},
-  {"BOOTAA64.EFI", "EFI loader · ESP (internal drive)", FALSE},
+  {"Linux", "20261003", "Linux", ENTRY_KIND_BLS, TRUE, FALSE},
+  {"Linux (previous)", "20260901", "Linux", ENTRY_KIND_BLS, TRUE, FALSE},
+  {"Debian GNU/Linux 13", "6.12", "ESP", ENTRY_KIND_UKI, FALSE, FALSE},
+  {"Linux nightly", "20261004", "Linux", ENTRY_KIND_BLS, TRUE, TRUE},
+  {"Recovery shell", "", "Linux", ENTRY_KIND_EXTLINUX, TRUE, FALSE},
+  {"KERNEL", "", "Linux", ENTRY_KIND_BOOT_IMAGE, TRUE, FALSE},
 };
 
 STATIC UINTN

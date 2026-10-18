@@ -1413,11 +1413,14 @@ STATIC INT32
 EntriesSubLines (IN CONST APP *A)
 {
   UINTN Focus = A->EntryList.Focus;
+  CHAR8 Detail[ENTRY_DETAIL_SIZE];
 
   if (Focus < A->EntryCount && mView.W <= mView.H) {
-    INT32 Lines = WrapCount (
-      A->Entries[Focus].Detail, 12.5f, FONT_WEIGHT_REGULAR, (float)mView.Body.W
-    );
+    INT32 Lines;
+
+    AppEntryDetail (&A->Entries[Focus], Detail, sizeof (Detail));
+    Lines =
+      WrapCount (Detail, 12.5f, FONT_WEIGHT_REGULAR, (float)mView.Body.W);
     return Lines < 1 ? 1 : Lines > 2 ? 2 : Lines;
   }
   return 1;
@@ -1431,11 +1434,13 @@ EntriesSideText (
 )
 {
   UINTN Focus = A->EntryList.Focus;
+  CHAR8 Detail[ENTRY_DETAIL_SIZE];
 
   if (Focus < A->EntryCount) {
+    AppEntryDetail (&A->Entries[Focus], Detail, sizeof (Detail));
     AsciiStrCopy (Out, Cap, A->Entries[Focus].Title);
     AsciiStrAppend (Out, Cap, ". ");
-    AsciiStrAppend (Out, Cap, A->Entries[Focus].Detail);
+    AsciiStrAppend (Out, Cap, Detail);
   } else {
     AsciiStrCopy (Out, Cap, gStrings->BackToMenu);
   }
@@ -1451,6 +1456,7 @@ EntriesDraw (IN OUT APP *A)
   LIST    List;
   BOOLEAN HasSide;
   CHAR8   SideText[320];
+  CHAR8   Detail[ENTRY_DETAIL_SIZE];
   // Rows: each entry, "Back".
   UINTN Count = A->EntryCount + 1;
   UINTN Focus = A->EntryList.Focus < Count ? A->EntryList.Focus : Count - 1;
@@ -1461,10 +1467,11 @@ EntriesDraw (IN OUT APP *A)
     Rect (Title.X, Title.Y, Title.W, ToPxInt (26)), gStrings->BootEntries, 18,
     FONT_WEIGHT_MEDIUM, THEME_TEXT, ALIGN_LEFT
   );
-  CONST CHAR8 *Subtitle =
-    A->EntryList.Focus < A->EntryCount && mView.W <= mView.H
-      ? A->Entries[A->EntryList.Focus].Detail
-      : gStrings->EntriesExplain;
+  CONST CHAR8 *Subtitle = gStrings->EntriesExplain;
+  if (A->EntryList.Focus < A->EntryCount && mView.W <= mView.H) {
+    AppEntryDetail (&A->Entries[A->EntryList.Focus], Detail, sizeof (Detail));
+    Subtitle = Detail;
+  }
   Wrapped (
     (float)Title.X, (float)Title.Y + ToPx (26), (float)Title.W, Subtitle, 12.5f,
     FONT_WEIGHT_REGULAR, ToPx (18), 2, THEME_TEXT2, ALIGN_LEFT
@@ -1680,7 +1687,7 @@ BootingDraw (IN CONST APP *A)
   float        CapH = FontCapHeight (ToPx (40));
   float        Y    = CenterY (mView.Body) - ToPx (60);
   CHAR8        What[160];
-  CHAR8        Detail[192];
+  CHAR8        Detail[ENTRY_DETAIL_SIZE];
   CONST CHAR8 *Title = AppBootTitle (A);
 
   Wordmark (Cx - WordmarkWidth (40) / 2, Y + CapH / 2, 40);
