@@ -4,8 +4,16 @@ An Android app that installs OpenABL from the handheld's own Android, to
 `abl_a` and `abl_b`, without a PC. It stops there: it installs no other
 system.
 
-It needs root. Without it the app saves a one-line script in Download for
-you to run as root yourself.
+![Installing](Docs/install.png)
+
+It needs root: xsu on AYANEO and KONKR, the system service on Retroid, or
+su on AYN and anything with Magisk or KernelSU. Without it the app saves a
+one-line script in Download for you to run as root yourself, on Retroid
+with Handheld Settings, Advanced, Run script as root.
+
+| Done | Backups |
+| --- | --- |
+| ![Installed](Docs/installed.png) | ![Backups](Docs/backups.png) |
 
 ## Using it
 
