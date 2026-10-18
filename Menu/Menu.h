@@ -153,8 +153,9 @@ MenuLiveUsbHostDown (IN CONST MENU_HOST *Host);
 // What Boot entries picked for the next Start, kept across a restart: the
 // drive's device path length (Le16), the path, then the entry's id. Start
 // takes it and clears it.
-#define MENU_PICK_VAR        "BootEntryOnce"
-#define MENU_PICK_BOOT_IMAGE "openabl-boot-image"
+#define MENU_PICK_VAR          "BootEntryOnce"
+#define MENU_PICK_BOOT_IMAGE   "openabl-boot-image"
+#define MENU_PICK_DEFAULT_FILE "openabl-default-file"
 
 // What booting needs from the ABL's state and the settings.
 typedef struct _MENU_BOOT_CONTEXT {

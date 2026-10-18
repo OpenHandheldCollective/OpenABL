@@ -17,6 +17,7 @@
 #include "Core/UsbHostRegs.h"
 #include "Efi/Abl.h"
 #include "Efi/Efi.h"
+#include "Efi/DefaultFiles.h"
 #include "Efi/Display.h"
 #include "Efi/Input.h"
 #include "Efi/Models.h"
@@ -785,9 +786,9 @@ AddRow (
 }
 
 // Lists what Start would try on the allowed drives, in its order: each
-// drive's entries, then the first boot image. Only in Linux boot mode. USB
-// drives are skipped unless USB host is up, since fastboot owns the
-// controller.
+// drive's entries, then each drive's default file, then the first boot
+// image. Only in Linux boot mode. USB drives are skipped unless USB
+// host is up, since fastboot owns the controller.
 STATIC VOID
 FillEntries (
   IN MENU_STATE *M,
@@ -823,7 +824,24 @@ FillEntries (
       );
     }
   }
-  // Start reaches a boot image only after every drive's entries.
+  // Then the default files, which Start tries on each drive in turn.
+  for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
+    for (UINTN Index2 = 0;
+         Index2 < sizeof (gDefaultFilesPaths) / sizeof (*gDefaultFilesPaths);
+         Index2++) {
+      if (FilesExists (mVolumes.Items[Index].Fs, gDefaultFilesPaths[Index2])) {
+        // The file name, such as BOOTAA64.EFI.
+        AddRow (
+          Views, &Count, Index,
+          gDefaultFilesPaths[Index2] + sizeof ("\\EFI\\BOOT\\") - 1,
+          gStrings->DefaultFile, NULL, FALSE, MENU_PICK_DEFAULT_FILE
+        );
+        break;
+      }
+    }
+  }
+  // Start reaches a boot image only after every drive's entries and
+  // default files.
   for (UINTN Index = 0; Index < mVolumes.Count && !Image; Index++) {
     for (UINTN Index2 = 0;
          Index2 < sizeof (gModelsBootImages) / sizeof (*gModelsBootImages) &&

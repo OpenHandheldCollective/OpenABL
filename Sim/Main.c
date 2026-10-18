@@ -175,7 +175,7 @@ STATIC CONST ENTRY_VIEW mEntries[] = {
   {"Linux nightly",
    "Version 20261004 · Boot Loader Spec entry · Linux (removable drive)", TRUE},
   {"Recovery shell", "extlinux.conf · Linux (removable drive)", FALSE},
-  {"Linux", "\\EFI\\BOOT\\BOOTAA64.EFI · removable drive", FALSE},
+  {"BOOTAA64.EFI", "EFI loader · ESP (internal drive)", FALSE},
 };
 
 STATIC UINTN

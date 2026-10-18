@@ -44,7 +44,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Item | What it does |
 |---|---|
 | Start | Boots the current boot mode (*Start Linux* or *Start Android*). |
-| Boot entries | Lists everything *Start* would try, in order. Picking one boots only that entry. Shown only when something was found. |
+| Boot entries | Lists everything *Start* would try, in order: boot entries, each drive's `\EFI\BOOT\BOOTAA64.EFI`, then the boot image. Picking one boots only that entry. Shown only when there is more than one. |
 | Restart bootloader | Restarts into the menu. |
 | Recovery mode | Restarts into Android recovery. |
 | Emergency download mode | Restarts into Qualcomm EDL mode, after a confirmation. |
