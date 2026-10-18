@@ -3,7 +3,8 @@
 #   https://github.com/OpenHandheldCollective
 # Packages a release's images into a .tar.gz archive (one folder per chipset
 # with the image and its .sha256) and uploads it to that release, or to the
-# debug-<tag> pre-release for a debug build.
+# debug-<tag> pre-release for a debug build, with a SHA256SUMS file listing the
+# archive and the images (the Android installer checks its downloads with it).
 name: Package
 
 on:
@@ -49,6 +50,7 @@ jobs:
           name=openabl-$TAG$SUFFIX
           mkdir images "$name"
           found=0
+          : > SHA256SUMS
           gh release download "$RELEASE" --pattern 'abl_signed-*.elf' --dir images
           for elf in images/abl_signed-*.elf; do
             file=$(basename "$elf")
@@ -62,10 +64,12 @@ jobs:
             mkdir "$name/$soc"
             cp "$elf" "$name/$soc/"
             (cd "$name/$soc" && sha256sum "$file" > "$file.sha256")
+            (cd images && sha256sum "$file") >> SHA256SUMS
             found=$((found + 1))
           done
           [ "$found" -gt 0 ] || { echo "$RELEASE has no ${{ inputs.build }} images" >&2; exit 1; }
           cp -R LICENSE LICENSES.md LICENSES "$name/"
           cp Assets/*-OFL.txt "$name/LICENSES/"
           tar -czf "$name.tar.gz" "$name"
-          gh release upload "$RELEASE" "$name.tar.gz" --clobber
+          sha256sum "$name.tar.gz" >> SHA256SUMS
+          gh release upload "$RELEASE" "$name.tar.gz" SHA256SUMS --clobber

@@ -172,3 +172,13 @@ jobs:
     with:
       tag: ${{ inputs.tag || github.ref_name }}
       build: ${{ inputs.build || 'release' }}
+
+  installer:
+    needs: package
+    if: inputs.build != 'debug'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/installer.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit

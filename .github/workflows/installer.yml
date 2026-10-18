@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026-present Open Handheld Collective
+#   https://github.com/OpenHandheldCollective
+# Builds the Android installer (Installer/). For a pull request that touches it,
+# runs its tests and builds a debug APK. For a release, builds the APK with
+# that release's images and uploads it with its .sha256.
+name: Installer
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [Installer/**, VERSION, .github/workflows/installer.yml]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to build the installer for
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      INSTALLER_KEYSTORE:
+        required: false
+      INSTALLER_KEYSTORE_PASSWORD:
+        required: false
+      INSTALLER_KEY_ALIAS:
+        required: false
+      INSTALLER_KEY_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Test and build
+        working-directory: Installer
+        run: ./gradlew test assembleDebug
+
+  release:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # The images are the release's own, checked against its SHA256SUMS.
+      - name: Get the images
+        run: |
+          mkdir images
+          gh release download "$TAG" --pattern SHA256SUMS --pattern 'abl_signed-*.elf' --dir images
+          cd images
+          grep -E ' abl_signed-[A-Z0-9]+\.elf$' SHA256SUMS | sha256sum -c -
+
+      - name: Build
+        working-directory: Installer
+        env:
+          KEYSTORE: ${{ secrets.INSTALLER_KEYSTORE }}
+          OPENABL_KEYSTORE_PASSWORD: ${{ secrets.INSTALLER_KEYSTORE_PASSWORD }}
+          OPENABL_KEY_ALIAS: ${{ secrets.INSTALLER_KEY_ALIAS }}
+          OPENABL_KEY_PASSWORD: ${{ secrets.INSTALLER_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE" ] || { echo "INSTALLER_KEYSTORE is not set: an unsigned APK can't be installed" >&2; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/installer.jks"
+          export OPENABL_KEYSTORE="$RUNNER_TEMP/installer.jks"
+          ./gradlew test assembleRelease -PimagesDir="$GITHUB_WORKSPACE/images"
+
+      - name: Upload to the release
+        run: |
+          name=openabl-installer-$TAG.apk
+          cp Installer/app/build/outputs/apk/release/app-release.apk "$name"
+          sha256sum "$name" > "$name.sha256"
+          gh release upload "$TAG" "$name" "$name.sha256" --clobber
