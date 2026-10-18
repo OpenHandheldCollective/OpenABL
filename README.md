@@ -104,9 +104,15 @@ order:
   series, v5, backported to 7.2) reach it through `qcomtee` instead. Where
   QTEE refuses Linux uefisecapp's own service, as on SM8650 with QTEE 5.2,
   `Linux/0009` reaches the app through QTEE's QSEECom compat app loader,
-  which UEFI loaded it with; the variables are read-only there. Build
-  `qcomtee` in (`CONFIG_QCOMTEE=y`) so they are there when systemd mounts
-  efivarfs. Writes to RPMB also need the QTEE supplicant (qualcomm/minkipc).
+  which UEFI loaded it with. Build `qcomtee` in (`CONFIG_QCOMTEE=y`) so
+  they are there when systemd mounts efivarfs. Writing non-volatile
+  variables also needs the QTEE supplicant (qualcomm/minkipc): uefisecapp
+  stores them in the `uefivarstore` partition through QTEE's GPT listener
+  (0x2001), which `Linux/minkipc/0001` adds as a supplicant plugin
+  (`-DBUILD_GPT_LISTENER=ON`). The plugin serves that partition only and
+  writes only inside its variable tables. On the KONKR Pocket FIT a variable
+  written from Linux survives a reboot; without the supplicant the variables
+  are read-only. Variables kept in RPMB need its RPMB listener as well.
 - Linux finds the ABL's version in the ESRT:
   `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor).
 - An `EFI_RT_PROPERTIES_TABLE` tells Linux which runtime services XBL
@@ -198,6 +204,7 @@ only once its menu comes up. A bad ABL can always be restored through EDL
 ## Licence
 
 GPL-3.0-or-later (`LICENSE`), Copyright (C) 2026-present Open Handheld
-Collective. `Abl/` adds a permission to link with Qualcomm's ABL and the
-kernel patch in `Linux/` is GPL-2.0-only; `LICENSES.md` says why and lists
+Collective. `Abl/` adds a permission to link with Qualcomm's ABL, the
+kernel patches in `Linux/` are GPL-2.0-only and the minkipc patch in
+`Linux/minkipc/` is BSD-3-Clause-Clear; `LICENSES.md` says why and lists
 the third-party components, whose licence texts are in `LICENSES/`.
