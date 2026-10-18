@@ -1,0 +1,197 @@
+From 7c35a7ac2dd4d5b8e2cb81ae51bd55b07bf36af5 Mon Sep 17 00:00:00 2001
+From: Amirreza Zarrabi <amirreza.zarrabi@oss.qualcomm.com>
+Date: Thu, 15 Oct 2026 17:09:37 +0530
+Subject: [PATCH v5 3/7] tee: qcomtee: Allow object invokes from kernel clients
+
+QCOMTEE currently treats UBUF parameters as userspace addresses and
+applies userspace restrictions when invoking the root object. This is
+not suitable for object invocation requests issued by kernel clients.
+
+Use the kernel_ctx flag to distinguish kernel client requests from
+userspace requests. For kernel contexts, do not mark UBUF parameters as
+user addresses, and allow permitted root-object operations to proceed
+without applying the userspace-only checks.
+
+This allows in-kernel users of tee_client_object_invoke_func() to issue
+object invocation requests through the qcomtee backend.
+
+Co-developed-by: Harshal Dev <harshal.dev@oss.qualcomm.com>
+Signed-off-by: Harshal Dev <harshal.dev@oss.qualcomm.com>
+Acked-by: Sumit Garg <sumit.garg@oss.qualcomm.com>
+Reviewed-by: Amirreza Zarrabi <amirreza.zarrabi@oss.qualcomm.com>
+Signed-off-by: Amirreza Zarrabi <amirreza.zarrabi@oss.qualcomm.com>
+Tested-by: Kuldeep Singh <kuldeep.singh@oss.qualcomm.com> #on Glymur-crd
+---
+ drivers/tee/qcomtee/call.c           | 38 ++++++++++++++++++----------
+ drivers/tee/qcomtee/qcomtee_object.h |  5 ++--
+ include/linux/tee_drv.h              |  5 +++-
+ 3 files changed, 32 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/tee/qcomtee/call.c b/drivers/tee/qcomtee/call.c
+index 7e7f300e0..954d58eb0 100644
+--- a/drivers/tee/qcomtee/call.c
++++ b/drivers/tee/qcomtee/call.c
+@@ -193,7 +193,7 @@ int qcomtee_objref_from_arg(struct tee_param *param, struct qcomtee_arg *arg,
+  * @u: QTEE arguments.
+  * @params: TEE parameters.
+  * @num_params: number of elements in the parameter array.
+- * @ctx: context in which the conversion should happen.
++ * @oic: context to use for the current invocation.
+  *
+  * It assumes @u has at least @num_params + 1 entries and has been initialized
+  * with %QCOMTEE_ARG_TYPE_INV as &struct qcomtee_arg.type.
+@@ -202,7 +202,7 @@ int qcomtee_objref_from_arg(struct tee_param *param, struct qcomtee_arg *arg,
+  */
+ static int qcomtee_params_to_args(struct qcomtee_arg *u,
+ 				  struct tee_param *params, int num_params,
+-				  struct tee_context *ctx)
++				  struct qcomtee_object_invoke_ctx *oic)
+ {
+ 	int i;
+ 
+@@ -210,8 +210,14 @@ static int qcomtee_params_to_args(struct qcomtee_arg *u,
+ 		switch (params[i].attr) {
+ 		case TEE_IOCTL_PARAM_ATTR_TYPE_UBUF_INPUT:
+ 		case TEE_IOCTL_PARAM_ATTR_TYPE_UBUF_OUTPUT:
+-			u[i].flags = QCOMTEE_ARG_FLAGS_UADDR;
+-			u[i].b.uaddr = params[i].u.ubuf.uaddr;
++			if (oic->kernel_ctx) {
++				u[i].flags = 0;
++				u[i].b.addr = params[i].u.ubuf.addr;
++			} else {
++				u[i].flags = QCOMTEE_ARG_FLAGS_UADDR;
++				u[i].b.uaddr = params[i].u.ubuf.uaddr;
++			}
++
+ 			u[i].b.size = params[i].u.ubuf.size;
+ 
+ 			if (params[i].attr ==
+@@ -223,7 +229,7 @@ static int qcomtee_params_to_args(struct qcomtee_arg *u,
+ 			break;
+ 		case TEE_IOCTL_PARAM_ATTR_TYPE_OBJREF_INPUT:
+ 			u[i].type = QCOMTEE_ARG_TYPE_IO;
+-			if (qcomtee_objref_to_arg(&u[i], &params[i], ctx))
++			if (qcomtee_objref_to_arg(&u[i], &params[i], oic->ctx))
+ 				goto out_failed;
+ 
+ 			break;
+@@ -260,7 +266,7 @@ static int qcomtee_params_to_args(struct qcomtee_arg *u,
+  * @params: TEE parameters.
+  * @u: QTEE arguments.
+  * @num_params: number of elements in the parameter array.
+- * @ctx: context in which the conversion should happen.
++ * @oic: context to use for the current invocation.
+  *
+  * @u should have already been initialized by qcomtee_params_to_args().
+  * This also represents the end of a QTEE invocation that started with
+@@ -270,7 +276,7 @@ static int qcomtee_params_to_args(struct qcomtee_arg *u,
+  */
+ static int qcomtee_params_from_args(struct tee_param *params,
+ 				    struct qcomtee_arg *u, int num_params,
+-				    struct tee_context *ctx)
++				    struct qcomtee_object_invoke_ctx *oic)
+ {
+ 	int i, np;
+ 
+@@ -288,7 +294,8 @@ static int qcomtee_params_from_args(struct tee_param *params,
+ 			break;
+ 		case QCOMTEE_ARG_TYPE_OO:
+ 			/* TEE_IOCTL_PARAM_ATTR_TYPE_OBJREF_OUTPUT */
+-			if (qcomtee_objref_from_arg(&params[np], &u[np], ctx))
++			if (qcomtee_objref_from_arg(&params[np], &u[np],
++						    oic->ctx))
+ 				goto out_failed;
+ 
+ 			break;
+@@ -304,7 +311,7 @@ static int qcomtee_params_from_args(struct tee_param *params,
+ 	/* Undo qcomtee_objref_from_arg(). */
+ 	for (i = 0; i < np; i++) {
+ 		if (params[i].attr == TEE_IOCTL_PARAM_ATTR_TYPE_OBJREF_OUTPUT)
+-			qcomtee_context_del_qtee_object(&params[i], ctx);
++			qcomtee_context_del_qtee_object(&params[i], oic->ctx);
+ 	}
+ 
+ 	/* Release any IO and OO objects not processed. */
+@@ -357,7 +364,8 @@ static int qcomtee_params_check(struct tee_param *params, int num_params)
+ }
+ 
+ /* Check if an operation on ROOT_QCOMTEE_OBJECT from userspace is permitted. */
+-static int qcomtee_root_object_check(u32 op, struct tee_param *params,
++static int qcomtee_root_object_check(struct qcomtee_object_invoke_ctx *oic,
++				     u32 op, struct tee_param *params,
+ 				     int num_params)
+ {
+ 	/* Some privileged operations recognized by QTEE. */
+@@ -366,6 +374,9 @@ static int qcomtee_root_object_check(u32 op, struct tee_param *params,
+ 	    op == QCOMTEE_ROOT_OP_ADCI_SHUTDOWN)
+ 		return -EINVAL;
+ 
++	if (oic->kernel_ctx)
++		return 0;
++
+ 	/*
+ 	 * QCOMTEE_ROOT_OP_REG_WITH_CREDENTIALS is to register with QTEE
+ 	 * by passing a credential object as input OBJREF. TEE_OBJREF_NULL as a
+@@ -430,7 +441,8 @@ static int qcomtee_object_invoke(struct tee_context *ctx,
+ 	/* Get an object to invoke. */
+ 	if (arg->id == TEE_OBJREF_NULL) {
+ 		/* Use ROOT if TEE_OBJREF_NULL is invoked. */
+-		if (qcomtee_root_object_check(arg->op, params, arg->num_params))
++		if (qcomtee_root_object_check(oic, arg->op, params,
++					      arg->num_params))
+ 			return -EINVAL;
+ 
+ 		object = ROOT_QCOMTEE_OBJECT;
+@@ -438,7 +450,7 @@ static int qcomtee_object_invoke(struct tee_context *ctx,
+ 		return -EINVAL;
+ 	}
+ 
+-	ret = qcomtee_params_to_args(u, params, arg->num_params, ctx);
++	ret = qcomtee_params_to_args(u, params, arg->num_params, oic);
+ 	if (ret)
+ 		goto out;
+ 
+@@ -456,7 +468,7 @@ static int qcomtee_object_invoke(struct tee_context *ctx,
+ 
+ 	if (!result) {
+ 		/* Assume service is UNAVAIL if unable to process the result. */
+-		if (qcomtee_params_from_args(params, u, arg->num_params, ctx))
++		if (qcomtee_params_from_args(params, u, arg->num_params, oic))
+ 			result = QCOMTEE_MSG_ERROR_UNAVAIL;
+ 	} else {
+ 		/*
+diff --git a/drivers/tee/qcomtee/qcomtee_object.h b/drivers/tee/qcomtee/qcomtee_object.h
+index 2528d07e4..b00bce5b7 100644
+--- a/drivers/tee/qcomtee/qcomtee_object.h
++++ b/drivers/tee/qcomtee/qcomtee_object.h
+@@ -112,8 +112,9 @@ struct qcomtee_buffer {
+  * @b: address and size if the type of argument is a buffer.
+  * @o: object instance if the type of argument is an object.
+  *
+- * &qcomtee_arg.flags only accepts %QCOMTEE_ARG_FLAGS_UADDR for now, which
+- * states that &qcomtee_arg.b contains a userspace address in uaddr.
++ * If %QCOMTEE_ARG_FLAGS_UADDR is set in &qcomtee_arg.flags then it implies
++ * that &qcomtee_arg.b contains a userspace address in uaddr.
++ * Otherwise, &qcomtee_arg.b contains a kernel address in addr.
+  */
+ struct qcomtee_arg {
+ 	enum qcomtee_arg_type type;
+diff --git a/include/linux/tee_drv.h b/include/linux/tee_drv.h
+index 369c87ad0..367208210 100644
+--- a/include/linux/tee_drv.h
++++ b/include/linux/tee_drv.h
+@@ -83,7 +83,10 @@ struct tee_param_memref {
+ };
+ 
+ struct tee_param_ubuf {
+-	void __user *uaddr;
++	union {
++		void *addr;
++		void __user *uaddr;
++	};
+ 	size_t size;
+ };
+ 
+-- 
+2.56.0
+

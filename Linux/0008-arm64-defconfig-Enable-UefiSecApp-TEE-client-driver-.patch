@@ -1,0 +1,40 @@
+From 9ba699d68fcf20b4d9229bd2a09ac2d1f841698a Mon Sep 17 00:00:00 2001
+From: Harshal Dev <harshal.dev@oss.qualcomm.com>
+Date: Thu, 15 Oct 2026 17:09:41 +0530
+Subject: [PATCH v5 7/7] arm64: defconfig: Enable UefiSecApp TEE client driver for
+ Qualcomm SoCs
+
+All Qualcomm SoCs starting from SM8x50 provide access to the Qualcomm
+Trusted Execution Environment (QTEE) through the SMCInvoke interface
+implemented by the QCOM-TEE driver. QTEE runs in the Secure World domain
+on ARM64 CPUs and exposes secure services to Linux running in the Normal
+World domain.
+
+This change enables the UefiSecApp TEE client driver as a module to provide
+access to UEFI variables on Qualcomm SoCs via the uefisecapp Trusted
+Application running in QTEE. The TEE client driver communicates with QTEE
+via the QCOM-TEE driver.
+
+Access to UEFI variables has been tested on a Qualcomm RB3Gen2 board via
+the efivar tool.
+
+Signed-off-by: Harshal Dev <harshal.dev@oss.qualcomm.com>
+---
+ arch/arm64/configs/defconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
+index 654a102cb..41acb9a7e 100644
+--- a/arch/arm64/configs/defconfig
++++ b/arch/arm64/configs/defconfig
+@@ -275,6 +275,7 @@ CONFIG_IMX_SCU=y
+ CONFIG_QCOM_TZMEM_MODE_SHMBRIDGE=y
+ CONFIG_QCOM_QSEECOM=y
+ CONFIG_QCOM_QSEECOM_UEFISECAPP=y
++CONFIG_QCOM_TEE_UEFISECAPP=m
+ CONFIG_EXYNOS_ACPM_PROTOCOL=m
+ CONFIG_TEGRA_BPMP=y
+ CONFIG_ZYNQMP_FIRMWARE_DEBUG=y
+-- 
+2.56.0
+

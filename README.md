@@ -99,7 +99,10 @@ order:
   variables are set. Linux reaches the UEFI variables only through its
   QSEECOM driver (`qcom_qseecom_uefisecapp`), which needs the SoC on
   `qcom_scm`'s allowlist; the kernel patch in `Linux/` adds OpenABL's
-  chipsets.
+  chipsets. From SM8550 on, QTEE serves uefisecapp over SMCInvoke and the
+  QSEECOM driver finds none; `Linux/0002`-`0008` (Harshal Dev's TEE client
+  series, v5, backported to 7.2) reach it through `qcomtee` instead.
+  Writes to RPMB also need the QTEE supplicant (qualcomm/minkipc).
 - Linux finds the ABL's version in the ESRT:
   `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor).
 - An `EFI_RT_PROPERTIES_TABLE` tells Linux which runtime services XBL
