@@ -41,7 +41,7 @@ chipset() {
     sm6115) SIGN=-v6 PVMFW=false BUNDLED_USB=1 ABL_EXTRA=TARGET_SOC_SM6115=1 OWN=loader-quirks ;;
     sm6450) OWN=sdcc-sm6450 ;;
     sm7675) OWN=sdcc-sm7675 ;;
-    sm8550) OWN=park-display ;;
+    sm8550) ;;
     sm8650) OWN=park-display ;;
     sm8750) OWN=park-display OWN_FULL=sysfont ;;
     sm8250) SIGN=-v6 PVMFW=false ;;

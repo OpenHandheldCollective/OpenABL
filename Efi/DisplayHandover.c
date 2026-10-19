@@ -101,63 +101,17 @@ DisplayHandoverQuiesceSetting (VOID)
 
 #ifdef OABL_DISPLAY_OFF
 
-// XBL's clock, TLMM and SPMI protocols. The ABL's tree has no headers for
-// them.
+// XBL's TLMM and SPMI protocols. The ABL's tree has no headers for them.
 
-STATIC EFI_GUID mClockGuid = {0x241afae6,
-                              0x885f,
-                              0x4f6c,
-                              {0xa7, 0xea, 0xc2, 0x8e, 0xab, 0x79, 0xc3, 0xe5}};
-STATIC EFI_GUID mTlmmGuid  = {0xad9aec18,
-                              0x7bf0,
-                              0x4809,
-                              {0x9e, 0x96, 0x30, 0x12, 0x30, 0x9f, 0x3d, 0xf7}};
+STATIC EFI_GUID mTlmmGuid = {0xad9aec18,
+                             0x7bf0,
+                             0x4809,
+                             {0x9e, 0x96, 0x30, 0x12, 0x30, 0x9f, 0x3d, 0xf7}};
 // gQcomSPMIProtocolGuid (EFISPMI.h), the same on XF and MXF.
 STATIC EFI_GUID mSpmiGuid = {0xfa5f306b,
                              0xf47d,
                              0x4ac4,
                              {0xa4, 0x7d, 0x88, 0x2f, 0x82, 0x04, 0xec, 0x30}};
-
-typedef struct _CLOCK_PROTOCOL CLOCK_PROTOCOL;
-typedef EFI_STATUS (EFIAPI *CLOCK_NAME) (
-  IN CLOCK_PROTOCOL *This,
-  IN CONST CHAR8    *Name,
-  OUT UINTN         *Id
-);
-typedef EFI_STATUS (EFIAPI *CLOCK_ID) (
-  IN CLOCK_PROTOCOL *This,
-  IN UINTN           Id
-);
-
-// EFI_CLOCK_PROTOCOL, up to the last function we call.
-typedef struct _CLOCK_PROTOCOL {
-  UINT64     Revision;
-  CLOCK_NAME GetClockId;
-  CLOCK_ID   EnableClock;
-  CLOCK_ID   DisableClock;
-  EFI_STATUS (EFIAPI *IsClockEnabled) (
-    IN struct _CLOCK_PROTOCOL *This,
-    IN UINTN                   Id,
-    OUT BOOLEAN               *Enabled
-  );
-  UINTN IsClockOn;
-  EFI_STATUS (EFIAPI *SetClockFreqHz) (
-    IN struct _CLOCK_PROTOCOL *This,
-    IN UINTN                   Id,
-    IN UINT32                  FreqHz,
-    IN UINT32                  Match,
-    OUT UINT32                *ResultFreqHz
-  );
-  UINTN      GetClockFreqHz;
-  UINTN      CalcClockFreqHz;
-  UINTN      SelectExternalSource;
-  CLOCK_NAME GetClockPowerDomainId;
-  CLOCK_ID   EnableClockPowerDomain;
-  CLOCK_ID   DisableClockPowerDomain;
-} CLOCK_PROTOCOL;
-// EFI_CLOCK_FREQUENCY_HZ_EXACT.
-#define FREQ_EXACT 3u
-#define XO_HZ      19200000u
 
 // EFI_TLMM_PROTOCOL (its functions take no This).
 typedef struct _TLMM_PROTOCOL {
@@ -219,20 +173,6 @@ _Static_assert (
 );
 _Static_assert (
   offsetof (
-    CLOCK_PROTOCOL,
-    SetClockFreqHz
-  ) == 48,
-  "EFI_CLOCK_PROTOCOL's layout"
-);
-_Static_assert (
-  offsetof (
-    CLOCK_PROTOCOL,
-    DisableClockPowerDomain
-  ) == 96,
-  "EFI_CLOCK_PROTOCOL's layout"
-);
-_Static_assert (
-  offsetof (
     TLMM_PROTOCOL,
     GpioOut
   ) == 32,
@@ -266,23 +206,6 @@ SpmiWrite (
     Spmi, SlaveId, SPMI_PRIORITY_LOW, Address, &Data, 1
   );
 }
-
-// Display clocks DisplayDxe can leave enabled when its power-off doesn't
-// complete (SM6450). They are disabled in this order.
-STATIC CONST CHAR8 *CONST mDisplayClocks[4] = {
-  "disp_cc_mdss_rot_clk",
-  "disp_cc_mdss_vsync_clk",
-  "disp_cc_mdss_rscc_vsync_clk",
-  "disp_cc_mdss_rscc_ahb_clk",
-};
-// The MDP clock's RCG stays on a display PLL unless the clock is set to XO
-// before it is disabled.
-STATIC CONST CHAR8 mMdpClock[] = "disp_cc_mdss_mdp_clk";
-// The AHB clock goes last.
-STATIC CONST CHAR8 mAhbClock[] = "disp_cc_mdss_ahb_clk";
-// The MDSS core GDSC, as named in MXF and in XF builds.
-STATIC CONST CHAR8 *CONST mCoreGdsc[2] = {"disp_cc_mdss_core_gdsc",
-                                          "mdss_core_gdsc"};
 
 // Names the statuses the steps meet. Others print as "error N" in Buffer.
 STATIC CONST CHAR8 *
@@ -330,89 +253,11 @@ PowerOff (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   );
 }
 
-// Disables a clock if the driver still counts it enabled. With ToXo, it is
-// first set to 19.2 MHz (exact match), which moves its RCG to XO. On SM8250 a
-// disable alone doesn't do that for the MDP clock. Where the set is
-// unsupported, as on SM6450, the disable alone is enough.
-STATIC VOID
-ParkClock (
-  IN CLOCK_PROTOCOL     *Clock,
-  IN CONST CHAR8        *Name,
-  IN BOOLEAN             ToXo,
-  IN OPENABL_STORAGE_LOG Log OPTIONAL
-)
-{
-  UINTN      Id      = 0;
-  BOOLEAN    Enabled = 0;
-  EFI_STATUS Status  = Clock->GetClockId (Clock, Name, &Id);
-  CHAR8      Scratch[32];
-
-  if (Status != EFI_SUCCESS) {
-    Say (
-      Log, "%s: unknown to the clock driver (%s)", Name,
-      StatusString (Status, Scratch)
-    );
-    return;
-  }
-  (VOID)Clock->IsClockEnabled (Clock, Id, &Enabled);
-  if (ToXo) {
-    UINT32 Got = 0;
-
-    Status = Clock->SetClockFreqHz (Clock, Id, XO_HZ, FREQ_EXACT, &Got);
-    Say (
-      Log, "%s: set to XO: %s (%u Hz)", Name, StatusString (Status, Scratch),
-      (UINT32)Got
-    );
-  }
-  if (Enabled == 0) {
-    Say (Log, "%s: already disabled", Name);
-    return;
-  }
-  Status = Clock->DisableClock (Clock, Id);
-  Say (Log, "%s: disabled: %s", Name, StatusString (Status, Scratch));
-}
-
-// Disables the display's clocks, then the MDSS core GDSC.
-STATIC VOID
-ParkClocks (IN OPENABL_STORAGE_LOG Log OPTIONAL)
-{
-  CLOCK_PROTOCOL *Clock = LocateProtocol (&mClockGuid);
-  CHAR8           Scratch[32];
-
-  if (!Clock) {
-    Say (Log, "no clock protocol");
-    return;
-  }
-  for (UINTN Index = 0;
-       Index < sizeof (mDisplayClocks) / sizeof (*mDisplayClocks); Index++) {
-    ParkClock (Clock, mDisplayClocks[Index], FALSE, Log);
-  }
-  ParkClock (Clock, mMdpClock, TRUE, Log);
-  ParkClock (Clock, mAhbClock, FALSE, Log);
-  for (UINTN Index = 0; Index < sizeof (mCoreGdsc) / sizeof (*mCoreGdsc);
-       Index++) {
-    UINTN Id = 0;
-
-    if (Clock->GetClockPowerDomainId (Clock, mCoreGdsc[Index], &Id) ==
-        EFI_SUCCESS) {
-      EFI_STATUS Status = Clock->DisableClockPowerDomain (Clock, Id);
-
-      Say (
-        Log, "%s: disabled: %s", mCoreGdsc[Index],
-        StatusString (Status, Scratch)
-      );
-      return;
-    }
-  }
-  Say (Log, "no MDSS core power domain by name");
-}
-
 VOID
 DisplayHandoverQuiesce (IN OPENABL_STORAGE_LOG Log OPTIONAL)
 {
-  Say (Log, "handing the display over parked");
+  Say (Log, "turning the display off through XBL");
   PowerOff (Log);
-  ParkClocks (Log);
 }
 
 // Returns the panel lines for the selected model, or NULL (logged).
@@ -586,5 +431,75 @@ DisplayHandoverBeforeExit (
   if (Quiesce & DISPLAY_HANDOVER_LINES_OFF) {
     DisplayHandoverSuppliesOff (Log);
   }
+#endif
+}
+
+STATIC BOOLEAN mKeepSplash;
+
+VOID
+DisplayHandoverKeepSplash (IN BOOLEAN Keep)
+{
+  mKeepSplash = Keep;
+}
+
+#ifdef OABL_DISPLAY_OFF
+STATIC VOID EFIAPI
+AtExit (
+  IN EFI_EVENT Event,
+  IN VOID     *Context
+)
+{
+  (VOID)Event;
+  (VOID)Context;
+  if (!mKeepSplash) {
+    DisplayHandoverBeforeExit (TRUE, NULL);
+  }
+}
+#endif
+
+VOID
+DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL)
+{
+#ifdef OABL_DISPLAY_OFF
+  STATIC EFI_EVENT Event;
+  EFI_STATUS       Status;
+  CHAR8            Scratch[32];
+
+  if (Event) {
+    return;
+  }
+#ifdef OABL_PARK_DISPLAY
+  {
+    EFI_DISPLAY_POWER_PROTOCOL *Power =
+      LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
+    EFI_DISPLAY_POWER_STATE State = 0;
+
+    if (!Power) {
+      Say (Log, "arm: no display power protocol");
+    } else {
+      Status = Power->GetDisplayPowerState (Power, &State);
+      Say (
+        Log, "arm: power state %u (%s)", (UINT32)State,
+        StatusString (Status, Scratch)
+      );
+      if (Status == EFI_SUCCESS) {
+        Status = Power->SetDisplayPowerState (Power, EfiDisplayPowerStateOn);
+        Say (Log, "arm: set on: %s", StatusString (Status, Scratch));
+      }
+    }
+  }
+#endif
+  Status = gBS->CreateEvent (
+    EVT_SIGNAL_EXIT_BOOT_SERVICES, TPL_CALLBACK, AtExit, NULL, &Event
+  );
+  if (EFI_ERROR (Status)) {
+    Event = NULL;
+  }
+  Say (
+    Log, "arm: display hand-over at ExitBootServices: %s",
+    StatusString (Status, Scratch)
+  );
+#else
+  (VOID)Log;
 #endif
 }

@@ -25,6 +25,10 @@ OpenAblBootPrep (IN UINT32 Flags);
 EFI_STATUS
 OpenAblStartBootImage (IN VOID *Buffer, IN UINTN Size);
 
+/* BootLinux's pvmfw steps for boot images the menu lays out. */
+EFI_STATUS
+OpenAblPvmFwRegister (BootInfo *Info);
+
 BOOLEAN
 OpenAblAndroidParam (IN UINTN Index, OUT CONST CHAR8 **Key,
                      OUT CONST CHAR8 **Value);

@@ -42,8 +42,8 @@ FramebufferPages (
 
 // Whether the tree already reserves the splash, as Android's and some
 // Linux trees do.
-STATIC BOOLEAN
-HasSplashRegion (
+BOOLEAN
+SplashHasRegion (
   IN CONST UINT8 *Fdt,
   IN UINTN        Cap
 )
@@ -69,7 +69,7 @@ SplashReserveSplash (
   if (DisplayOffAsked ()) {
     return;
   }
-  if (HasSplashRegion (Fdt, Cap)) {
+  if (SplashHasRegion (Fdt, Cap)) {
     return;
   }
   if (!HandoverDisplayRegion (&Base, &Length) &&
