@@ -28,6 +28,7 @@
 #include <Library/UpdateDeviceTree.h>
 #include <Library/VerifiedBoot.h>
 #include <FastbootLib/FastbootMain.h>
+#include <Protocol/EFIRmVm.h>
 #include <Protocol/FirmwareVolume2.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/OpenAblAblLib.h>
@@ -50,6 +51,8 @@ STATIC BootInfo mInfo;
 STATIC UINT8    mEntry;
 STATIC UINT16   mKey;
 STATIC BOOLEAN  mSetRot;
+STATIC BootInfo mVerified;
+STATIC BOOLEAN  mHaveVerified;
 /* Qualcomm's code reads these later, for the A/B retry count. */
 STATIC BOOLEAN  *mFastboot;
 STATIC BOOLEAN  *mRecovery;
@@ -281,6 +284,8 @@ VerifyBootImage (VOID)
     return Status;
   }
   mSetRot = TRUE;
+  mVerified = Info;
+  mHaveVerified = TRUE;
   return Status;
 }
 
@@ -305,6 +310,28 @@ LibInflate (IN CONST OPENABL_ABL_LIB_PROTOCOL *This, IN CONST VOID *In,
   return EFI_SUCCESS;
 }
 
+#ifdef PVMFW_BCC
+STATIC VOID
+FirmwareDone (VOID)
+{
+  RmVmProtocol *Rm = NULL;
+  EFI_STATUS    Status = EFI_NOT_FOUND;
+
+  if (mHaveVerified) {
+    BootInfo Info = mVerified;
+
+    mHaveVerified = FALSE;
+    Status = OpenAblPvmFwRegister (&Info);
+  }
+  DEBUG ((EFI_D_ERROR, "OpenAblMenu: pvmfw: %r\n", Status));
+  Status = gBS->LocateProtocol (&gEfiRmVmProtocolGuid, NULL, (VOID **)&Rm);
+  if (Status == EFI_SUCCESS) {
+    Status = Rm->SetFwMilestone (Rm);
+  }
+  DEBUG ((EFI_D_ERROR, "OpenAblMenu: firmware milestone: %r\n", Status));
+}
+#endif
+
 STATIC EFI_STATUS EFIAPI
 HostStartKernel (IN OPENABL_MENU_HOST_PROTOCOL *This,
                  IN CONST OPENABL_KERNEL *Kernel)
@@ -322,6 +349,9 @@ HostStartKernel (IN OPENABL_MENU_HOST_PROTOCOL *This,
   Params.RamdiskLoadAddr = Kernel->RamdiskAddr;
   SetandGetLoadAddr (&Params, LOAD_ADDR_NONE);
   GetQrksKernelStartAddress ();
+#ifdef PVMFW_BCC
+  FirmwareDone ();
+#endif
   Status = UpdateDeviceTree ((VOID *)Kernel->DtbAddr, Kernel->CmdLine,
                              (VOID *)Kernel->RamdiskAddr,
                              (UINT32)Kernel->RamdiskSize, FALSE);

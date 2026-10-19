@@ -22,6 +22,7 @@
 #include "Efi/BootImage.h"
 #include "Efi/Efi.h"
 #include "Efi/DefaultFiles.h"
+#include "Efi/DisplayHandover.h"
 #include "Efi/Handover.h"
 #include "Efi/Input.h"
 #include "Efi/Qcom.h"
@@ -632,6 +633,7 @@ LinuxBoot (
   UINT8            Result;
   BOOLEAN          HasImage;
 
+  DisplayHandoverArm (MenuHostLogFn);
   MenuHostAction (Host, OPENABL_MENU_ACTION_BOOT_PREP);
   *UsbUp = Usb && UsbHostOn ();
   Status = BootWithImage (Host, &HasImage, &Image, Model, sizeof (Model));

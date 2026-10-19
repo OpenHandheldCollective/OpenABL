@@ -51,7 +51,7 @@ PanelXmlNameAt (
 );
 
 // DisplayQuiesce bit 0: turn the display off through XBL's display power
-// protocol before ExitBootServices, then its clocks and the MDSS core GDSC.
+// protocol at ExitBootServices.
 #define DISPLAY_HANDOVER_QUIESCE 1
 // DisplayQuiesce bit 1: turn the panel lines off, the backlight before the
 // display and the supplies after it.

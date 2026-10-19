@@ -26,6 +26,7 @@
 #include "Efi/Models.h"
 #include "Efi/Qcom.h"
 #include "Efi/Quirks.h"
+#include "Efi/Splash.h"
 #include "Efi/UsbHost.h"
 
 // sizeof (boot_img_hdr) for a version 0 header.
@@ -467,13 +468,13 @@ LayOut (
     (UINT64)RamdiskSize, (UINT64)RamdiskAddr, (UINT64)(Cmdline.Len - 1)
   );
 
-  // Hand USB back to the OS, stop the hypervisor logging to the UART the
-  // kernel takes over, and hand over the display as the setting says.
+  // Hand USB back to the OS and stop the hypervisor logging to the UART the
+  // kernel takes over. A splash region in the tree keeps the display on.
   if (Found->Usb) {
     UsbHostOsHandoff ();
   }
   HandoverHypUartOff ();
-  DisplayHandoverBeforeExit (TRUE, MenuHostLogFn);
+  DisplayHandoverKeepSplash (SplashHasRegion (Dtb.Data, Dtb.Len));
   Layout = (OPENABL_KERNEL){
     .KernelAddr  = KernelAddr,
     .KernelSize  = RoundUp (ImageSize != 0 ? ImageSize : Written, Page),

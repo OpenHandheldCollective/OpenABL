@@ -6,12 +6,11 @@
 /**
   DisplayHandover - turns the display off, or not, before the OS starts.
 
-  The ABL calls DisplayHandoverBeforeExit just before ExitBootServices.
-  Unless the kernel's devicetree keeps the splash, the DisplayQuiesce
-  setting can switch the backlight off, park the display and drive the
-  panel supplies off. The display-off code is built only with
-  OABL_DISPLAY_QUIESCE or OABL_PARK_DISPLAY. Nothing here allocates, since it
-  may run inside ExitBootServices.
+  At ExitBootServices, unless the kernel's devicetree keeps the splash, the
+  DisplayQuiesce setting can switch the backlight off, turn the display off
+  through XBL and drive the panel supplies off. The display-off code is
+  built only with OABL_DISPLAY_QUIESCE or OABL_PARK_DISPLAY. Nothing here
+  allocates, since it may run inside ExitBootServices.
 */
 
 #ifndef __EFI_DISPLAY_HANDOVER_H__
@@ -34,8 +33,8 @@ UINT8
 DisplayHandoverQuiesceSetting (VOID);
 
 #ifdef OABL_DISPLAY_OFF
-// Parks the display: off through XBL's display power protocol, then its
-// clocks off (the MDP clock moved to XO first), then the MDSS core GDSC.
+// Turns the display off through XBL's display power protocol, and nothing
+// more, as LinuxLoader did.
 VOID
 DisplayHandoverQuiesce (IN OPENABL_STORAGE_LOG Log OPTIONAL);
 
@@ -51,13 +50,18 @@ VOID
 DisplayHandoverSuppliesOff (IN OPENABL_STORAGE_LOG Log OPTIONAL);
 #endif
 
-// Called right before ExitBootServices on the boot-image path. KeepAlive is
-// TRUE when the ABL finds a splash region in the kernel's devicetree. A
-// display-off requested in DisplayQuiesce overrides it.
+// Runs at ExitBootServices. A display-off asked for in DisplayQuiesce
+// overrides KeepAlive.
 VOID
 DisplayHandoverBeforeExit (
   IN BOOLEAN             KeepAlive,
   IN OPENABL_STORAGE_LOG Log OPTIONAL
 );
+
+VOID
+DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL);
+
+VOID
+DisplayHandoverKeepSplash (IN BOOLEAN Keep);
 
 #endif

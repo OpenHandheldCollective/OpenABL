@@ -20,6 +20,13 @@
 #include "Core/DeviceTree.h"
 #include "Efi/Serial.h"
 
+// Whether the tree reserves the splash, as Android's and some Linux trees do.
+BOOLEAN
+SplashHasRegion (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Cap
+);
+
 // Reserves XBL's display region, or else the framebuffer's pages, when the
 // tree has no splash_region or cont_splash_region. The display stays on
 // through the hand-over, so a kernel that allocated that memory would show

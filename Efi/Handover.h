@@ -41,16 +41,14 @@ typedef struct _HANDOVER_PREPARE {
 // Called just before an image starts. Installs the ESRT, the runtime
 // properties table where the chip needs one, and the model's devicetree
 // from Fs unless the image brings its own, and frees XBL's kernel staging
-// region until HandoverBootReturned. With OABL_DISPLAY_OFF, the display is
-// handed over at ExitBootServices as for a boot image.
+// region until HandoverBootReturned.
 VOID
 HandoverPrepare (
   IN CONST HANDOVER_PREPARE *Prepare,
   IN LOG_SINK                Log
 );
 
-// Called when the image returns. Reserves the staging region again and
-// drops the display hand-over.
+// Called when the image returns. Reserves the staging region again.
 VOID
 HandoverBootReturned (IN LOG_SINK Log);
 

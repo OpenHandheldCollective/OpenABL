@@ -543,10 +543,54 @@ index 07eac0d..ec4aec1 100644
  [FixedPcd]
  	gArmTokenSpaceGuid.PcdSystemMemoryBase
 diff --git a/QcomModulePkg/Library/BootLib/BootLinux.c b/QcomModulePkg/Library/BootLib/BootLinux.c
-index ea7930e..0a6e290 100644
+index ea7930e..e991c51 100644
 --- a/QcomModulePkg/Library/BootLib/BootLinux.c
 +++ b/QcomModulePkg/Library/BootLib/BootLinux.c
-@@ -1552,6 +1552,10 @@ UpdateBootParamsSizeAndCmdLine (BootInfo *Info, BootParamlist *BootParamlistPtr)
+@@ -1059,6 +1059,43 @@ RmRegisterPvmFwRegion (BootInfo *Info, BootParamlist *BootParamlistPtr)
+   return EFI_SUCCESS;
+ }
+ 
++STATIC EFI_STATUS
++AppendPvmFwConfig (BootInfo *Info, BootParamlist *BootParamlistPtr);
++
++/* OpenABL: BootLinux's pvmfw steps, for boot images the menu lays out:
++ * pvmfw goes into its golden region and is registered with the resource
++ * manager. */
++EFI_STATUS
++OpenAblPvmFwRegister (BootInfo *Info)
++{
++  BootParamlist Params = {0};
++  EFI_STATUS    Status;
++
++  if (!Info->HasPvmFw) {
++    return EFI_NOT_FOUND;
++  }
++  if (!QueryPvmFwParams (&Params.PvmFwLoadAddr, &Params.PvmFwSizeReserved) ||
++      (Params.PvmFwLoadAddr == 0)) {
++    return EFI_NOT_FOUND;
++  }
++  Status = GetImage (Info, &Params.PvmFwBuffer,
++                     (UINTN *)&Params.PvmFwBufferSize, "pvmfw");
++  if (Status || (Params.PvmFwBufferSize <= 0)) {
++    return EFI_LOAD_ERROR;
++  }
++  if (Info->PvmFwSizeActual > Params.PvmFwSizeReserved) {
++    return EFI_BUFFER_TOO_SMALL;
++  }
++  gBS->CopyMem ((CHAR8 *)Params.PvmFwLoadAddr,
++                Params.PvmFwBuffer + BOOT_IMG_MAX_PAGE_SIZE,
++                Info->PvmFwSizeActual);
++  Status = AppendPvmFwConfig (Info, &Params);
++  if (Status == EFI_SUCCESS) {
++    Status = RmRegisterPvmFwRegion (Info, &Params);
++  }
++  return Status;
++}
++
+ STATIC EFI_STATUS
+ SetFWMilestone (VOID) {
+   RmVmProtocol *RmVmProtocol = NULL;
+@@ -1552,6 +1589,10 @@ UpdateBootParamsSizeAndCmdLine (BootInfo *Info, BootParamlist *BootParamlistPtr)
    return EFI_SUCCESS;
  }
  
@@ -557,7 +601,7 @@ index ea7930e..0a6e290 100644
  EFI_STATUS
  BootLinux (BootInfo *Info)
  {
-@@ -1591,6 +1595,13 @@ BootLinux (BootInfo *Info)
+@@ -1591,6 +1632,13 @@ BootLinux (BootInfo *Info)
    INT32 Fragment = 0;
    INT32 Node = 0;
  
@@ -571,7 +615,7 @@ index ea7930e..0a6e290 100644
    if (Info == NULL) {
      DEBUG ((EFI_D_ERROR, "BootLinux: invalid parameter Info\n"));
      return EFI_INVALID_PARAMETER;
-@@ -1892,6 +1903,7 @@ BootLinux (BootInfo *Info)
+@@ -1892,6 +1940,7 @@ BootLinux (BootInfo *Info)
    FreeVerifiedBootResource (Info);
  #endif
  
@@ -579,7 +623,7 @@ index ea7930e..0a6e290 100644
    /* Free the boot logo blt buffer before starting kernel */
    FreeBootLogoBltBuffer ();
    if (BootParamlistPtr.BootingWith32BitKernel &&
-@@ -1947,8 +1959,24 @@ BootLinux (BootInfo *Info)
+@@ -1947,8 +1996,24 @@ BootLinux (BootInfo *Info)
  #ifdef DISABLE_KERNEL_PROTOCOL
    PreparePlatformHardware ();
  #else
@@ -605,7 +649,7 @@ index ea7930e..0a6e290 100644
                    (VOID *)BootParamlistPtr.RamdiskLoadAddr,
                    (UINTN)RamdiskSizeActual,
                    (VOID *)BootParamlistPtr.DeviceTreeLoadAddr, DT_SIZE_2MB,
-@@ -1990,6 +2018,15 @@ Exit:
+@@ -1990,6 +2055,15 @@ Exit:
    return EFI_NOT_STARTED;
  }
  
@@ -852,16 +896,7 @@ diff --git a/QcomModulePkg/Library/BootLib/UpdateDeviceTree.c b/QcomModulePkg/Li
 index 975e656..51ffe92 100644
 --- a/QcomModulePkg/Library/BootLib/UpdateDeviceTree.c
 +++ b/QcomModulePkg/Library/BootLib/UpdateDeviceTree.c
-@@ -169,7 +169,7 @@ GetRandomSeed (UINT64 *RandomSeed)
-   return Status;
- }
- 
--STATIC VOID
-+STATIC VOID __attribute__ ((unused))
- DisableDisplay (VOID)
- {
-   EFI_STATUS                     Status           = EFI_SUCCESS;
-@@ -283,16 +283,13 @@ UpdateSplashMemInfo (VOID *fdt)
+@@ -283,6 +283,10 @@ UpdateSplashMemInfo (VOID *fdt)
    /* Get offset of the splash memory reservation node */
    ret = FdtPathOffset (fdt, "/reserved-memory/splash_region");
    if (ret < 0) {
@@ -869,20 +904,8 @@ index 975e656..51ffe92 100644
 +    ret = FdtPathOffset (fdt, "/reserved-memory/cont_splash_region");
 +  }
 +  if (ret < 0) {
-+    /* OpenABL: the display stays on; the menu program handles it. */
      DEBUG ((EFI_D_WARN, "Splash region not found in device tree, " \
--                        "powering down the display and controller\n"));
--
--    /*
--     * This function call leads to the following:
--     * 1) Turn off display power
--     * 2) Disable display clocks
--     * 3) Reset display TE/RST pin
--     */
--    DisableDisplay ();
-+                        "the display left on\n"));
-     return EFI_NOT_FOUND;
-   }
+                         "powering down the display and controller\n"));
  
 diff --git a/QcomModulePkg/Library/FastbootLib/FastbootCmds.c b/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
 index 1ca6796..e5dfc12 100644
