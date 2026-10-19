@@ -476,7 +476,9 @@ STATIC CONST struct {
   UINT32 ChipId;
   UINT32 Unsupported;
 } mRuntimeGaps[] = {
-  {321, RT_NO_VMAP},
+  // EFI runtime shutdown is broken on SDM845.
+  // Let kernel use PSCI for reset/shutdown.
+  {321, RT_NO_VMAP | UEFI_RT_RESET_SYSTEM},
   {341, RT_NO_VMAP},
   {444, UEFI_RT_ALL},
   {467, RT_NO_VMAP},
