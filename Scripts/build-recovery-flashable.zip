@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Package a signed OpenABL image as a recovery-flashable Android addon.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+IMAGE=$1
+OUTPUT=$2
+TEMPLATE="$ROOT/RecoveryFlashable"
+
+command -v zip >/dev/null || { echo "zip is needed to package the recovery-flashable addon" >&2; exit 1; }
+STAGE=$(mktemp -d "${TMPDIR:-/tmp}/openabl-recovery-flashable.XXXXXX")
+trap 'rm -rf "$STAGE"' EXIT
+
+mkdir -p "$STAGE/META-INF/com/google/android" "$STAGE/addon.d" "$STAGE/product/etc"
+cp "$TEMPLATE/META-INF/com/google/android/update-binary" "$STAGE/META-INF/com/google/android/"
+cp "$TEMPLATE/addon.d/30-openabl.sh" "$STAGE/addon.d/"
+cp "$IMAGE" "$STAGE/product/etc/openabl.img"
+chmod 0755 "$STAGE/META-INF/com/google/android/update-binary" "$STAGE/addon.d/30-openabl.sh"
+
+mkdir -p "$(dirname "$OUTPUT")"
+OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd)/$(basename "$OUTPUT")"
+rm -f "$OUTPUT"
+(cd "$STAGE" && zip -q -r "$OUTPUT" META-INF addon.d product -x '*.DS_Store')
+echo "  $OUTPUT"

@@ -1,0 +1,121 @@
+#!/system/bin/sh
+
+# Recovery invokes this as: update-binary <api-version> <output-fd> <zip>.
+OUTFD="$2"
+ZIPFILE="$3"
+WORKDIR=/tmp/openabl-addon
+SYSTEM_MNT=/mnt/system
+PRODUCT_MNT=/mnt/product
+
+ui_print() {
+  echo "ui_print $*" > "/proc/self/fd/$OUTFD"
+  echo ui_print > "/proc/self/fd/$OUTFD"
+}
+
+cleanup() {
+  umount -l "$PRODUCT_MNT" 2>/dev/null || true
+  umount -l "$SYSTEM_MNT" 2>/dev/null || true
+  rm -rf "$WORKDIR"
+}
+
+abort() {
+  ui_print "! $*"
+  cleanup
+  exit 1
+}
+
+get_block_for_mount_point() {
+  awk -v mount_point="$1" '
+    !/^#/ && $2 == mount_point { block = $1 }
+    END { print block }
+  ' /etc/recovery.fstab 2>/dev/null
+}
+
+find_block() {
+  partition="$1"
+  block="$(get_block_for_mount_point "/$partition")"
+
+  if [ -b "$block" ]; then
+    echo "$block"
+    return
+  fi
+
+  suffix="$(getprop ro.boot.slot_suffix)"
+  if [ "$(getprop ro.boot.dynamic_partitions)" = true ]; then
+    base=/dev/block/mapper
+  else
+    base=/dev/block/bootdevice/by-name
+  fi
+
+  for candidate in "$base/$partition$suffix" "$base/$partition"; do
+    if [ -b "$candidate" ]; then
+      echo "$candidate"
+      return
+    fi
+  done
+}
+
+rm -rf "$WORKDIR"
+mkdir -p "$WORKDIR" || abort "Could not create temporary directory"
+unzip -oq "$ZIPFILE" -d "$WORKDIR" || abort "Could not extract package"
+
+IMAGE="$WORKDIR/product/etc/openabl.img"
+ADDOND="$WORKDIR/addon.d/30-openabl.sh"
+
+ui_print "Resolving and mounting target partitions"
+umount "$SYSTEM_MNT" 2>/dev/null || true
+umount "$PRODUCT_MNT" 2>/dev/null || true
+
+SYSTEM_BLOCK="$(find_block system)"
+[ -b "$SYSTEM_BLOCK" ] || abort "Could not resolve the system block device"
+
+PRODUCT_BLOCK="$(find_block product)"
+
+if [ "$(getprop ro.boot.dynamic_partitions)" = true ]; then
+  blockdev --setrw "$SYSTEM_BLOCK" 2>/dev/null || abort "Could not make system writable"
+  if [ -n "$PRODUCT_BLOCK" ]; then
+    blockdev --setrw "$PRODUCT_BLOCK" 2>/dev/null || abort "Could not make product writable"
+  fi
+fi
+
+mkdir -p "$SYSTEM_MNT" || abort "Could not create system mount point"
+mount -o rw "$SYSTEM_BLOCK" "$SYSTEM_MNT" || abort "Could not mount system"
+
+if [ -d "$SYSTEM_MNT/system" ]; then
+  SYSTEM_OUT="$SYSTEM_MNT/system"
+else
+  SYSTEM_OUT="$SYSTEM_MNT"
+fi
+
+if [ -n "$PRODUCT_BLOCK" ]; then
+  mkdir -p "$PRODUCT_MNT" || abort "Could not create product mount point"
+  mount -o rw "$PRODUCT_BLOCK" "$PRODUCT_MNT" || abort "Could not mount product"
+  PRODUCT_OUT="$PRODUCT_MNT"
+else
+  PRODUCT_OUT="$SYSTEM_MNT/product"
+fi
+
+[ -d "$PRODUCT_OUT/etc" ] || abort "Product etc directory is unavailable"
+
+cp -f "$IMAGE" "$PRODUCT_OUT/etc/openabl.img" || abort "Could not install openabl.img"
+chown root:root "$PRODUCT_OUT/etc/openabl.img" 2>/dev/null || true
+chmod 0644 "$PRODUCT_OUT/etc/openabl.img" || abort "Could not set image mode"
+
+ADDOND_DIR="$SYSTEM_OUT/addon.d"
+mkdir -p "$ADDOND_DIR" || abort "Could not create addon.d directory"
+cp -f "$ADDOND" "$ADDOND_DIR/30-openabl.sh" || abort "Could not install addon.d script"
+chown root:root "$ADDOND_DIR/30-openabl.sh" 2>/dev/null || true
+chmod 0755 "$ADDOND_DIR/30-openabl.sh" || abort "Could not set addon.d script file mode"
+
+for slot in a b; do
+  ABL="/dev/block/by-name/abl_$slot"
+  [ -b "$ABL" ] || abort "Missing target partition: $ABL"
+
+  ui_print "Writing OpenABL to abl_$slot"
+  dd if="$PRODUCT_OUT/etc/openabl.img" of="$ABL" bs=4M conv=fsync 2>/dev/null || abort "dd to $ABL failed"
+done
+
+sync
+cleanup
+ui_print "OpenABL installed"
+exit 0

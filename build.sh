@@ -174,3 +174,8 @@ for soc in "${ASKED[@]}"; do
   fi
 done
 [ "$status" = 0 ] || { echo "build: the build failed; see $LOG" >&2; exit 1; }
+
+for soc in "${ASKED[@]}"; do
+  upper=$(echo "$soc" | tr a-z A-Z)
+  Scripts/build-recovery-flashable.zip "build/out/abl_signed-$upper.elf" "build/out/openabl-recovery-flashable-$soc.zip"
+done
