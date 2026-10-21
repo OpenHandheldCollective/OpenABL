@@ -51,6 +51,11 @@ jobs:
             cp "$elf" "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
+          for addon in build/out/openabl-recovery-flashable-*.zip; do
+            name=$(basename "$addon" .zip)-debug.zip
+            cp "$addon" "dist/$name"
+            (cd dist && sha256sum "$name" > "$name.sha256")
+          done
 
       - uses: actions/upload-artifact@v7
         with:

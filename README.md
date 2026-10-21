@@ -124,7 +124,11 @@ Silicon use Docker Desktop or OrbStack.
 ```
 
 Give one or more chipsets, or `all`. Images are written to
-`build/out/abl_signed-<CHIPSET>.elf` with a `.sha256` file next to each.
+`build/out/abl_signed-<CHIPSET>.elf` with a `.sha256` file next to each. The
+build also writes `build/out/openabl-recovery-flashable-<chipset>.zip`: a
+recovery-flashable Android addon that writes ABL to both slots and sets up a
+persistence addon.d script to re-flash the opposite slot after an OTA update.
+
 The full log is in `build/abl-build.log`. The version, MAJOR.MINOR, is in
 `VERSION`; the menu, fastboot's `version-bootloader` and Linux's ESRT report
 it.
