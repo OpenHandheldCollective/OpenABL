@@ -88,6 +88,8 @@ CONST CHAR8 *
 SysInfoSocName (IN UINT32 ChipId)
 {
   switch (ChipId) {
+  case 321:
+    return "Snapdragon 845";
   case 356:
     return "Snapdragon 865";
   case 444:
