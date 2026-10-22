@@ -26,6 +26,13 @@
 // The boot image files, in the order the ABL tries them.
 extern CONST CHAR8 *CONST gModelsBootImages[4];
 
+// Returns TRUE if Path on Fs starts with the Android boot image magic.
+BOOLEAN
+ModelsIsBootImage (
+  IN EFI_HANDLE   Fs,
+  IN CONST CHAR8 *Path
+);
+
 // A model name and its panel rotation in degrees, if the devicetree has one.
 typedef struct _SCANNED_MODEL {
   CHAR8  *Name;

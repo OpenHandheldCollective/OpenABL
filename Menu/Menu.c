@@ -863,7 +863,10 @@ FillEntries (
          Index2 < sizeof (gModelsBootImages) / sizeof (*gModelsBootImages) &&
          !Image;
          Index2++) {
-      if (FilesExists (mVolumes.Items[Index].Fs, gModelsBootImages[Index2])) {
+      // A file that isn't a valid Android boot image is skipped.
+      if (ModelsIsBootImage (
+            mVolumes.Items[Index].Fs, gModelsBootImages[Index2]
+          )) {
         // The path without its backslash, such as KERNEL.
         AddRow (
           Views, &Count, Index, gModelsBootImages[Index2] + 1,

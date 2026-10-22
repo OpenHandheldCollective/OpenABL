@@ -111,7 +111,8 @@ ReadRaw (
   return Image;
 }
 
-// Reads the first of gModelsBootImages on Fs through the file system.
+// Reads the first of gModelsBootImages on Fs that is an Android boot image
+// through the file system.
 STATIC UINT8 *
 FromFileSystem (
   IN EFI_HANDLE                Fs,
@@ -126,7 +127,7 @@ FromFileSystem (
   UINTN        Got;
 
   for (UINTN Index = 0; Index < N_BOOT_IMAGES && !Path; Index++) {
-    if (FilesExists (Fs, gModelsBootImages[Index])) {
+    if (ModelsIsBootImage (Fs, gModelsBootImages[Index])) {
       Path = gModelsBootImages[Index];
     }
   }
