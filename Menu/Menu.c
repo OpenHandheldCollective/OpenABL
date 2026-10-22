@@ -1204,11 +1204,7 @@ Experiments (VOID)
   UINT8       Quiesce =
     MenuVarGet (SETTINGS_KEY_DISPLAY_QUIESCE, &Stored) && Stored.Len
       ? Stored.Data[0]
-#ifdef OABL_PARK_DISPLAY
-      : 1;
-#else
       : 0;
-#endif
 
   BufferFree (&Stored);
   return (EXPERIMENTS){

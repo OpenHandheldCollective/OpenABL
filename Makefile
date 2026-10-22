@@ -17,8 +17,9 @@
 #   devinfo-settings  keep the settings in devinfo, for XBL builds that
 #                     can't save UEFI variables (SDM845)
 #   loader-quirks     XBL workarounds needed by OS loaders (SDM845, SM6115)
-#   park-display      turn the display off through XBL before Linux starts
-#                     (SM8650, SM8750)
+#   park-display      set the display on before the boot, and off at
+#                     ExitBootServices when no devicetree was seen, as
+#                     LinuxLoader did on these chips (SM8650, SM8750)
 #   debug             Debug section in the menu (adds sd-diagnostics and
 #                     display-quiesce)
 #

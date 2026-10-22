@@ -4,13 +4,8 @@
  */
 
 /**
-  DisplayHandover - turns the display off, or not, before the OS starts.
-
-  At ExitBootServices, unless the kernel's devicetree keeps the splash, the
-  DisplayQuiesce setting can switch the backlight off, turn the display off
-  through XBL and drive the panel supplies off. The display-off code is
-  built only with OABL_DISPLAY_QUIESCE or OABL_PARK_DISPLAY. Nothing here
-  allocates, since it may run inside ExitBootServices.
+  DisplayHandover - switches the display off through XBL's display power
+  protocol at ExitBootServices, or leaves it on. Nothing here allocates then.
 */
 
 #ifndef __EFI_DISPLAY_HANDOVER_H__
@@ -22,22 +17,16 @@
 
 #include <Protocol/OpenAblMenuHost.h>
 
-#if defined(OABL_DISPLAY_QUIESCE) || defined(OABL_PARK_DISPLAY)
-#define OABL_DISPLAY_OFF
-#endif
-
 // Returns the DisplayQuiesce byte, or 0 if it isn't set. Without
 // OABL_DISPLAY_QUIESCE the display-off bits (QUIESCE, LINES_OFF) read clear.
-// OABL_PARK_DISPLAY sets QUIESCE unless a byte is stored.
 UINT8
 DisplayHandoverQuiesceSetting (VOID);
 
-#ifdef OABL_DISPLAY_OFF
-// Turns the display off through XBL's display power protocol, and nothing
-// more, as LinuxLoader did.
+// Switches the display off through XBL's display power protocol
 VOID
 DisplayHandoverQuiesce (IN OPENABL_STORAGE_LOG Log OPTIONAL);
 
+#ifdef OABL_DISPLAY_QUIESCE
 // Switches the backlight off for the selected device model. Do this before
 // the display-off so XBL's DSI stop and the kernel's panel reset happen in
 // the dark.
@@ -50,8 +39,8 @@ VOID
 DisplayHandoverSuppliesOff (IN OPENABL_STORAGE_LOG Log OPTIONAL);
 #endif
 
-// Runs at ExitBootServices. A display-off asked for in DisplayQuiesce
-// overrides KeepAlive.
+// The hand-over, run at ExitBootServices. KeepAlive leaves the display on,
+// unless DisplayQuiesce forces it off.
 VOID
 DisplayHandoverBeforeExit (
   IN BOOLEAN             KeepAlive,
@@ -61,6 +50,13 @@ DisplayHandoverBeforeExit (
 VOID
 DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL);
 
+// Forgets the last tree's say: the display then follows the build's default
+// at ExitBootServices, on, or off with park-display.
+VOID
+DisplayHandoverReset (VOID);
+
+// What the tree says: with a splash region the display stays on, without
+// one it is switched off at ExitBootServices.
 VOID
 DisplayHandoverKeepSplash (IN BOOLEAN Keep);
 

@@ -4,10 +4,12 @@
  */
 
 /**
-  Splash - keeping the firmware's splash memory out of the kernel's hands.
+  Splash - hands XBL's splash over to the kernel's devicetree, as Qualcomm's
+  ABL does for Android's.
 
-  The display stays on through the hand-over unless a display-off is asked
-  for, so the memory it scans out is reserved in the kernel's devicetree.
+  A tree with a splash region keeps the display on and gets the region
+  pointed at XBL's framebuffer; one without has the display switched off
+  before Linux (Efi/DisplayHandover.h).
 */
 
 #ifndef __EFI_SPLASH_H__
@@ -20,21 +22,20 @@
 #include "Core/DeviceTree.h"
 #include "Efi/Serial.h"
 
-// Whether the tree reserves the splash, as Android's and some Linux trees do.
+// Gets the pages of the panel's framebuffer: the graphics output whose
+// framebuffer is in XBL's display region, else the first one.
 BOOLEAN
-SplashHasRegion (
-  IN CONST UINT8 *Fdt,
-  IN UINTN        Cap
+SplashFramebuffer (
+  OUT UINT64 *Base,
+  OUT UINT64 *Length
 );
 
-// Reserves XBL's display region, or else the framebuffer's pages, when the
-// tree has no splash_region or cont_splash_region. The display stays on
-// through the hand-over, so a kernel that allocated that memory would show
-// its contents. The node is named splash_region so the ABL's splash step
-// updates it as the stock ABL does Android's. Skipped when a display-off is
-// asked for.
-VOID
-SplashReserveSplash (
+// Points the tree's splash region at XBL's framebuffer when its reg is the
+// <0 addr 0 size> the stock ABL patches, in place and without growing the
+// tree. TRUE if the tree has a splash region (display stays on), else FALSE
+// (switched off before Linux); logging allocates, so not at ExitBootServices.
+BOOLEAN
+SplashHandOver (
   IN OUT UINT8 *Fdt,
   IN UINTN      Cap,
   IN LOG_SINK   Log

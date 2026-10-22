@@ -29,7 +29,6 @@
 #include "Efi/MenuHost.h"
 #include "Efi/NestedDisk.h"
 #include "Efi/Qcom.h"
-#include "Efi/Splash.h"
 #include "Efi/Uninstall.h"
 #include "Efi/UsbHost.h"
 #include "Efi/Variables.h"
@@ -1628,7 +1627,6 @@ QuirksFixupDeviceTree (
 
     UsbBootFixDeviceTree (Fdt, Cap, Chip, Log);
   }
-  SplashReserveSplash (Fdt, Cap, Log);
 }
 
 STATIC EFI_STATUS EFIAPI

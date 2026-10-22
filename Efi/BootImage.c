@@ -432,6 +432,10 @@ LayOut (
     return "its devicetree is larger than 2 MiB";
   }
   QuirksFixupDeviceTree (Dtb.Data, Dtb.Len, Found->Usb, Log);
+  // A splash region in the tree keeps the display on; without one
+  // Qualcomm's tree update and ExitBootServices switch it off.
+  DisplayHandoverReset ();
+  DisplayHandoverKeepSplash (SplashHandOver (Dtb.Data, Dtb.Len, Log));
 
   // The image's command line, unless a command-line file changes it.
   BaseCmdline       = BootImage + CMDLINE_AT;
@@ -469,12 +473,11 @@ LayOut (
   );
 
   // Hand USB back to the OS and stop the hypervisor logging to the UART the
-  // kernel takes over. A splash region in the tree keeps the display on.
+  // kernel takes over.
   if (Found->Usb) {
     UsbHostOsHandoff ();
   }
   HandoverHypUartOff ();
-  DisplayHandoverKeepSplash (SplashHasRegion (Dtb.Data, Dtb.Len));
   Layout = (OPENABL_KERNEL){
     .KernelAddr  = KernelAddr,
     .KernelSize  = RoundUp (ImageSize != 0 ? ImageSize : Written, Page),

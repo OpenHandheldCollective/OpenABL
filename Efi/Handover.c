@@ -22,6 +22,8 @@
 #include "Base/Memory.h"
 #include "Core/Carveouts.h"
 #include "Core/EfiData.h"
+#include "Efi/DisplayHandover.h"
+#include "Efi/DtFixup.h"
 #include "Efi/Dxe.h"
 #include "Efi/Models.h"
 #include "Efi/Qcom.h"
@@ -646,6 +648,8 @@ ReleaseDeadRegions (
   IN BOOLEAN  DevMode,
   IN LOG_SINK Log
 );
+STATIC VOID
+ReleaseDisplay (IN LOG_SINK Log);
 
 VOID
 HandoverPrepare (
@@ -653,7 +657,8 @@ HandoverPrepare (
   IN LOG_SINK                Log
 )
 {
-  // First, so nothing allocated for the OS below lands in a carveout.
+  DisplayHandoverReset ();
+  DtFixupInstall (Log);
   ReserveCarveouts (Log);
   FirmwareTables (Prepare->Version, Log);
   if (Prepare->Vm) {
@@ -683,6 +688,7 @@ HandoverPrepare (
   Reclaim (Log);
   ReleaseKernelStaging (Log);
   ReleaseDeadRegions (Prepare->DevMode, Log);
+  ReleaseDisplay (Log);
 #ifdef OABL_LOADER_QUIRKS
   ExecMemoryEnsure (Log);
   VirtualMapRefuseOnTheseChips (Log);
@@ -755,7 +761,7 @@ HandoverInstallDevicetree (
   if (!UefiPaddedDtb (Dtb, DtbSize, DTB_PAD, &Blob)) {
     return "not a devicetree blob";
   }
-  SplashReserveSplash (Blob.Data, Blob.Len, Log);
+  DisplayHandoverKeepSplash (SplashHandOver (Blob.Data, Blob.Len, Log));
   Pages = (Blob.Len + PAGE - 1) / PAGE;
   if (AllocateOutsideCarveouts (EfiACPIReclaimMemory, Pages, &Memory) !=
       EFI_SUCCESS) {
@@ -905,24 +911,133 @@ ReleaseKernelStaging (IN LOG_SINK Log)
   }
 }
 
-// XBL regions unused after boot, and the memory type each is handed over
-// as. KeepInDevMode regions are kept for debugging in verbose mode.
+// XBL regions unused after boot and the memory type each is handed over as.
+// KeepInDevMode keeps a region in verbose mode; ReservedOnly frees only its
+// plain reserved parts.
 STATIC CONST struct {
   CONST CHAR8    *Name;
   EFI_MEMORY_TYPE Type;
   BOOLEAN         KeepInDevMode;
+  BOOLEAN         ReservedOnly;
 } mDeadRegions[] = {
-  // SM8550 and below.
-  {"ABOOT FV", EfiBootServicesCode, FALSE},
-  {"MPSS EFS", EfiBootServicesData, FALSE},
-  {"Log Buffer", EfiBootServicesData, TRUE},
-  // Not "Display Reserved": it holds the splash, and freeing it gains little.
-  {"XBL Ramdump", EfiBootServicesData, TRUE},
-  // SM8650 and up (UEFI_FD and FV_Region aren't freed without device
-  // testing).
-  {"Log_Buffer", EfiBootServicesData, TRUE},
-  {"XBL_Ramdump", EfiBootServicesData, TRUE},
+  // SM8550 and below. "Display Reserved" is ReleaseDisplay's.
+  {"ABOOT FV", EfiBootServicesCode, FALSE, FALSE},
+  {"MPSS EFS", EfiBootServicesData, FALSE, FALSE},
+  {"Log Buffer", EfiBootServicesData, TRUE, FALSE},
+  {"XBL Ramdump", EfiBootServicesData, TRUE, FALSE},
+  // SM8650 and up. Runtime services may still use parts of UEFI_FD and
+  // FV_Region.
+  {"Log_Buffer", EfiBootServicesData, TRUE, FALSE},
+  {"XBL_Ramdump", EfiBootServicesData, TRUE, FALSE},
+  {"UEFI_FD", EfiBootServicesData, FALSE, TRUE},
+  {"FV_Region", EfiBootServicesData, FALSE, TRUE},
 };
+
+// Frees [Base, Base + Len) and allocates it as Type, so the OS gets it with
+// its contents intact.
+STATIC EFI_STATUS
+Release (
+  IN UINT64          Base,
+  IN UINT64          Len,
+  IN EFI_MEMORY_TYPE Type,
+  OUT BOOLEAN       *IsSystemMemory
+)
+{
+  UINTN      Pages = (UINTN)(Len / PAGE);
+  UINT32     Kind;
+  EFI_TPL    Tpl;
+  EFI_STATUS Status;
+
+  *IsSystemMemory = DxeKindAt (Base, &Kind) && Kind == DXE_GCD_SYSTEM_MEMORY;
+  // Raise the TPL around these calls, as the ABL did.
+  Tpl = gBS->RaiseTPL (TPL_NOTIFY);
+  if (*IsSystemMemory) {
+    Status = gBS->FreePages (Base, Pages);
+  } else {
+    (VOID)DxeRemove (Base, Len);
+    Status = DxeAddSystemMemory (Base, Len);
+  }
+  if (Status == EFI_SUCCESS) {
+    EFI_PHYSICAL_ADDRESS Address = Base;
+
+    Status = gBS->AllocatePages (AllocateAddress, Type, Pages, &Address);
+  }
+  gBS->RestoreTPL (Tpl);
+  return Status;
+}
+
+// Releases the pages of [Start, End) outside Table's carveouts and Keep.
+// Returns the bytes released.
+STATIC UINT64
+ReleaseOutside (
+  IN CONST CARVEOUTS_TABLE  *Table OPTIONAL,
+  IN UINT64                  Start,
+  IN UINT64                  End,
+  IN CONST CARVEOUTS_REGION *Keep OPTIONAL,
+  IN EFI_MEMORY_TYPE         Type
+)
+{
+  UINTN   Count = Table ? Table->Count : 0;
+  BOOLEAN IsSystemMemory;
+
+  Start = (Start + PAGE - 1) / PAGE * PAGE;
+  End   = End / PAGE * PAGE;
+  if (Start >= End) {
+    return 0;
+  }
+  for (UINTN Index = 0; Index <= Count; Index++) {
+    CONST CARVEOUTS_REGION *Skip =
+      Index < Count ? &Table->Regions[Index] : Keep;
+    UINT64 SkipStart;
+    UINT64 SkipEnd;
+
+    if (!Skip || Skip->Len == 0) {
+      continue;
+    }
+    SkipStart = Skip->Base / PAGE * PAGE;
+    SkipEnd   = (Skip->Base + Skip->Len + PAGE - 1) / PAGE * PAGE;
+    if (SkipStart < End && SkipEnd > Start) {
+      return ReleaseOutside (Table, Start, SkipStart, Keep, Type) +
+             ReleaseOutside (Table, SkipEnd, End, Keep, Type);
+    }
+  }
+  return Release (Start, End - Start, Type, &IsSystemMemory) == EFI_SUCCESS
+           ? End - Start
+           : 0;
+}
+
+// Releases the plain reserved parts of [Base, Base + Len) except the
+// carveouts and Keep, leaving runtime, ACPI and MMIO parts. Returns the
+// bytes released.
+STATIC UINT64
+ReleaseReserved (
+  IN UINT64                  Base,
+  IN UINT64                  Len,
+  IN CONST CARVEOUTS_REGION *Keep OPTIONAL,
+  IN EFI_MEMORY_TYPE         Type
+)
+{
+  CONST CARVEOUTS_TABLE *Table = ChipCarveouts ();
+  UINT64                 Freed = 0;
+  UINTN                  Count;
+  UINTN                  DescriptorSize;
+  UINT8                 *Map = MemoryMapGet (&Count, &DescriptorSize);
+
+  for (UINTN Index = 0; Map && Index < Count; Index++) {
+    CONST EFI_MEMORY_DESCRIPTOR *Descriptor =
+      MEMORY_MAP_AT (Map, DescriptorSize, Index);
+    UINT64 Start = Descriptor->PhysicalStart;
+    UINT64 End   = Start + Descriptor->NumberOfPages * PAGE;
+
+    if (Descriptor->Type == EfiReservedMemoryType) {
+      Freed += ReleaseOutside (
+        Table, MAX (Start, Base), MIN (End, Base + Len), Keep, Type
+      );
+    }
+  }
+  FreePool (Map);
+  return Freed;
+}
 
 STATIC VOID
 ReleaseDeadRegions (
@@ -930,13 +1045,14 @@ ReleaseDeadRegions (
   IN LOG_SINK Log
 )
 {
+  CARVEOUTS_REGION Display = {0};
+
+  (VOID)HandoverDisplayRegion (&Display.Base, &Display.Len);
   for (UINTN Index = 0; Index < sizeof (mDeadRegions) / sizeof (*mDeadRegions);
        Index++) {
     UINT64     Base;
     UINT64     Len;
-    UINT32     Kind;
-    UINTN      Pages;
-    EFI_TPL    Tpl;
+    UINT64     Freed;
     EFI_STATUS Status;
     BOOLEAN    IsSystemMemory;
 
@@ -946,28 +1062,49 @@ ReleaseDeadRegions (
     if (!XblConfigRegion (mDeadRegions[Index].Name, &Base, &Len)) {
       continue;
     }
-    Pages          = (UINTN)(Len / PAGE);
-    IsSystemMemory = DxeKindAt (Base, &Kind) && Kind == DXE_GCD_SYSTEM_MEMORY;
-    // Raise the TPL around these calls, as the ABL did.
-    Tpl = gBS->RaiseTPL (TPL_NOTIFY);
-    if (IsSystemMemory) {
-      Status = gBS->FreePages (Base, Pages);
-    } else {
-      (VOID)DxeRemove (Base, Len);
-      Status = DxeAddSystemMemory (Base, Len);
-    }
-    if (Status == EFI_SUCCESS) {
-      EFI_PHYSICAL_ADDRESS Address = Base;
-
-      Status = gBS->AllocatePages (
-        AllocateAddress, mDeadRegions[Index].Type, Pages, &Address
+    if (mDeadRegions[Index].ReservedOnly) {
+      Freed =
+        ReleaseReserved (Base, Len, &Display, mDeadRegions[Index].Type);
+      LogPrint (
+        Log, "handover: release %s @0x%llx 0x%llx (reserved parts): %llu KiB",
+        mDeadRegions[Index].Name, (UINT64)Base, (UINT64)Len, Freed / 1024
       );
+      continue;
     }
-    gBS->RestoreTPL (Tpl);
+    Status = Release (Base, Len, mDeadRegions[Index].Type, &IsSystemMemory);
     LogPrint (
       Log, "handover: release %s @0x%llx 0x%llx (%s): %s",
       mDeadRegions[Index].Name, (UINT64)Base, (UINT64)Len,
       IsSystemMemory ? "SysMem" : "MemRes->SysMem", STATUS_STR (Status)
     );
   }
+}
+
+// Releases XBL's display region except the framebuffer the panel still
+// scans out, which the devicetree's splash region keeps.
+STATIC VOID
+ReleaseDisplay (IN LOG_SINK Log)
+{
+  CARVEOUTS_REGION Framebuffer;
+  UINT64           Base;
+  UINT64           Len;
+  UINT64           Freed;
+
+  if (!HandoverDisplayRegion (&Base, &Len)) {
+    return;
+  }
+  if (!SplashFramebuffer (&Framebuffer.Base, &Framebuffer.Len) ||
+      Framebuffer.Base < Base ||
+      Framebuffer.Base + Framebuffer.Len > Base + Len) {
+    LogLine (Log, "handover: display reserved kept: no framebuffer in it");
+    return;
+  }
+  Freed = ReleaseReserved (Base, Len, &Framebuffer, EfiBootServicesData);
+  LogPrint (
+    Log,
+    "handover: release display reserved @0x%llx 0x%llx but the framebuffer "
+    "@0x%llx 0x%llx: %llu KiB",
+    (UINT64)Base, (UINT64)Len, (UINT64)Framebuffer.Base,
+    (UINT64)Framebuffer.Len, Freed / 1024
+  );
 }

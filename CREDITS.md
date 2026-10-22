@@ -9,6 +9,8 @@
 Thanks also to:
 
 - the [ROCKNIX](https://github.com/ROCKNIX) team
+- Radical ([JustRadical](https://github.com/justradical)), for the devicetree fix up for EFI
+  and the display hand over changes
 - Qualcomm's [edk2](https://git.codelinaro.org/clo/la/abl/tianocore/edk2)
   project, which OpenABL is built from
 - the community
