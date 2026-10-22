@@ -24,8 +24,6 @@
 #include "View/Text.h"
 #include "microui.h"
 
-extern CONST UINT8 gOablAssetFontCjk[];
-extern CONST UINTN gOablAssetFontCjkSize;
 
 // Theme. The menu is dark because most panels are OLED and it is used in
 // dim rooms; pure black keeps OLED pixels off.
@@ -2145,9 +2143,6 @@ ViewInit (
 )
 {
   BOOLEAN Ok = FontLoad (Font, FontLength);
-
-  // CJK glyphs, after the font's own.
-  Ok = FontAddFallback (gOablAssetFontCjk, gOablAssetFontCjkSize) && Ok;
 
   ZeroMem (&mView, sizeof (mView));
   mView.Clock = Panel->Now;

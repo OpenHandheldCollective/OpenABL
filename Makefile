@@ -22,9 +22,6 @@
 #   debug             Debug section in the menu (adds sd-diagnostics and
 #                     display-quiesce)
 #
-# The menu has every language in Ui/Lang.c. Its CJK face is made at build
-# time from Assets/SourceHanSansSC-Normal.otf by Scripts/mkfont.py with just
-# the characters those strings use (needs fontTools: pip install fonttools).
 # The ABL image is 512 KiB and the abl partition 1 MiB, so the program is
 # kept small.
 #
@@ -80,8 +77,7 @@ EDK2_INCLUDES := MdePkg/Include MdePkg/Include/AArch64 MdeModulePkg/Include \
 OWN_FLAGS := $(BASE_FLAGS) $(DEFINES) $(foreach d,$(EDK2_INCLUDES),-isystem $(EDK2)/$(d)) \
 	-Wall -Wextra -Wno-unused-parameter -Werror -MMD -MP
 
-CJK_FONT := $(OBJ)/cjk-sc.oablf
-ASSETS := Font=Assets/montserrat.oablf FontCjk=$(CJK_FONT)
+ASSETS := Font=Assets/montserrat.oablf
 
 .PHONY: all sim clean
 all: $(OUT)/openabl-menu.efi
@@ -103,13 +99,7 @@ $(OBJ)/$(VARIANT)/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(OWN_FLAGS) -c $< -o $@
 
-# The CJK face: the characters the strings use, from the full font.
-$(CJK_FONT): Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf Ui/Lang.c
-	@mkdir -p $(@D)
-	$(PYTHON) Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf Ui/Lang.c > $@.tmp
-	@mv $@.tmp $@
-
-$(OBJ)/$(VARIANT)/assets.c: Scripts/bin2c.py $(wildcard Assets/*.oablf) $(CJK_FONT)
+$(OBJ)/$(VARIANT)/assets.c: Scripts/bin2c.py $(wildcard Assets/*.oablf)
 	@mkdir -p $(@D)
 	$(PYTHON) Scripts/bin2c.py $(ASSETS) > $@
 

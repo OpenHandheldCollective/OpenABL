@@ -4,11 +4,9 @@
  */
 
 /**
-  Lang - the menu's strings, in every language the menu offers.
+  Lang - the menu's strings. English only: the menu draws CP437 glyphs.
 
-  The Language setting picks one at run time. The CJK face (made from these
-  strings at build time) is a fallback for the characters the menu font
-  lacks. {}, {0} and {1} mark where LangFill puts values.
+  {}, {0} and {1} mark where LangFill puts values.
 */
 
 #ifndef __UI_LANG_H__
@@ -17,7 +15,7 @@
 #include "Base/OablBase.h"
 
 // The stored values of the Language setting. Add new ones at the end.
-typedef enum { LANG_EN, LANG_ZH_HANS, LANG_COUNT } LANG_ID;
+typedef enum { LANG_EN, LANG_COUNT } LANG_ID;
 
 typedef struct _LANG_STRINGS {
   CONST CHAR8 *Language;

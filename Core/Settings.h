@@ -69,7 +69,7 @@ typedef struct _SETTINGS {
 } SETTINGS;
 
 // Languages the menu offers (LANG_COUNT).
-#define SETTINGS_LANGUAGES 2
+#define SETTINGS_LANGUAGES 1
 
 // Menu timeout choices, in seconds.
 extern CONST UINT8 gSettingsTimeoutChoices[4];
