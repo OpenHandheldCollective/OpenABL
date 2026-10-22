@@ -93,6 +93,10 @@ order:
 - Kernels are started through their EFI stub (gzip-compressed kernels are
   decompressed first), with their initrds and either the entry's devicetree
   or the selected device model's.
+- Before the OS starts, memory XBL no longer needs is handed to it: DRAM
+  outside the SoC's carveouts, XBL's unused regions, the plain reserved
+  parts of `UEFI_FD` and `FV_Region`, and the display region except the
+  framebuffer still on screen.
 - Boot counting (`name+3.conf`) follows
   [Automatic Boot Assessment](https://systemd.io/AUTOMATIC_BOOT_ASSESSMENT/),
   and the [Boot Loader Interface](https://systemd.io/BOOT_LOADER_INTERFACE/)
@@ -104,6 +108,12 @@ order:
   `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor).
 - An `EFI_RT_PROPERTIES_TABLE` tells Linux which runtime services XBL
   lacks: `SetVirtualAddressMap` on SDM845, all of them on SM6115.
+- The display: a `splash_region` (or `cont_splash_region`) in the kernel's
+  devicetree keeps XBL's splash on screen and is pointed at its
+  framebuffer, as Qualcomm's ABL does for Android. Without one the display
+  is switched off before Linux, which brings it up from cold. Loaders that
+  call `EFI_DT_FIXUP_PROTOCOL` (systemd-boot, GRUB 2.12 and later) get the
+  same for the devicetree they load.
 - Boot sources are internal storage (UFS or eMMC), the SD card and USB
   drives. For USB the port is switched to host mode.
 - A disk image written to `userdata` boots too: its ESP is found

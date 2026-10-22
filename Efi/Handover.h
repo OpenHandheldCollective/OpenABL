@@ -38,10 +38,10 @@ typedef struct _HANDOVER_PREPARE {
   CONST CHAR8 *Version;
 } HANDOVER_PREPARE;
 
-// Called just before an image starts. Installs the ESRT, the runtime
-// properties table where the chip needs one, and the model's devicetree
-// from Fs unless the image brings its own, and frees XBL's kernel staging
-// region until HandoverBootReturned.
+// Called just before an image starts: installs EFI_DT_FIXUP_PROTOCOL, the
+// ESRT, the runtime properties table where the chip needs one and the
+// model's devicetree from Fs unless the image brings its own, and frees
+// XBL's kernel staging region until HandoverBootReturned.
 VOID
 HandoverPrepare (
   IN CONST HANDOVER_PREPARE *Prepare,
@@ -58,11 +58,10 @@ HandoverBootReturned (IN LOG_SINK Log);
 VOID
 HandoverHypUartOff (VOID);
 
-// Installs Dtb as the devicetree configuration table (gFdtTableGuid) in
-// ACPI-reclaim pages, as EBBR requires, with 8 KiB of padding and XBL's
-// splash memory reserved in it. Replaces and frees any table installed
-// earlier. Size and At get the installed blob. Returns NULL on success, else
-// a static error string.
+// Installs Dtb as the devicetree table (gFdtTableGuid) in ACPI-reclaim pages
+// with 8 KiB of padding and its splash region pointed at XBL's framebuffer,
+// replacing any table installed earlier. Size and At get the installed blob;
+// returns NULL on success, else a static error string.
 CONST CHAR8 *
 HandoverInstallDevicetree (
   IN CONST UINT8  *Dtb,

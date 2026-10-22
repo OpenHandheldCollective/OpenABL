@@ -89,17 +89,69 @@ DisplayHandoverQuiesceSetting (VOID)
 
 #ifndef OABL_DISPLAY_QUIESCE
   Byte &= (UINT8)~(DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF);
-  Stored = FALSE;
-#endif
-#ifdef OABL_PARK_DISPLAY
-  if (!Stored) {
-    Byte |= DISPLAY_HANDOVER_QUIESCE;
-  }
 #endif
   return Byte;
 }
 
-#ifdef OABL_DISPLAY_OFF
+// Names the statuses the steps meet. Others print as "error N" in Buffer.
+STATIC CONST CHAR8 *
+StatusString (
+  IN EFI_STATUS Status,
+  OUT CHAR8     Buffer[32]
+)
+{
+  switch (Status) {
+  case EFI_SUCCESS:
+    return "Success";
+  case EFI_NOT_FOUND:
+    return "Not Found";
+  case EFI_UNSUPPORTED:
+    return "Unsupported";
+  case EFI_INVALID_PARAMETER:
+    return "Invalid Parameter";
+  case EFI_DEVICE_ERROR:
+    return "Device Error";
+  }
+  SPrint (Buffer, 32, "error %llu", (UINT64)(Status & ~((UINTN)1 << 63)));
+  return Buffer;
+}
+
+// XBL's display power protocol, found by DisplayHandoverArm so that
+// ExitBootServices needs no lookup.
+STATIC EFI_DISPLAY_POWER_PROTOCOL *mPower;
+
+// Turns the display off through XBL's display power protocol. This stops
+// the timing engine, DSI and its PLL; what else it leaves on varies by SoC.
+STATIC VOID
+PowerOff (IN OPENABL_STORAGE_LOG Log OPTIONAL)
+{
+  EFI_DISPLAY_POWER_STATE State = 0;
+  EFI_STATUS              Status;
+  CHAR8                   Scratch[32];
+
+  if (!mPower) {
+    mPower = LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
+  }
+  if (!mPower) {
+    Say (Log, "no display power protocol");
+    return;
+  }
+  Status = mPower->SetDisplayPowerState (mPower, EfiDisplayPowerStateOff);
+  (VOID)mPower->GetDisplayPowerState (mPower, &State);
+  Say (
+    Log, "display off: %s (state %u)", StatusString (Status, Scratch),
+    (UINT32)State
+  );
+}
+
+VOID
+DisplayHandoverQuiesce (IN OPENABL_STORAGE_LOG Log OPTIONAL)
+{
+  Say (Log, "turning the display off through XBL");
+  PowerOff (Log);
+}
+
+#ifdef OABL_DISPLAY_QUIESCE
 
 // XBL's TLMM and SPMI protocols. The ABL's tree has no headers for them.
 
@@ -205,59 +257,6 @@ SpmiWrite (
   return ((SPMI_WRITE_LONG_XF)Spmi->WriteLong) (
     Spmi, SlaveId, SPMI_PRIORITY_LOW, Address, &Data, 1
   );
-}
-
-// Names the statuses the steps meet. Others print as "error N" in Buffer.
-STATIC CONST CHAR8 *
-StatusString (
-  IN EFI_STATUS Status,
-  OUT CHAR8     Buffer[32]
-)
-{
-  switch (Status) {
-  case EFI_SUCCESS:
-    return "Success";
-  case EFI_NOT_FOUND:
-    return "Not Found";
-  case EFI_UNSUPPORTED:
-    return "Unsupported";
-  case EFI_INVALID_PARAMETER:
-    return "Invalid Parameter";
-  case EFI_DEVICE_ERROR:
-    return "Device Error";
-  }
-  SPrint (Buffer, 32, "error %llu", (UINT64)(Status & ~((UINTN)1 << 63)));
-  return Buffer;
-}
-
-// Turns the display off through XBL's display power protocol. This stops
-// the timing engine, DSI and its PLL; what else it leaves on varies by SoC.
-STATIC VOID
-PowerOff (IN OPENABL_STORAGE_LOG Log OPTIONAL)
-{
-  EFI_DISPLAY_POWER_PROTOCOL *Power =
-    LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
-  EFI_DISPLAY_POWER_STATE State = 0;
-  EFI_STATUS              Status;
-  CHAR8                   Scratch[32];
-
-  if (!Power) {
-    Say (Log, "no display power protocol");
-    return;
-  }
-  Status = Power->SetDisplayPowerState (Power, EfiDisplayPowerStateOff);
-  (VOID)Power->GetDisplayPowerState (Power, &State);
-  Say (
-    Log, "display off: %s (state %u)", StatusString (Status, Scratch),
-    (UINT32)State
-  );
-}
-
-VOID
-DisplayHandoverQuiesce (IN OPENABL_STORAGE_LOG Log OPTIONAL)
-{
-  Say (Log, "turning the display off through XBL");
-  PowerOff (Log);
 }
 
 // Returns the panel lines for the selected model, or NULL (logged).
@@ -397,7 +396,7 @@ DisplayHandoverSuppliesOff (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   }
 }
 
-#endif // OABL_DISPLAY_OFF
+#endif // OABL_DISPLAY_QUIESCE
 
 VOID
 DisplayHandoverBeforeExit (
@@ -405,15 +404,12 @@ DisplayHandoverBeforeExit (
   IN OPENABL_STORAGE_LOG Log OPTIONAL
 )
 {
-  // The setting overrides the ABL's KeepAlive. Linux devicetrees can have
-  // a splash region too, which the ABL takes for Android's, and a requested
-  // display-off must happen.
-  UINT8 Quiesce = DisplayHandoverQuiesceSetting ();
+  // The setting overrides the tree: a requested display-off must happen.
+  UINT8   Quiesce = DisplayHandoverQuiesceSetting ();
+  BOOLEAN Forced =
+    (Quiesce & (DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF)) != 0;
 
-  KeepAlive =
-    KeepAlive &&
-    (Quiesce & (DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF)) == 0;
-  if (KeepAlive) {
+  if (KeepAlive && !Forced) {
     Say (Log, "the devicetree keeps the splash: the display stays on");
     return;
   }
@@ -421,28 +417,58 @@ DisplayHandoverBeforeExit (
   // turning the backlight off shows as a flash on an LCD, and so does the
   // kernel's panel reset later. The supplies go last because the display
   // power-off leaves them on.
-#ifdef OABL_DISPLAY_OFF
+#ifdef OABL_DISPLAY_QUIESCE
   if (Quiesce & DISPLAY_HANDOVER_LINES_OFF) {
     DisplayHandoverBacklightOff (Log);
   }
-  if (Quiesce & DISPLAY_HANDOVER_QUIESCE) {
-    DisplayHandoverQuiesce (Log);
-  }
+#endif
+  DisplayHandoverQuiesce (Log);
+#ifdef OABL_DISPLAY_QUIESCE
   if (Quiesce & DISPLAY_HANDOVER_LINES_OFF) {
     DisplayHandoverSuppliesOff (Log);
   }
 #endif
 }
 
-STATIC BOOLEAN mKeepSplash;
+// What the last tree seen said, if one was.
+typedef enum {
+  DECISION_NONE,
+  DECISION_KEEP,
+  DECISION_OFF,
+} DECISION;
+
+STATIC DECISION mDecision;
+
+VOID
+DisplayHandoverReset (VOID)
+{
+  mDecision = DECISION_NONE;
+}
 
 VOID
 DisplayHandoverKeepSplash (IN BOOLEAN Keep)
 {
-  mKeepSplash = Keep;
+  mDecision = Keep ? DECISION_KEEP : DECISION_OFF;
 }
 
-#ifdef OABL_DISPLAY_OFF
+STATIC BOOLEAN
+KeepAtExit (VOID)
+{
+  switch (mDecision) {
+  case DECISION_KEEP:
+    return TRUE;
+  case DECISION_OFF:
+    return FALSE;
+  default:
+    break;
+  }
+#ifdef OABL_PARK_DISPLAY
+  return FALSE;
+#else
+  return TRUE;
+#endif
+}
+
 STATIC VOID EFIAPI
 AtExit (
   IN EFI_EVENT Event,
@@ -451,16 +477,12 @@ AtExit (
 {
   (VOID)Event;
   (VOID)Context;
-  if (!mKeepSplash) {
-    DisplayHandoverBeforeExit (TRUE, NULL);
-  }
+  DisplayHandoverBeforeExit (KeepAtExit (), NULL);
 }
-#endif
 
 VOID
 DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL)
 {
-#ifdef OABL_DISPLAY_OFF
   STATIC EFI_EVENT Event;
   EFI_STATUS       Status;
   CHAR8            Scratch[32];
@@ -468,24 +490,22 @@ DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   if (Event) {
     return;
   }
+  mPower = LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
+  if (!mPower) {
+    Say (Log, "arm: no display power protocol");
+  }
 #ifdef OABL_PARK_DISPLAY
-  {
-    EFI_DISPLAY_POWER_PROTOCOL *Power =
-      LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
+  else {
     EFI_DISPLAY_POWER_STATE State = 0;
 
-    if (!Power) {
-      Say (Log, "arm: no display power protocol");
-    } else {
-      Status = Power->GetDisplayPowerState (Power, &State);
-      Say (
-        Log, "arm: power state %u (%s)", (UINT32)State,
-        StatusString (Status, Scratch)
-      );
-      if (Status == EFI_SUCCESS) {
-        Status = Power->SetDisplayPowerState (Power, EfiDisplayPowerStateOn);
-        Say (Log, "arm: set on: %s", StatusString (Status, Scratch));
-      }
+    Status = mPower->GetDisplayPowerState (mPower, &State);
+    Say (
+      Log, "arm: power state %u (%s)", (UINT32)State,
+      StatusString (Status, Scratch)
+    );
+    if (Status == EFI_SUCCESS) {
+      Status = mPower->SetDisplayPowerState (mPower, EfiDisplayPowerStateOn);
+      Say (Log, "arm: set on: %s", StatusString (Status, Scratch));
     }
   }
 #endif
@@ -499,7 +519,4 @@ DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL)
     Log, "arm: display hand-over at ExitBootServices: %s",
     StatusString (Status, Scratch)
   );
-#else
-  (VOID)Log;
-#endif
 }

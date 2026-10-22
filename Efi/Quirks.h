@@ -83,9 +83,8 @@ QuirksPrepareStorage (
 UINT32
 QuirksChipId (VOID);
 
-// Applies the devicetree fix-ups for a kernel. Fdt may grow up to Cap
-// bytes. After a USB boot the USB controller is put in host mode. XBL's
-// splash memory is reserved unless a display-off is asked for.
+// Applies the devicetree fix-ups for a kernel; Fdt may grow up to Cap bytes.
+// After a USB boot the USB controller is put in host mode.
 VOID
 QuirksFixupDeviceTree (
   IN OUT UINT8 *Fdt,
