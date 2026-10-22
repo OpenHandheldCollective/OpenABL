@@ -41,6 +41,24 @@ CONST CHAR8 *CONST gModelsBootImages[4] = {"\\KERNEL", "\\boot\\Image",
 
 #define N_BOOT_IMAGES (sizeof (gModelsBootImages) / sizeof (*gModelsBootImages))
 
+BOOLEAN
+ModelsIsBootImage (
+  IN EFI_HANDLE   Fs,
+  IN CONST CHAR8 *Path
+)
+{
+  OABL_BUFFER Head = {0};
+  BOOLEAN     Ok;
+
+  Ok = FilesReadPart (Fs, Path, 0, sizeof (ANDROID_BOOT_MAGIC) - 1, &Head) &&
+       Head.Len >= sizeof (ANDROID_BOOT_MAGIC) - 1 &&
+       CompareMem (
+         Head.Data, ANDROID_BOOT_MAGIC, sizeof (ANDROID_BOOT_MAGIC) - 1
+       ) == 0;
+  BufferFree (&Head);
+  return Ok;
+}
+
 VOID
 ModelsFree (IN OUT SCANNED_MODELS *Models)
 {
