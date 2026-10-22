@@ -801,10 +801,38 @@ AddRow (
   }
 }
 
+// Returns TRUE if an entry on drive Volume of mVolumes starts the kernel at
+// Path, a UEFI path such as \boot\Image. With BlsOnly, only BLS entries
+// count. A row for the same kernel would only repeat that entry.
+STATIC BOOLEAN
+EntryHasKernel (
+  IN UINTN        Volume,
+  IN CONST CHAR8 *Path,
+  IN BOOLEAN      BlsOnly
+)
+{
+  CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Volume];
+
+  for (UINTN Index = 0; Index < V->Entries.Count; Index++) {
+    CONST BOOT_ENTRY *Entry = &V->Entries.Items[Index];
+
+    // FAT names are case-insensitive.
+    if ((!BlsOnly || BootEntryIsBls (Entry)) &&
+        Entry->Action.Kind == BOOT_ENTRY_ACTION_LINUX &&
+        Entry->Action.Kernel &&
+        TextEqNoCase (TextOf (Entry->Action.Kernel), Path)) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 // Lists what Start would try on the allowed drives, in its order: each
 // drive's entries, then each drive's default file, then the first boot
 // image. Only in Linux boot mode. USB drives are skipped unless USB
-// host is up, since fastboot owns the controller.
+// host is up, since fastboot owns the controller. An entry for a kernel
+// another one on the same drive already starts is left out: BLS wins over
+// extlinux and the boot image, and extlinux over the boot image.
 STATIC VOID
 FillEntries (
   IN MENU_STATE *M,
@@ -833,6 +861,13 @@ FillEntries (
     for (UINTN Index2 = 0; Index2 < V->Entries.Count; Index2++) {
       CONST BOOT_ENTRY *Entry = &V->Entries.Items[Index2];
 
+      if (!BootEntryIsBls (Entry) &&
+          Entry->Action.Kind == BOOT_ENTRY_ACTION_LINUX &&
+          Entry->Action.Kernel &&
+          EntryHasKernel (Index, Entry->Action.Kernel, TRUE)) {
+        MenuLog ("Boot entries: %s repeats a BLS entry", Entry->Id);
+        continue;
+      }
       AddRow (
         Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
         EntryKind (Entry->Source), Entry->Version,
@@ -864,12 +899,20 @@ FillEntries (
          !Image;
          Index2++) {
       if (FilesExists (mVolumes.Items[Index].Fs, gModelsBootImages[Index2])) {
+        // Start would still pick this image, so an entry for the same
+        // kernel hides it rather than letting a later one show.
+        Image = TRUE;
+        if (EntryHasKernel (Index, gModelsBootImages[Index2], FALSE)) {
+          MenuLog (
+            "Boot entries: %s repeats an entry", gModelsBootImages[Index2]
+          );
+          break;
+        }
         // The path without its backslash, such as KERNEL.
         AddRow (
           Views, &Count, Index, gModelsBootImages[Index2] + 1,
           ENTRY_KIND_BOOT_IMAGE, NULL, FALSE, MENU_PICK_BOOT_IMAGE
         );
-        Image = TRUE;
       }
     }
   }
