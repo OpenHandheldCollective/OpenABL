@@ -50,6 +50,28 @@ UninstallTable (
   OUT OABL_BUFFER          *Array
 );
 
+// Writes Length bytes, whole blocks, at Lba through a page-aligned copy.
+EFI_STATUS
+UninstallWrite (
+  IN EFI_BLOCK_IO_PROTOCOL *BlockIo,
+  IN UINT64                 Lba,
+  IN CONST UINT8           *Data,
+  IN UINTN                  Length
+);
+
+// Reads the table like UninstallTable, then also requires a writable disk,
+// valid CRCs in both copies, headers that agree on the layout
+// (GptCopiesAgree) and the same entries in each. Partitions are only
+// changed in a table that passes. Backup gets the backup's header.
+BOOLEAN
+UninstallCheckedTable (
+  IN EFI_BLOCK_IO_PROTOCOL *BlockIo,
+  OUT OABL_BUFFER          *Block,
+  OUT GPT_HEADER           *Header,
+  OUT OABL_BUFFER          *Array,
+  OUT GPT_HEADER           *Backup
+);
+
 // Whether Linux is installed on internal storage, after userdata or as an
 // image in it. The first call connects the storage
 //looks and logs the answer; later calls return the,same answer.

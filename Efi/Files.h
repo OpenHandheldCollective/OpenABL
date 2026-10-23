@@ -82,6 +82,18 @@ FilesReadTo (
   OUT UINTN      *Got
 );
 
+// Reads up to Size bytes of Path from Offset into Buffer. Got gets the
+// number read, less only where the file ends.
+BOOLEAN
+FilesReadAt (
+  IN EFI_HANDLE   Fs,
+  IN CONST CHAR8 *Path,
+  IN UINT64       Offset,
+  OUT UINT8      *Buffer,
+  IN UINTN        Size,
+  OUT UINTN      *Got
+);
+
 // Returns TRUE if Path opens and is a file.
 BOOLEAN
 FilesExists (

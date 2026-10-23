@@ -4,7 +4,8 @@
  */
 
 /**
-  Gpt - GPT parsing and rewriting for Uninstall CFW.
+  Gpt - GPT parsing and rewriting for installing and uninstalling
+  PortareOS on internal storage.
 */
 
 #include "Core/Gpt.h"
@@ -16,6 +17,9 @@ CONST UINT8 gGptAndroidUserdata[16] = {0xe6, 0xe7, 0x81, 0x1b, 0x0d, 0xf5,
                                        0xf8, 0xda, 0x33, 0x35};
 CONST UINT8 gGptLinuxFs[16] = {0xaf, 0x3d, 0xc6, 0x0f, 0x83, 0x84, 0x72, 0x47,
                                0x8e, 0x79, 0x3d, 0x69, 0xd8, 0x47, 0x7d, 0xe4};
+CONST UINT8 gGptEfiSystem[16] = {0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8,
+                                 0xd2, 0x11, 0xba, 0x4b, 0x00, 0xa0,
+                                 0xc9, 0x3e, 0xc9, 0x3b};
 
 STATIC CONST CHAR8 mUserdata[] = "userdata";
 // Entry name: 36 UTF-16 code units at byte 56.
@@ -440,97 +444,314 @@ Fail:
   return FALSE;
 }
 
+// Finds the one in-use entry called Name. FALSE if there is none, or more
+// than one.
+STATIC BOOLEAN
+OnlyNamed (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN CONST CHAR8      *Name,
+  OUT UINTN           *Found
+)
+{
+  UINTN   Count = EntryCount (Header, ArrayLen);
+  BOOLEAN Seen  = FALSE;
+
+  for (UINTN Index = 0; Index < Count; Index++) {
+    CONST UINT8 *Entry = Array + Index * Header->EntrySize;
+    if (InUse (Entry) && Named (Entry, Name)) {
+      if (Seen) {
+        return FALSE;
+      }
+      Seen   = TRUE;
+      *Found = Index;
+    }
+  }
+  return Seen;
+}
+
+// What Replace Android removes.
+STATIC CONST CHAR8 *CONST mReplaced[] = {
+  "super", "vbmeta_system_a", "vbmeta_system_b", "userdata", GPT_BOOT_NAME,
+  GPT_STORAGE_NAME};
+
+STATIC BOOLEAN
+Replaced (IN CONST UINT8 *Entry)
+{
+  for (UINTN Index = 0; Index < sizeof (mReplaced) / sizeof (*mReplaced);
+       Index++) {
+    if (Named (Entry, mReplaced[Index])) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+VOID
+GptSurvey (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  OUT GPT_SURVEY      *Out
+)
+{
+  UINTN   Count = EntryCount (Header, ArrayLen);
+  UINTN   Super;
+  UINTN   Userdata;
+  UINTN   Boot;
+  UINTN   Storage;
+  BOOLEAN HasUserdata;
+  BOOLEAN Any = FALSE;
+
+  ZeroMem (Out, sizeof (*Out));
+  Out->LastUsable = Header->LastUsable;
+  HasUserdata     = UserdataIndex (Header, Array, ArrayLen, &Userdata);
+  if (HasUserdata) {
+    CONST UINT8 *Entry = Array + Userdata * Header->EntrySize;
+    Out->UserdataFirst = ReadLe64 (Entry + 32);
+    Out->UserdataLast  = ReadLe64 (Entry + 40);
+  }
+  Out->Android = HasUserdata && OnlyNamed (Header, Array, ArrayLen, "super",
+                                           &Super);
+  if (OnlyNamed (Header, Array, ArrayLen, GPT_BOOT_NAME, &Boot) &&
+      OnlyNamed (Header, Array, ArrayLen, GPT_STORAGE_NAME, &Storage)) {
+    CONST UINT8 *BootEntry    = Array + Boot * Header->EntrySize;
+    CONST UINT8 *StorageEntry = Array + Storage * Header->EntrySize;
+    Out->Found.BootFirst      = ReadLe64 (BootEntry + 32);
+    Out->Found.BootLast       = ReadLe64 (BootEntry + 40);
+    Out->Found.StorageFirst   = ReadLe64 (StorageEntry + 32);
+    Out->Found.StorageLast    = ReadLe64 (StorageEntry + 40);
+    CopyMem (Out->Found.BootGuid, BootEntry + 16, 16);
+    Out->PortareOs = !Out->Android ||
+                     (Out->Found.BootFirst > Out->UserdataLast &&
+                      Out->Found.StorageFirst > Out->UserdataLast);
+  }
+  Out->CanShrink = Out->Android && Out->UserdataFirst <= Out->UserdataLast &&
+                   Out->UserdataLast <= Header->LastUsable &&
+                   !GptCfwAfterUserdata (Header, Array, ArrayLen);
+  // Replace Android's space starts with the first of what it removes, and
+  // nothing else may lie in it.
+  Out->ReplaceFirst = MAX_UINT64;
+  for (UINTN Index = 0; Index < Count; Index++) {
+    CONST UINT8 *Entry = Array + Index * Header->EntrySize;
+    if (InUse (Entry) && Replaced (Entry)) {
+      UINT64 First = ReadLe64 (Entry + 32);
+      if (First < Header->FirstUsable || ReadLe64 (Entry + 40) < First ||
+          ReadLe64 (Entry + 40) > Header->LastUsable) {
+        return;
+      }
+      Out->ReplaceFirst = First < Out->ReplaceFirst ? First : Out->ReplaceFirst;
+      Any               = TRUE;
+    }
+  }
+  if (!Any || (!Out->Android && !Out->PortareOs)) {
+    return;
+  }
+  for (UINTN Index = 0; Index < Count; Index++) {
+    CONST UINT8 *Entry = Array + Index * Header->EntrySize;
+    if (InUse (Entry) && !Replaced (Entry) &&
+        ReadLe64 (Entry + 40) >= Out->ReplaceFirst) {
+      return;
+    }
+  }
+  Out->CanReplace = TRUE;
+}
+
+STATIC UINT64
+AlignUp64 (
+  IN UINT64 Value,
+  IN UINT64 Align
+)
+{
+  return (Value + Align - 1) / Align * Align;
+}
+
+// Fills the next free entry from *Slot with a partition.
+STATIC BOOLEAN
+AddEntry (
+  IN CONST GPT_HEADER *Header,
+  IN OUT UINT8        *Array,
+  IN UINTN             ArrayLen,
+  IN OUT UINTN        *Slot,
+  IN CONST UINT8       Type[16],
+  IN CONST UINT8       Guid[16],
+  IN UINT64            First,
+  IN UINT64            Last,
+  IN CONST CHAR8      *Name
+)
+{
+  UINTN  Count = EntryCount (Header, ArrayLen);
+  UINT8 *Entry;
+
+  while (*Slot < Count && InUse (Array + *Slot * Header->EntrySize)) {
+    (*Slot)++;
+  }
+  if (*Slot >= Count) {
+    return FALSE;
+  }
+  Entry = Array + (*Slot)++ * Header->EntrySize;
+  ZeroMem (Entry, Header->EntrySize);
+  CopyMem (Entry, Type, 16);
+  CopyMem (Entry + 16, Guid, 16);
+  WriteLe64 (Entry + 32, First);
+  WriteLe64 (Entry + 40, Last);
+  PutName (Entry, Name);
+  return TRUE;
+}
+
+// Puts PortareOS's partitions from the Align boundary at or after First to
+// the last usable block, into free entries from Slot, then builds the
+// writes. Takes ownership of Copy.
+STATIC BOOLEAN
+PlaceAndWrite (
+  IN CONST UINT8       *Header,
+  IN UINTN              HeaderLen,
+  IN CONST GPT_HEADER  *Parsed,
+  IN UINT8             *Copy,
+  IN UINTN              ArrayLen,
+  IN UINTN              BlockSize,
+  IN UINT64             BackupEntryLba,
+  IN CONST GPT_INSTALL *Install,
+  IN UINT64             First,
+  IN UINTN              Slot,
+  OUT GPT_WRITES       *Out,
+  OUT GPT_PORTAREOS    *Where
+)
+{
+  GPT_PORTAREOS At;
+
+  At.BootFirst    = AlignUp64 (First, Install->Align);
+  At.BootLast     = At.BootFirst + Install->BootBlocks - 1;
+  At.StorageFirst = At.BootLast + 1;
+  At.StorageLast  = Parsed->LastUsable;
+  CopyMem (At.BootGuid, Install->BootGuid, 16);
+  if (At.BootFirst < First || At.StorageFirst > Parsed->LastUsable ||
+      At.StorageLast - At.StorageFirst + 1 < Install->MinStorage ||
+      !AddEntry (
+        Parsed, Copy, ArrayLen, &Slot, gGptEfiSystem, Install->BootGuid,
+        At.BootFirst, At.BootLast, GPT_BOOT_NAME
+      ) ||
+      !AddEntry (
+        Parsed, Copy, ArrayLen, &Slot, gGptLinuxFs, Install->StorageGuid,
+        At.StorageFirst, At.StorageLast, GPT_STORAGE_NAME
+      )) {
+    FreePool (Copy);
+    return FALSE;
+  }
+  if (!Tables (
+        Header, HeaderLen, Parsed, Copy, ArrayLen, BlockSize, BackupEntryLba,
+        Out
+      )) {
+    return FALSE;
+  }
+  *Where = At;
+  return TRUE;
+}
+
+// Checks what both installs need and copies the array.
+STATIC UINT8 *
+InstallCopy (
+  IN CONST UINT8       *Header,
+  IN UINTN              HeaderLen,
+  IN CONST UINT8       *Array,
+  IN UINTN              ArrayLen,
+  IN UINTN              BlockSize,
+  IN CONST GPT_INSTALL *Install,
+  OUT GPT_HEADER       *Parsed,
+  OUT GPT_SURVEY       *Survey
+)
+{
+  if (!GptParse (Header, HeaderLen, Parsed) || BlockSize == 0 ||
+      ArrayLen < GptArraySize (Parsed) || Install->BootBlocks == 0 ||
+      Install->Align == 0 || Install->MinStorage == 0) {
+    return NULL;
+  }
+  GptSurvey (Parsed, Array, ArrayLen, Survey);
+  return AllocateCopyPool (ArrayLen, Array);
+}
+
 BOOLEAN
-GptInstallAfterUserdata (
-  IN CONST UINT8    *Header,
-  IN UINTN           HeaderLen,
-  IN CONST UINT8    *Array,
-  IN UINTN           ArrayLen,
-  IN UINTN           BlockSize,
-  IN CONST GPT_PART *Parts,
-  IN UINTN           PartCount,
-  OUT GPT_WRITES    *Out
+GptInstallDualboot (
+  IN CONST UINT8       *Header,
+  IN UINTN              HeaderLen,
+  IN CONST UINT8       *Array,
+  IN UINTN              ArrayLen,
+  IN UINTN              BlockSize,
+  IN UINT64             BackupEntryLba,
+  IN CONST GPT_INSTALL *Install,
+  OUT GPT_WRITES       *Out,
+  OUT GPT_PORTAREOS    *Where
 )
 {
   GPT_HEADER Parsed;
-  UINTN      Count;
-  UINTN      UserdataIndex;
-  UINTN      Slot;
-  UINT64     Start;
-  UINT64     End;
-  UINT64     Need = 0;
-  UINT64     ArrayBlocks;
-  UINT64     At;
+  GPT_SURVEY Survey;
   UINT8     *Copy;
-  UINT8     *Userdata;
+  UINTN      Userdata;
+  UINT64     Boot;
 
-  if (!GptParse (Header, HeaderLen, &Parsed)) {
-    return FALSE;
-  }
-  if (BlockSize == 0 || ArrayLen < GptArraySize (&Parsed)) {
-    return FALSE;
-  }
-  for (UINTN Index = 0; Index < PartCount; Index++) {
-    if (Parts[Index].Blocks == 0) {
-      return FALSE;
-    }
-  }
-  Copy = AllocateCopyPool (ArrayLen, Array);
+  Copy = InstallCopy (
+    Header, HeaderLen, Array, ArrayLen, BlockSize, Install, &Parsed, &Survey
+  );
   if (!Copy) {
     return FALSE;
   }
-  Count = EntryCount (&Parsed, ArrayLen);
-  for (UserdataIndex = 0; UserdataIndex < Count; UserdataIndex++) {
-    if (InUse (Copy + UserdataIndex * Parsed.EntrySize) &&
-        Named (Copy + UserdataIndex * Parsed.EntrySize, mUserdata)) {
-      break;
-    }
+  Boot = AlignUp64 (Survey.UserdataFirst + Install->AndroidBlocks,
+                    Install->Align);
+  if (!Survey.CanShrink || Install->AndroidBlocks == 0 ||
+      Install->AndroidBlocks > Survey.UserdataLast - Survey.UserdataFirst ||
+      Boot > Survey.UserdataLast ||
+      !UserdataIndex (&Parsed, Copy, ArrayLen, &Userdata)) {
+    FreePool (Copy);
+    return FALSE;
   }
-  if (UserdataIndex == Count) {
-    goto Fail;
-  }
-  Userdata = Copy + UserdataIndex * Parsed.EntrySize;
-  Start    = ReadLe64 (Userdata + 32);
-  End      = ReadLe64 (Userdata + 40);
-  for (UINTN Index = 0; Index < PartCount; Index++) {
-    Need += Parts[Index].Blocks;
-  }
-  At = End + 1;
-  if (At < Need || At - Need <= Start) {
-    goto Fail;
-  }
-  At -= Need;
-  WriteLe64 (Userdata + 40, At - 1);
-  Slot = UserdataIndex + 1;
-  for (UINTN Index = 0; Index < PartCount; Index++) {
-    UINT8 *Entry;
-    while (Slot < Count && InUse (Copy + Slot * Parsed.EntrySize)) {
-      Slot++;
-    }
-    if (Slot >= Count) {
-      goto Fail;
-    }
-    Entry = Copy + Slot * Parsed.EntrySize;
-    ZeroMem (Entry, Parsed.EntrySize);
-    CopyMem (Entry, Parts[Index].Type, 16);
-    SetMem (Entry + 16, 16, (UINT8)(0xc0 + Index));
-    WriteLe64 (Entry + 32, At);
-    WriteLe64 (Entry + 40, At + Parts[Index].Blocks - 1);
-    PutName (Entry, Parts[Index].Name);
-    At += Parts[Index].Blocks;
-    Slot++;
-  }
-  ArrayBlocks = (GptArraySize (&Parsed) + BlockSize - 1) / BlockSize;
-  if (Parsed.AlternateLba < ArrayBlocks) {
-    goto Fail;
-  }
-  return Tables (
-    Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize,
-    Parsed.AlternateLba - ArrayBlocks, Out
+  // Userdata keeps its type; only its end moves.
+  WriteLe64 (Copy + Userdata * Parsed.EntrySize + 40, Boot - 1);
+  return PlaceAndWrite (
+    Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize, BackupEntryLba,
+    Install, Boot, Userdata + 1, Out, Where
   );
-Fail:
-  FreePool (Copy);
-  return FALSE;
+}
+
+BOOLEAN
+GptInstallReplace (
+  IN CONST UINT8       *Header,
+  IN UINTN              HeaderLen,
+  IN CONST UINT8       *Array,
+  IN UINTN              ArrayLen,
+  IN UINTN              BlockSize,
+  IN UINT64             BackupEntryLba,
+  IN CONST GPT_INSTALL *Install,
+  OUT GPT_WRITES       *Out,
+  OUT GPT_PORTAREOS    *Where
+)
+{
+  GPT_HEADER Parsed;
+  GPT_SURVEY Survey;
+  UINT8     *Copy;
+  UINTN      Count;
+
+  Copy = InstallCopy (
+    Header, HeaderLen, Array, ArrayLen, BlockSize, Install, &Parsed, &Survey
+  );
+  if (!Copy) {
+    return FALSE;
+  }
+  if (!Survey.CanReplace) {
+    FreePool (Copy);
+    return FALSE;
+  }
+  Count = EntryCount (&Parsed, ArrayLen);
+  for (UINTN Index = 0; Index < Count; Index++) {
+    UINT8 *Entry = Copy + Index * Parsed.EntrySize;
+    if (InUse (Entry) && Replaced (Entry)) {
+      ZeroMem (Entry, Parsed.EntrySize);
+    }
+  }
+  return PlaceAndWrite (
+    Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize, BackupEntryLba,
+    Install, Survey.ReplaceFirst, 0, Out, Where
+  );
 }
 
 BOOLEAN
@@ -737,6 +958,28 @@ GptEntryType (
     return FALSE;
   }
   CopyMem (Type, Entry, 16);
+  return TRUE;
+}
+
+BOOLEAN
+GptEntryGuid (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  OUT UINT8            Guid[16]
+)
+{
+  CONST UINT8 *Entry;
+
+  if (Index >= EntryCount (Header, ArrayLen)) {
+    return FALSE;
+  }
+  Entry = Array + Index * Header->EntrySize;
+  if (!InUse (Entry)) {
+    return FALSE;
+  }
+  CopyMem (Guid, Entry + 16, 16);
   return TRUE;
 }
 

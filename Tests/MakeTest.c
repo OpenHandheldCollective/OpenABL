@@ -4,8 +4,9 @@
  */
 
 /**
-  MakeTest - writes images with Fat32Make and Ext4Make for Tests/check.sh,
-  which checks them with fsck.fat, mtools, e2fsck and debugfs.
+  MakeTest - runs GptTests, then writes images with Fat32Make and Ext4Make
+  for Tests/check.sh, which checks them with fsck.fat, mtools, e2fsck and
+  debugfs.
 
   Usage: make-test DIR. Writes DIR/fat-*.img with the files it should
   hold under DIR/fat-*.files, and DIR/ext4-*.img with DIR/ext4-*.txt
@@ -25,16 +26,9 @@
 #include "Core/Ext4Make.h"
 #include "Core/Fat32.h"
 #include "Core/Fat32Make.h"
+#include "Tests/Test.h"
 
-STATIC INT32 mFailures;
-
-#define CHECK(Cond)                                              \
-  do {                                                           \
-    if (!(Cond)) {                                               \
-      fprintf (stderr, "%s:%d: %s\n", __FILE__, __LINE__, #Cond); \
-      mFailures++;                                               \
-    }                                                            \
-  } while (0)
+INT32 gTestFailures;
 
 STATIC BOOLEAN
 FileWrite (
@@ -356,6 +350,7 @@ main (
     fprintf (stderr, "usage: %s DIR\n", Argv[0]);
     return 2;
   }
+  GptTests ();
   FatRefusals ();
   FatImage (Argv[1], "fat-4k", 2ull << 30, 4096);
   FatImage (Argv[1], "fat-512", 512ull << 20, 512);
@@ -369,8 +364,8 @@ main (
   Ext4Image (Argv[1], "ext4-5g", 5ull << 30, 131072);
   // The Nova's storage partition after Dualboot on this test device.
   Ext4Image (Argv[1], "ext4-nova", 100183ull << 20, 32768);
-  if (mFailures) {
-    fprintf (stderr, "%d failures\n", mFailures);
+  if (gTestFailures) {
+    fprintf (stderr, "%d failures\n", gTestFailures);
     return 1;
   }
   printf ("make-test: images written\n");

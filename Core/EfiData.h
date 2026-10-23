@@ -155,6 +155,15 @@ UefiFilePathNode (
   OUT OABL_BUFFER *Out
 );
 
+// Copies the GPT partition GUID of the path's last HD() node, as the GPT
+// entry stores it. FALSE if there is none.
+BOOLEAN
+UefiPartGuid (
+  IN CONST UINT8 *DevicePath,
+  IN UINTN        Size,
+  OUT UINT8       Guid[16]
+);
+
 // Size for UefiPartUuid's text: a GUID and its NUL.
 #define UEFI_PART_UUID_SIZE 37
 

@@ -611,6 +611,16 @@ ErrorDraw (IN CONST APP *A)
     }
     break;
   }
+  case BOOT_ERROR_NO_CARD:
+    Title   = gStrings->NoCardTitle;
+    Message = gStrings->NoCardMsg;
+    Hint    = gStrings->NoCardHint;
+    break;
+  case BOOT_ERROR_INSTALL:
+    Title   = gStrings->InstallFailed;
+    Message = A->ErrorDetail;
+    Hint    = A->InstallChanged ? gStrings->InstallChangedHint : "";
+    break;
   default:
     Title   = gStrings->ErrModelTitle;
     Message = gStrings->ErrModelMsg;
@@ -627,7 +637,8 @@ ErrorDraw (IN CONST APP *A)
 }
 
 // A partition's size in decimal units, as storage is sold: "2.1 GB" under
-// 100 GB, "105 GB" from there, and MB under 1 GB.
+// 100 GB, "105 GB" from there, and MB under 1 GB. A whole number of GB
+// has no decimal: "16 GB".
 STATIC VOID
 SizeText (
   IN UINT64  Bytes,
@@ -639,35 +650,85 @@ SizeText (
 
   if (Tenths < 10) {
     SPrint (Out, Cap, "%llu MB", (Bytes + 500000) / 1000000);
-  } else if (Tenths < 1000) {
+  } else if (Tenths < 1000 && Tenths % 10) {
     SPrint (Out, Cap, "%llu.%llu GB", Tenths / 10, Tenths % 10);
+  } else if (Tenths < 1000) {
+    SPrint (Out, Cap, "%llu GB", Tenths / 10);
   } else {
     SPrint (Out, Cap, "%llu GB", (Tenths + 5) / 10);
   }
 }
 
-// The question, what it does, the partitions an uninstall erases, then
-// Cancel and the action to pick from.
+// A name and size the confirmation lists.
+typedef struct {
+  CONST CHAR8 *Name;
+  UINT64       Bytes;
+} SIZED;
+
+// What an install confirmation says: its crumb, message, the space each
+// system gets, and the action.
+STATIC UINTN
+InstallConfirm (
+  IN CONST APP     *A,
+  OUT CONST CHAR8 **Crumb,
+  OUT CONST CHAR8 **Message,
+  OUT SIZED        *Rows
+)
+{
+  CONST INSTALL_INFO *Info = &A->Install;
+
+  if (A->InstallChoice == INSTALL_CHOICE_REPLACE) {
+    *Crumb   = gStrings->ReplaceAndroid;
+    *Message = Info->PortareOs ? gStrings->ConfirmReplaceAllMsg
+                               : gStrings->ConfirmReplaceMsg;
+    Rows[0]  = (SIZED){gStrings->PortareOs, Info->ReplaceStorage};
+    return 1;
+  }
+  *Crumb = gStrings->Dualboot;
+  if (Info->Update) {
+    *Message = gStrings->ConfirmUpdateMsg;
+    return 0;
+  }
+  *Message = gStrings->ConfirmDualbootMsg;
+  Rows[0]  = (SIZED){gStrings->Android, A->InstallAndroid};
+  Rows[1]  = (SIZED){gStrings->PortareOs, AppDualbootStorage (A, A->InstallAndroid)};
+  return 2;
+}
+
+// The question, what it does, the partitions an uninstall erases or the
+// space an install gives, then Cancel and the action to pick from.
 STATIC VOID
 ConfirmDraw (IN CONST APP *A)
 {
-  GRID        *G         = &mView.Grid;
-  BOOLEAN      Uninstall = A->Confirm == CONFIRM_UNINSTALL;
-  UINTN        Parts     = Uninstall ? A->CfwPartCount : 0;
-  CONST CHAR8 *Message   = Uninstall ? gStrings->ConfirmUninstallMsg
-                                     : gStrings->ConfirmEdlMsg;
-  UINT32       Bottom    = G->Rows - 2;
-  // Under the message: the partitions after a blank row, then a blank row
-  // and the two choices.
-  UINT32       Below = (Parts ? (UINT32)Parts + 1 : 0) + 3;
-  UINT32       Y     = BODY_Y + 2;
+  GRID        *G       = &mView.Grid;
+  SIZED        Rows[MAX_CFW_PARTS];
+  UINTN        Parts   = 0;
+  CONST CHAR8 *Crumb   = gStrings->Edl;
+  CONST CHAR8 *Title   = gStrings->ConfirmEdlTitle;
+  CONST CHAR8 *Message = gStrings->ConfirmEdlMsg;
+  CONST CHAR8 *Action  = gStrings->ConfirmEdl;
+  UINT32       Bottom  = G->Rows - 2;
+  UINT32       Below;
+  UINT32       Y = BODY_Y + 2;
 
-  HeaderDraw (A, Uninstall ? gStrings->UninstallPortareOs : gStrings->Edl);
-  PutsCut (
-    CARET_X, BODY_Y, G->Cols - CARET_X - MARGIN,
-    Uninstall ? gStrings->ConfirmUninstallTitle : gStrings->ConfirmEdlTitle,
-    ATTR_TEXT
-  );
+  if (A->Confirm == CONFIRM_UNINSTALL) {
+    Crumb   = gStrings->UninstallPortareOs;
+    Title   = gStrings->ConfirmUninstallTitle;
+    Message = gStrings->ConfirmUninstallMsg;
+    Action  = gStrings->ConfirmUninstall;
+    for (; Parts < A->CfwPartCount; Parts++) {
+      Rows[Parts] = (SIZED){A->CfwParts[Parts].Name, A->CfwParts[Parts].Bytes};
+    }
+  } else if (A->Confirm == CONFIRM_INSTALL) {
+    Title  = gStrings->ConfirmInstallTitle;
+    Action = gStrings->ConfirmInstall;
+    Parts  = InstallConfirm (A, &Crumb, &Message, Rows);
+  }
+  // Under the message: the rows after a blank row, then a blank row and
+  // the two choices.
+  Below = (Parts ? (UINT32)Parts + 1 : 0) + 3;
+  HeaderDraw (A, Crumb);
+  PutsCut (CARET_X, BODY_Y, G->Cols - CARET_X - MARGIN, Title, ATTR_TEXT);
   // The message gives way when the rest wouldn't fit.
   Paragraph (
     TEXT_X, &Y, G->Cols - TEXT_X - MARGIN,
@@ -678,18 +739,125 @@ ConfirmDraw (IN CONST APP *A)
     for (UINTN Index = 0; Index < Parts; Index++) {
       CHAR8 Size[24];
 
-      SizeText (A->CfwParts[Index].Bytes, Size, sizeof (Size));
-      RowDraw (Y++, FALSE, A->CfwParts[Index].Name, Size, G->Cols - 4);
+      SizeText (Rows[Index].Bytes, Size, sizeof (Size));
+      RowDraw (Y++, FALSE, Rows[Index].Name, Size, G->Cols - 4);
     }
   }
   Y++;
   RowDraw (Y++, !A->ConfirmYes, gStrings->Cancel, NULL, G->Cols - MARGIN);
+  RowDraw (Y, A->ConfirmYes, Action, NULL, G->Cols - MARGIN);
+  FooterDraw (A, gStrings->VerbSelect, TRUE);
+}
+
+// Install PortareOS
+
+// Dualboot and Replace Android with what each keeps or takes, then Back;
+// under a rule, what the focused choice does or why it can't.
+STATIC VOID
+InstallDraw (IN CONST APP *A)
+{
+  GRID               *G     = &mView.Grid;
+  CONST INSTALL_INFO *Info  = &A->Install;
+  UINTN               Focus = A->InstallList.Focus;
+  CONST CHAR8        *Note  = NULL;
+  CONST CHAR8        *Why   = !Info->Known     ? gStrings->NoteUnknownLayout
+                              : !Info->Android ? gStrings->NoteNoAndroid
+                                               : gStrings->NoteNoRoom;
+
+  HeaderDraw (A, gStrings->InstallPortareOs);
   RowDraw (
-    Y, A->ConfirmYes,
-    Uninstall ? gStrings->ConfirmUninstall : gStrings->ConfirmEdl, NULL,
+    BODY_Y, Focus == 0, gStrings->Dualboot,
+    !Info->Dualboot ? gStrings->Unavailable
+    : Info->Update  ? gStrings->ValueUpdate
+                    : gStrings->ValueKeepAndroid,
     G->Cols - MARGIN
   );
+  RowDraw (
+    BODY_Y + 1, Focus == 1, gStrings->ReplaceAndroid,
+    Info->Replace ? gStrings->ValueAllSpace : gStrings->Unavailable,
+    G->Cols - MARGIN
+  );
+  RowDraw (BODY_Y + 2, Focus == 2, gStrings->Back, NULL, G->Cols - MARGIN);
+  if (Focus == 0) {
+    Note = !Info->Dualboot ? Why
+           : Info->Update  ? gStrings->NoteUpdate
+                           : gStrings->NoteDualboot;
+  } else if (Focus == 1) {
+    Note = !Info->Replace    ? (Info->Known ? gStrings->NoteNoRoom
+                                            : gStrings->NoteUnknownLayout)
+           : Info->PortareOs ? gStrings->NoteReplaceAll
+                             : gStrings->NoteReplace;
+  }
+  if (Note) {
+    UINT32 Y = BODY_Y + 4;
+    GridRule (G, Y++, GLYPH_RULE, ATTR_MID);
+    Paragraph (
+      TEXT_X, &Y, G->Cols - TEXT_X - MARGIN, G->Rows - 2, Note, ATTR_TEXT, 0
+    );
+  }
   FooterDraw (A, gStrings->VerbSelect, TRUE);
+}
+
+// Each size Android can keep, with what PortareOS's storage gets, then
+// Back.
+STATIC VOID
+SizeRow (
+  IN CONST APP     *A,
+  IN UINTN          Index,
+  OUT CONST CHAR8 **Label,
+  OUT CHAR8        *Value,
+  IN UINTN          Cap
+)
+{
+  // ListDraw draws each row before asking for the next.
+  STATIC CHAR8 Text[48];
+  UINT64       Sizes[MAX_ANDROID_SIZES];
+  UINTN        Default;
+  UINTN        Count = AppAndroidSizes (A, Sizes, &Default);
+  CHAR8        Size[24];
+  CONST CHAR8 *Arg = Size;
+
+  if (Index >= Count) {
+    *Label = gStrings->Back;
+    return;
+  }
+  SizeText (Sizes[Index], Size, sizeof (Size));
+  LangFill (Text, sizeof (Text), gStrings->SizeAndroid, &Arg, 1);
+  *Label = Text;
+  SizeText (AppDualbootStorage (A, Sizes[Index]), Size, sizeof (Size));
+  LangFill (Value, Cap, gStrings->SizePortareOs, &Arg, 1);
+}
+
+STATIC VOID
+InstallingDraw (IN CONST APP *A)
+{
+  CONST CHAR8 *Stage = A->InstallStage == INSTALL_STAGE_STORAGE
+                         ? gStrings->StageStorage
+                       : A->InstallStage == INSTALL_STAGE_COPY
+                         ? gStrings->StageCopy
+                       : A->InstallStage == INSTALL_STAGE_CHECK
+                         ? gStrings->StageCheck
+                         : gStrings->StagePrepare;
+  CHAR8        Percent[8];
+  CHAR8        Line[96];
+  CONST CHAR8 *Arg = Percent;
+
+  AsciiStrFromU64 (Percent, sizeof (Percent), A->InstallPermille / 10);
+  LangFill (Line, sizeof (Line), Stage, &Arg, 1);
+  StatusDraw (A, gStrings->Installing, Line, gStrings->DontTurnOff);
+}
+
+STATIC VOID
+InstalledDraw (IN CONST APP *A)
+{
+  UINT32 X, Y, Width;
+  UINT32 Bottom = mView.Grid.Rows - 2;
+
+  HeaderDraw (A, NULL);
+  Block (&X, &Y, &Width);
+  Paragraph (X, &Y, Width, Bottom, gStrings->Installed, ATTR_BRIGHT, 1);
+  Paragraph (X, &Y, Width, Bottom, gStrings->InstalledMsg, ATTR_TEXT, 1);
+  FooterDraw (A, gStrings->VerbRestart, FALSE);
 }
 
 // Frames
@@ -872,6 +1040,24 @@ ViewSync (IN OUT APP *A)
     break;
   case SCREEN_ERROR:
     ErrorDraw (A);
+    break;
+  case SCREEN_INSTALL:
+    InstallDraw (A);
+    break;
+  case SCREEN_INSTALL_SIZE: {
+    UINT64 Sizes[MAX_ANDROID_SIZES];
+    UINTN  Default;
+    ListDraw (
+      A, gStrings->SizeTitle, AppAndroidSizes (A, Sizes, &Default) + 1,
+      &A->SizeList, SizeRow, gStrings->VerbSelect
+    );
+    break;
+  }
+  case SCREEN_INSTALLING:
+    InstallingDraw (A);
+    break;
+  case SCREEN_INSTALLED:
+    InstalledDraw (A);
     break;
   }
   mView.Pending = TRUE;

@@ -389,6 +389,28 @@ FilesReadTo (
 }
 
 BOOLEAN
+FilesReadAt (
+  IN EFI_HANDLE   Fs,
+  IN CONST CHAR8 *Path,
+  IN UINT64       Offset,
+  OUT UINT8      *Buffer,
+  IN UINTN        Size,
+  OUT UINTN      *Got
+)
+{
+  EFI_FILE_PROTOCOL *File = OpenPath (Fs, Path);
+  BOOLEAN            Ok;
+
+  if (!File) {
+    return FALSE;
+  }
+  Ok = File->SetPosition (File, Offset) == EFI_SUCCESS &&
+       ReadAll (File, Buffer, Size, Got);
+  File->Close (File);
+  return Ok;
+}
+
+BOOLEAN
 FilesExists (
   IN EFI_HANDLE   Fs,
   IN CONST CHAR8 *Path

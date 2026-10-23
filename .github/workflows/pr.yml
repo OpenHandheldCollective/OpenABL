@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Debug build of every chipset for each pull request.
+# Debug build of every chipset for each pull request, and the host tests.
 name: Pull request
 
 on:
@@ -16,6 +16,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The installer's formatters and partition layouts, checked against
+  # fsck.fat, mtools, e2fsck and mke2fs.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install the checkers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y e2fsprogs dosfstools mtools
+
+      - name: Test
+        run: make test TEST_DIR="$RUNNER_TEMP/images"
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 240

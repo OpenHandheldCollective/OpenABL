@@ -70,6 +70,7 @@ typedef enum {
   COMMAND_SAVE_SETTINGS,
   COMMAND_SCAN_MODELS,
   COMMAND_UNINSTALL_CFW,
+  COMMAND_INSTALL, // Arg is an INSTALL_CHOICE; InstallAndroid is Android's share
   COMMAND_DEVICE_INFO,
   COMMAND_LOG,
   COMMAND_SAVE_EXPERIMENTS, // saves Experiments
@@ -95,6 +96,10 @@ typedef enum {
   // names it, or is empty after a restart.
   BOOT_ERROR_PICK_GONE,
   BOOT_ERROR_PICK_FAILED,
+  BOOT_ERROR_NO_CARD, // Install PortareOS without a PortareOS card
+  // Installing failed; ErrorDetail says why, InstallChanged whether
+  // internal storage was changed.
+  BOOT_ERROR_INSTALL,
 } BOOT_ERROR;
 
 // What the view draws
@@ -143,6 +148,7 @@ typedef enum {
 typedef enum {
   ITEM_BOOT, // opens the boot list
   ITEM_BOOT_ORDER,
+  ITEM_INSTALL,   // PortareOS, from the SD card to internal storage
   ITEM_UNINSTALL, // PortareOS, from internal storage
   ITEM_EDL,
   ITEM_RESTART,
@@ -178,12 +184,52 @@ typedef enum {
   SCREEN_LINES,        // the device info, or the log
   SCREEN_UNINSTALLING, // while Linux is removed; takes no input
   SCREEN_RESTARTING,   // into recovery after an uninstall; takes no input
+  SCREEN_INSTALL,      // Install PortareOS's two choices
+  SCREEN_INSTALL_SIZE, // a first Dualboot: what Android keeps
+  SCREEN_INSTALLING,   // takes no input
+  SCREEN_INSTALLED,    // Select restarts
 } SCREEN;
 
 typedef enum {
   CONFIRM_UNINSTALL,
-  CONFIRM_EDL
+  CONFIRM_EDL,
+  CONFIRM_INSTALL,
 } CONFIRM;
+
+typedef enum {
+  INSTALL_CHOICE_DUALBOOT,
+  INSTALL_CHOICE_REPLACE,
+} INSTALL_CHOICE;
+
+// How far an install is, for the installing screen.
+typedef enum {
+  INSTALL_STAGE_PREPARE,
+  INSTALL_STAGE_STORAGE,
+  INSTALL_STAGE_COPY,
+  INSTALL_STAGE_CHECK,
+} INSTALL_STAGE;
+
+// What Install PortareOS can do, from the platform's look at the SD card
+// and internal storage when the menu started. Sizes are in bytes.
+typedef struct _INSTALL_INFO {
+  BOOLEAN Card;     // a PortareOS card is in
+  BOOLEAN Known;    // internal storage's layout was read and understood
+  BOOLEAN Android;  // Android is installed
+  BOOLEAN Dualboot; // Dualboot can run
+  // Dualboot only replaces PortareOS's system: it's next to Android
+  // already, and its storage stays.
+  BOOLEAN Update;
+  BOOLEAN Replace;   // Replace Android can run
+  BOOLEAN PortareOs; // PortareOS is on internal storage
+  // A first Dualboot splits Shared between Android, which keeps AndroidMin
+  // to AndroidMax, PortareOS's system (BootBytes) and its storage.
+  UINT64 Shared;
+  UINT64 AndroidMin;
+  UINT64 AndroidMax;
+  UINT64 BootBytes;
+  UINT64 UpdateStorage;  // an update keeps this storage
+  UINT64 ReplaceStorage; // Replace Android gives storage this
+} INSTALL_INFO;
 
 // Scroll is the first row the list shows.
 typedef struct _LIST_STATE {
@@ -196,6 +242,8 @@ typedef struct _LIST_STATE {
 #define MAX_ENTRIES 32
 #define MAX_LINES   512
 #define MAX_CFW_PARTS 8
+// What a first Dualboot offers Android to keep.
+#define MAX_ANDROID_SIZES 6
 
 typedef struct _MODEL {
   CHAR8  Name[MODEL_LEN];
@@ -265,6 +313,16 @@ typedef struct _APP {
   ENTRY_VIEW Entries[MAX_ENTRIES];
   UINTN      EntryCount;
   LIST_STATE EntryList;
+
+  // Install PortareOS: what it can do, the choice and Android's share.
+  INSTALL_INFO   Install;
+  LIST_STATE     InstallList;
+  LIST_STATE     SizeList;
+  INSTALL_CHOICE InstallChoice;
+  UINT64         InstallAndroid;
+  INSTALL_STAGE  InstallStage;
+  UINT32         InstallPermille;
+  BOOLEAN        InstallChanged;
 
   // The device info or the log. LinesFrom is the menu item it was opened
   // from, focused again on the way back.
@@ -434,6 +492,48 @@ AppOnPickFailed (
   IN BOOLEAN      Gone,
   IN CONST CHAR8 *Name,
   IN BOOLEAN      FromSd
+);
+
+VOID
+AppSetInstall (
+  IN OUT APP              *A,
+  IN CONST INSTALL_INFO   *Info
+);
+
+// The sizes a first Dualboot offers Android, smallest first, at most
+// MAX_ANDROID_SIZES; Default gets the one to focus.
+UINTN
+AppAndroidSizes (
+  IN CONST APP *A,
+  OUT UINT64   *Sizes,
+  OUT UINTN    *Default
+);
+
+// What PortareOS's storage gets from a first Dualboot leaving Android
+// AndroidBytes.
+UINT64
+AppDualbootStorage (
+  IN CONST APP *A,
+  IN UINT64     AndroidBytes
+);
+
+// While installing: the stage and how much of the whole is done, in
+// thousandths. Marks the state dirty only when the shown percent changes.
+VOID
+AppOnInstallProgress (
+  IN OUT APP       *A,
+  IN INSTALL_STAGE  Stage,
+  IN UINT32         Permille
+);
+
+// After installing: the installed screen, or the error screen with Why,
+// saying whether internal storage was Changed.
+VOID
+AppOnInstalled (
+  IN OUT APP     *A,
+  IN BOOLEAN      Ok,
+  IN CONST CHAR8 *Why OPTIONAL,
+  IN BOOLEAN      Changed
 );
 
 // After removing Linux failed: the error screen, with Why as its message.

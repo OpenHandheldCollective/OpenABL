@@ -4,11 +4,17 @@
  */
 
 /**
-  Gpt - GPT parsing and rewriting for Uninstall CFW.
+  Gpt - GPT parsing and rewriting for installing and uninstalling
+  PortareOS on internal storage.
 
   Uninstall removes every partition on disk after userdata and grows
   userdata to the last usable block in both tables. Android reclaims the
   space when recovery wipes its data.
+
+  Installing makes PortareOS's boot and storage partitions. Dualboot
+  shrinks userdata and puts them after it; Replace Android removes
+  Android's system and data partitions, with any PortareOS already there,
+  and gives PortareOS all of their space.
 */
 
 #ifndef __CORE_GPT_H__
@@ -26,6 +32,13 @@
 extern CONST UINT8 gGptAndroidUserdata[16];
 // Linux filesystem type 0FC63DAF-8483-4772-8E79-3D69D8477DE4.
 extern CONST UINT8 gGptLinuxFs[16];
+// EFI system partition type C12A7328-F81F-11D2-BA4B-00A0C93EC93B, which
+// PortareOS's boot partition has.
+extern CONST UINT8 gGptEfiSystem[16];
+
+// PortareOS's partitions, by name.
+#define GPT_BOOT_NAME    "PORTAREOS"
+#define GPT_STORAGE_NAME "PORTAREOS_STOR"
 
 typedef struct _GPT_HEADER {
   UINT32 HeaderSize;
@@ -124,18 +137,89 @@ typedef struct _GPT_PART {
   UINT64       Blocks;
 } GPT_PART;
 
-// For tests: shrinks userdata and adds Parts in the space freed at its end,
-// as an install to internal storage does.
+// PortareOS on a disk: its boot and storage partitions' first and last
+// blocks, and the boot partition's unique GUID, which identifies the
+// installation at boot.
+typedef struct _GPT_PORTAREOS {
+  UINT64 BootFirst;
+  UINT64 BootLast;
+  UINT64 StorageFirst;
+  UINT64 StorageLast;
+  UINT8  BootGuid[16];
+} GPT_PORTAREOS;
+
+// What a disk holds, for the install choices.
+typedef struct _GPT_SURVEY {
+  // Android: super and one userdata.
+  BOOLEAN Android;
+  UINT64  UserdataFirst;
+  UINT64  UserdataLast;
+  // One of each of PortareOS's partitions, after userdata if Android is
+  // there.
+  BOOLEAN       PortareOs;
+  GPT_PORTAREOS Found;
+  // Dualboot can shrink userdata: Android with nothing after userdata.
+  BOOLEAN CanShrink;
+  // Replace Android can take everything from ReplaceFirst on: Android's
+  // and PortareOS's partitions, with nothing else among or after them.
+  BOOLEAN CanReplace;
+  UINT64  ReplaceFirst;
+  UINT64  LastUsable;
+} GPT_SURVEY;
+
+VOID
+GptSurvey (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  OUT GPT_SURVEY      *Out
+);
+
+// An install's sizes in blocks, and the new partitions' unique GUIDs.
+typedef struct _GPT_INSTALL {
+  UINT64 AndroidBlocks; // Dualboot: what userdata keeps, at least
+  UINT64 BootBlocks;
+  UINT64 MinStorage;    // the storage partition's least size
+  UINT64 Align;         // PortareOS's boot partition starts on a multiple
+  UINT8  BootGuid[16];
+  UINT8  StorageGuid[16];
+} GPT_INSTALL;
+
+// Dualboot on a disk with Android alone: userdata shrinks to at least
+// AndroidBlocks, ending where the boot partition starts, on an Align
+// boundary; the storage partition follows the boot partition to the last
+// usable block. Header, Array, BackupEntryLba and Out are as for
+// GptUninstall; Where gets the new partitions. FALSE unless GptSurvey says
+// CanShrink, or if the storage partition would be under MinStorage.
 BOOLEAN
-GptInstallAfterUserdata (
-  IN CONST UINT8    *Header,
-  IN UINTN           HeaderLen,
-  IN CONST UINT8    *Array,
-  IN UINTN           ArrayLen,
-  IN UINTN           BlockSize,
-  IN CONST GPT_PART *Parts,
-  IN UINTN           PartCount,
-  OUT GPT_WRITES    *Out
+GptInstallDualboot (
+  IN CONST UINT8       *Header,
+  IN UINTN              HeaderLen,
+  IN CONST UINT8       *Array,
+  IN UINTN              ArrayLen,
+  IN UINTN              BlockSize,
+  IN UINT64             BackupEntryLba,
+  IN CONST GPT_INSTALL *Install,
+  OUT GPT_WRITES       *Out,
+  OUT GPT_PORTAREOS    *Where
+);
+
+// Replace Android: clears super, vbmeta_system_a and _b, userdata and
+// PortareOS's partitions, then puts the boot partition at the first Align
+// boundary from where the first of them started and the storage partition
+// after it, to the last usable block. FALSE unless GptSurvey says
+// CanReplace, or if the storage partition would be under MinStorage.
+BOOLEAN
+GptInstallReplace (
+  IN CONST UINT8       *Header,
+  IN UINTN              HeaderLen,
+  IN CONST UINT8       *Array,
+  IN UINTN              ArrayLen,
+  IN UINTN              BlockSize,
+  IN UINT64             BackupEntryLba,
+  IN CONST GPT_INSTALL *Install,
+  OUT GPT_WRITES       *Out,
+  OUT GPT_PORTAREOS    *Where
 );
 
 // Parses a header and checks its signature and both CRCs.
@@ -188,6 +272,16 @@ GptEntryType (
   IN UINTN             ArrayLen,
   IN UINTN             Index,
   OUT UINT8            Type[16]
+);
+
+// Copies entry Index's unique GUID, if the entry is in use.
+BOOLEAN
+GptEntryGuid (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  OUT UINT8            Guid[16]
 );
 
 // Returns entry Index's first and last block, if the entry is in use.

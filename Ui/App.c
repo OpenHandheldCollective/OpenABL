@@ -410,6 +410,101 @@ AppOnModels (
 }
 
 VOID
+AppSetInstall (
+  IN OUT APP            *A,
+  IN CONST INSTALL_INFO *Info
+)
+{
+  A->Install = *Info;
+  A->Dirty   = TRUE;
+}
+
+// A first Dualboot's choices for Android, in GB as storage is sold.
+STATIC CONST UINT64 mAndroidGb[] = {8, 16, 32, 64, 128};
+#define DEFAULT_ANDROID_GB 16
+#define GB                 1000000000ull
+// The installer starts PortareOS on a 4 MiB boundary after Android.
+#define ANDROID_ALIGN (4ull << 20)
+
+UINTN
+AppAndroidSizes (
+  IN CONST APP *A,
+  OUT UINT64   *Sizes,
+  OUT UINTN    *Default
+)
+{
+  CONST INSTALL_INFO *Info  = &A->Install;
+  UINTN               Count = 0;
+
+  *Default = 0;
+  for (UINTN Index = 0; Index < sizeof (mAndroidGb) / sizeof (*mAndroidGb) &&
+                        Count < MAX_ANDROID_SIZES;
+       Index++) {
+    UINT64 Bytes = mAndroidGb[Index] * GB;
+    if (Bytes < Info->AndroidMin || Bytes > Info->AndroidMax) {
+      continue;
+    }
+    if (mAndroidGb[Index] <= DEFAULT_ANDROID_GB) {
+      *Default = Count;
+    }
+    Sizes[Count++] = Bytes;
+  }
+  // Too little room for any of them: the least Android can keep.
+  if (Count == 0 && Info->AndroidMin && Info->AndroidMin <= Info->AndroidMax) {
+    Sizes[Count++] = Info->AndroidMin;
+  }
+  return Count;
+}
+
+UINT64
+AppDualbootStorage (
+  IN CONST APP *A,
+  IN UINT64     AndroidBytes
+)
+{
+  CONST INSTALL_INFO *Info = &A->Install;
+  UINT64              Taken =
+    (AndroidBytes + ANDROID_ALIGN - 1) / ANDROID_ALIGN * ANDROID_ALIGN +
+    Info->BootBytes;
+
+  return Info->Shared > Taken ? Info->Shared - Taken : 0;
+}
+
+VOID
+AppOnInstallProgress (
+  IN OUT APP       *A,
+  IN INSTALL_STAGE  Stage,
+  IN UINT32         Permille
+)
+{
+  if (Stage != A->InstallStage || Permille / 10 != A->InstallPermille / 10) {
+    A->Dirty = TRUE;
+  }
+  A->InstallStage    = Stage;
+  A->InstallPermille = Permille;
+}
+
+VOID
+AppOnInstalled (
+  IN OUT APP     *A,
+  IN BOOLEAN      Ok,
+  IN CONST CHAR8 *Why OPTIONAL,
+  IN BOOLEAN      Changed
+)
+{
+  A->Dirty          = TRUE;
+  A->ToastUntil     = 0;
+  A->InstallChanged = Changed;
+  if (Ok) {
+    A->Screen = SCREEN_INSTALLED;
+    return;
+  }
+  A->Screen = SCREEN_ERROR;
+  A->Error  = BOOT_ERROR_INSTALL;
+  AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Why ? Why : "");
+}
+
+VOID
 AppOnUninstallFailed (
   IN OUT APP     *A,
   IN CONST CHAR8 *Why
@@ -429,7 +524,8 @@ AppOnFailed (
 )
 {
   if (A->Screen == SCREEN_BOOTING || A->Screen == SCREEN_SCANNING ||
-      A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_UNINSTALLING) {
+      A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_UNINSTALLING ||
+      A->Screen == SCREEN_INSTALLING) {
     A->Screen = SCREEN_MENU;
   }
   ShowToast (A, Message);
@@ -469,9 +565,10 @@ AppRows (
   if (Caps->Android) {
     ADD_ITEM (ITEM_BOOT_ORDER);
   }
+  ADD_HEADER (gStrings->SectionStorage);
+  ADD_ITEM (ITEM_INSTALL);
   // Uninstalling gives Android the space back, so it needs Android.
   if (Caps->Android && Caps->CfwOnInternal) {
-    ADD_HEADER (gStrings->SectionStorage);
     ADD_ITEM (ITEM_UNINSTALL);
   }
   ADD_HEADER (gStrings->SectionSystem);
@@ -552,6 +649,10 @@ AppItemView (
                                                 : gStrings->OrderPortareOsFirst
     );
     break;
+  case ITEM_INSTALL:
+    View->Label = gStrings->InstallPortareOs;
+    View->Help  = gStrings->HelpInstall;
+    break;
   case ITEM_UNINSTALL:
     View->Label = gStrings->UninstallPortareOs;
     View->Help  = gStrings->HelpUninstall;
@@ -601,6 +702,17 @@ Activate (
   case ITEM_BOOT_ORDER:
     SettingsToggleBootMode (&A->Settings, &A->Caps);
     return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_INSTALL:
+    if (!A->Install.Card) {
+      A->Screen         = SCREEN_ERROR;
+      A->Error          = BOOT_ERROR_NO_CARD;
+      A->ErrorDetail[0] = 0;
+      return None ();
+    }
+    A->Screen      = SCREEN_INSTALL;
+    A->InstallList = (LIST_STATE){
+      .Focus = !A->Install.Dualboot && A->Install.Replace ? 1 : 0};
+    return None ();
   case ITEM_UNINSTALL:
     A->Screen     = SCREEN_CONFIRM;
     A->Confirm    = CONFIRM_UNINSTALL;
@@ -788,6 +900,100 @@ EntriesInput (
   return None ();
 }
 
+STATIC VOID
+LeaveInstall (IN OUT APP *A)
+{
+  A->Screen    = SCREEN_MENU;
+  A->FocusItem = ITEM_INSTALL;
+}
+
+STATIC VOID
+ConfirmInstall (
+  IN OUT APP     *A,
+  IN INSTALL_CHOICE Choice
+)
+{
+  A->InstallChoice = Choice;
+  A->Screen        = SCREEN_CONFIRM;
+  A->Confirm       = CONFIRM_INSTALL;
+  A->ConfirmYes    = FALSE;
+}
+
+// Rows: Dualboot, Replace Android, Back. A choice that can't run does
+// nothing; its note says why.
+STATIC COMMAND
+InstallInput (
+  IN OUT APP *A,
+  IN INPUT    Input
+)
+{
+  UINTN Focus = A->InstallList.Focus;
+
+  switch (Input) {
+  case INPUT_UP:
+    A->InstallList.Focus = (Focus + 2) % 3;
+    break;
+  case INPUT_DOWN:
+    A->InstallList.Focus = (Focus + 1) % 3;
+    break;
+  case INPUT_BACK:
+    LeaveInstall (A);
+    break;
+  case INPUT_SELECT:
+    if (Focus == 0 && A->Install.Dualboot) {
+      UINT64 Sizes[MAX_ANDROID_SIZES];
+      UINTN  Default;
+
+      if (A->Install.Update) {
+        ConfirmInstall (A, INSTALL_CHOICE_DUALBOOT);
+      } else if (AppAndroidSizes (A, Sizes, &Default)) {
+        A->Screen   = SCREEN_INSTALL_SIZE;
+        A->SizeList = (LIST_STATE){.Focus = Default};
+      }
+    } else if (Focus == 1 && A->Install.Replace) {
+      ConfirmInstall (A, INSTALL_CHOICE_REPLACE);
+    } else if (Focus == 2) {
+      LeaveInstall (A);
+    }
+    break;
+  }
+  return None ();
+}
+
+// Rows: each size Android can keep, then Back.
+STATIC COMMAND
+SizeInput (
+  IN OUT APP *A,
+  IN INPUT    Input
+)
+{
+  UINT64 Sizes[MAX_ANDROID_SIZES];
+  UINTN  Default;
+  UINTN  Count = AppAndroidSizes (A, Sizes, &Default) + 1;
+  UINTN  Focus = A->SizeList.Focus;
+
+  switch (Input) {
+  case INPUT_UP:
+    A->SizeList.Focus = (Focus + Count - 1) % Count;
+    break;
+  case INPUT_DOWN:
+    A->SizeList.Focus = (Focus + 1) % Count;
+    break;
+  case INPUT_BACK:
+    A->Screen = SCREEN_INSTALL;
+    break;
+  case INPUT_SELECT:
+    if (Focus + 1 < Count) {
+      A->InstallAndroid = Sizes[Focus];
+      ConfirmInstall (A, INSTALL_CHOICE_DUALBOOT);
+    } else {
+      A->Screen = SCREEN_INSTALL;
+    }
+    break;
+  }
+  return None ();
+}
+
 // Up and down switch between Cancel and the action; Back cancels.
 STATIC COMMAND
 ConfirmInput (
@@ -801,10 +1007,20 @@ ConfirmInput (
     A->ConfirmYes = !A->ConfirmYes;
     return None ();
   case INPUT_BACK:
-    A->Screen = SCREEN_MENU;
+    A->Screen = A->Confirm == CONFIRM_INSTALL ? SCREEN_INSTALL : SCREEN_MENU;
     return None ();
   case INPUT_SELECT:
     A->Screen = SCREEN_MENU;
+    if (A->Confirm == CONFIRM_INSTALL) {
+      if (!A->ConfirmYes) {
+        A->Screen = SCREEN_INSTALL;
+        return None ();
+      }
+      A->Screen          = SCREEN_INSTALLING;
+      A->InstallStage    = INSTALL_STAGE_PREPARE;
+      A->InstallPermille = 0;
+      return Command (COMMAND_INSTALL, (INT32)A->InstallChoice);
+    }
     if (!A->ConfirmYes) {
       return None ();
     }
@@ -847,10 +1063,19 @@ AppInput (
     return None ();
   case SCREEN_LINES:
     return InfoInput (A, Input);
+  case SCREEN_INSTALL:
+    return InstallInput (A, Input);
+  case SCREEN_INSTALL_SIZE:
+    return SizeInput (A, Input);
+  case SCREEN_INSTALLED:
+    // The menu's view of storage is out of date; only a restart is offered.
+    return Input == INPUT_SELECT ? Command (COMMAND_REBOOT, REBOOT_NORMAL)
+                                 : None ();
   case SCREEN_SCANNING:
   case SCREEN_BOOTING:
   case SCREEN_UNINSTALLING:
   case SCREEN_RESTARTING:
+  case SCREEN_INSTALLING:
     return None ();
   }
   return None ();

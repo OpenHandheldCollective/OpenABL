@@ -63,8 +63,8 @@ UninstallRead (
   return Ok;
 }
 
-STATIC EFI_STATUS
-WriteBlocks (
+EFI_STATUS
+UninstallWrite (
   IN EFI_BLOCK_IO_PROTOCOL *BlockIo,
   IN UINT64                 Lba,
   IN CONST UINT8           *Data,
@@ -128,12 +128,8 @@ UninstallTable (
   return TRUE;
 }
 
-// Reads the table like UninstallTable, then also requires a writable disk,
-// valid CRCs in both copies, headers that agree on the layout
-// (GptCopiesAgree) and the same entries in each. Linux's partitions are
-// only removed from a table that passes. Backup gets the backup's header.
-STATIC BOOLEAN
-CheckedTable (
+BOOLEAN
+UninstallCheckedTable (
   IN EFI_BLOCK_IO_PROTOCOL *BlockIo,
   OUT OABL_BUFFER          *Block,
   OUT GPT_HEADER           *Header,
@@ -196,7 +192,7 @@ Find (VOID)
     UINTN                  Parts;
 
     if (!BlockIo ||
-        !CheckedTable (BlockIo, &Block, &Header, &Array, &Backup)) {
+        !UninstallCheckedTable (BlockIo, &Block, &Header, &Array, &Backup)) {
       continue;
     }
     Parts = GptCfwParts (
@@ -272,7 +268,7 @@ UninstallRun (IN LOG_SINK Log)
     return EFI_NOT_FOUND;
   }
   BlockIo = UninstallBlockIo (Disk);
-  if (!BlockIo || !CheckedTable (BlockIo, &Block, &Header, &Array, &Backup)) {
+  if (!BlockIo || !UninstallCheckedTable (BlockIo, &Block, &Header, &Array, &Backup)) {
     LogLine (Log, "uninstall: the table can't be read again");
     return EFI_VOLUME_CORRUPTED;
   }
@@ -288,7 +284,7 @@ UninstallRun (IN LOG_SINK Log)
   BufferFree (&Array);
   // Flushed one by one, so the order GptUninstall chose reaches the disk.
   for (UINTN Index = 0; Index < Writes.Count; Index++) {
-    Status = WriteBlocks (
+    Status = UninstallWrite (
       BlockIo, Writes.Items[Index].Lba, Writes.Items[Index].Data.Data,
       Writes.Items[Index].Data.Len
     );
@@ -304,7 +300,7 @@ UninstallRun (IN LOG_SINK Log)
     }
   }
   // Read both tables back, as the next boot will.
-  if (!CheckedTable (BlockIo, &Block, &Header, &Array, &Backup) ||
+  if (!UninstallCheckedTable (BlockIo, &Block, &Header, &Array, &Backup) ||
       GptCfwAfterUserdata (&Header, Array.Data, Array.Len)) {
     LogLine (Log, "uninstall: the tables didn't read back right");
     Status = EFI_CRC_ERROR;
@@ -398,7 +394,7 @@ UninstallRequestWipe (IN LOG_SINK Log)
   }
   AndroidBcbWipe (Message);
   CopyMem (Blocks.Data, Message, ANDROID_BCB_SIZE);
-  Status = WriteBlocks (BlockIo, First, Blocks.Data, Length);
+  Status = UninstallWrite (BlockIo, First, Blocks.Data, Length);
   if (Status == EFI_SUCCESS) {
     Status = BlockIo->FlushBlocks (BlockIo);
   }

@@ -141,7 +141,7 @@ $(OBJ)/sim-$(VARIANT)/assets.o: $(OBJ)/$(VARIANT)/assets.c
 
 # Host test of the installer's formatters, against the real tools.
 TEST_SRCS := $(sort $(shell find Base -name '*.c')) Host/Host.c Core/Fat32.c \
-	Core/Fat32Make.c Core/Ext4Make.c Tests/MakeTest.c
+	Core/Fat32Make.c Core/Ext4Make.c Core/Gpt.c $(wildcard Tests/*.c)
 TEST_OBJS := $(patsubst %.c,$(OBJ)/test/%.o,$(TEST_SRCS))
 TEST_DIR  ?= build/test/images
 

@@ -282,6 +282,30 @@ UefiFilePathNode (
 }
 
 BOOLEAN
+UefiPartGuid (
+  IN CONST UINT8 *DevicePath,
+  IN UINTN        Size,
+  OUT UINT8       Guid[16]
+)
+{
+  UEFI_NODE  Node;
+  OABL_BYTES Hd = {0};
+
+  for (UINTN At = 0; UefiNextNode (DevicePath, Size, &At, &Node);) {
+    if (Node.Type == UEFI_TYPE_MEDIA && Node.SubType == UEFI_MEDIA_HARD_DRIVE) {
+      Hd = UefiNodeData (&Node);
+    }
+  }
+  // PartitionNumber(4) Start(8) Size(8) Signature(16) MBRType(1)
+  // SignatureType(1), 2 for a GUID.
+  if (Hd.Len < 38 || Hd.Ptr[37] != 0x02) {
+    return FALSE;
+  }
+  CopyMem (Guid, Hd.Ptr + 20, 16);
+  return TRUE;
+}
+
+BOOLEAN
 UefiPartUuid (
   IN CONST UINT8 *DevicePath,
   IN UINTN        Size,
@@ -289,22 +313,12 @@ UefiPartUuid (
   OUT CHAR8       Out[UEFI_PART_UUID_SIZE]
 )
 {
-  UEFI_NODE    Node;
-  OABL_BYTES   Hd = {0};
-  CONST UINT8 *Guid;
+  UINT8 Guid[16];
 
-  for (UINTN At = 0; UefiNextNode (DevicePath, Size, &At, &Node);) {
-    if (Node.Type == UEFI_TYPE_MEDIA && Node.SubType == UEFI_MEDIA_HARD_DRIVE) {
-      Hd = UefiNodeData (&Node);
-    }
-  }
   Out[0] = 0;
-  // PartitionNumber(4) Start(8) Size(8) Signature(16) MBRType(1)
-  // SignatureType(1), 2 for a GUID.
-  if (Hd.Len < 38 || Hd.Ptr[37] != 0x02) {
+  if (!UefiPartGuid (DevicePath, Size, Guid)) {
     return FALSE;
   }
-  Guid = Hd.Ptr + 20;
   SPrint (
     Out, UEFI_PART_UUID_SIZE,
     Upper ? "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X"
