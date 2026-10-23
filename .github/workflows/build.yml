@@ -89,7 +89,7 @@ jobs:
         env:
           XZ_OPT: -T0
         run: |
-          src=openabl-$TAG
+          src=portare-bios-$TAG
           mkdir -p "sources/$src" dist
           git archive HEAD | tar -x -C "sources/$src"
           for d in edk2 microui qtestsign; do
@@ -150,7 +150,7 @@ jobs:
         run: |
           gh release view sources > /dev/null 2>&1 ||
             gh release create sources --prerelease --target "$GITHUB_SHA" --title "Build sources" \
-              --notes "What Scripts/fetch.sh fetches, kept for CI builds. Not an OpenABL release."
+              --notes "What Scripts/fetch.sh fetches, kept for CI builds. Not a Portare BIOS release."
           gh release upload sources store/* --clobber
 
       - name: Upload to the release
@@ -160,11 +160,11 @@ jobs:
         run: |
           if [ "$RELEASE" = "$TAG" ]; then
             gh release view "$TAG" > /dev/null 2>&1 ||
-              gh release create "$TAG" --verify-tag --title "OpenABL $TAG" \
+              gh release create "$TAG" --verify-tag --title "Portare BIOS $TAG" \
                 --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
           else
             gh release view "$RELEASE" > /dev/null 2>&1 ||
-              gh release create "$RELEASE" --prerelease --target "$COMMIT" --title "OpenABL $TAG debug" \
+              gh release create "$RELEASE" --prerelease --target "$COMMIT" --title "Portare BIOS $TAG debug" \
                 --notes "Debug build of $TAG, unreleased: for testing only."
           fi
           gh release upload "$RELEASE" dist/* --clobber

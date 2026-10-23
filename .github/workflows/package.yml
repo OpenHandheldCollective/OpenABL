@@ -46,7 +46,7 @@ jobs:
 
       - name: Archive the images
         run: |
-          name=openabl-$TAG$SUFFIX
+          name=portare-bios-$TAG$SUFFIX
           mkdir images "$name"
           found=0
           gh release download "$RELEASE" --pattern 'abl_signed-*.elf' --dir images
