@@ -871,9 +871,14 @@ InstalledDraw (IN CONST APP *A)
 #define GLYPH_FULL      0xDB
 #define GLYPH_LIGHT     0xB0
 #define GLYPH_HALF_LEFT 0xDD
-// The battery's inside: 20 columns, 5% of the charge each, and 3 rows.
-#define BATTERY_CELLS 20
-#define BATTERY_ROWS  3
+// The battery's inside: five segments of 20% each, three columns wide
+// with a column between them and at each end, three rows high. While the
+// Nova charges, its panel shows rolling stripes in large bright areas, so
+// the segments are amber with dark gaps rather than one bright block.
+#define BATTERY_SEGMENTS 5
+#define SEGMENT_CELLS    3
+#define BATTERY_CELLS    (BATTERY_SEGMENTS * (SEGMENT_CELLS + 1) + 1)
+#define BATTERY_ROWS     3
 
 // The battery and its estimated charge in the middle of an otherwise empty
 // screen, like a charger's. The display goes off a few seconds later.
@@ -883,7 +888,10 @@ ChargingDraw (IN CONST APP *A)
   GRID  *G     = &mView.Grid;
   BOOLEAN Known = A->BatteryKnown && A->BatteryMv;
   UINT32 Level = AppBatteryLevel (A);
-  UINT32 Full  = Known ? (Level * BATTERY_CELLS + 50) / 100 : 0;
+  // Any charge lights a segment.
+  UINT32 Lit   = Known ? (Level + 100 / BATTERY_SEGMENTS - 1) /
+                           (100 / BATTERY_SEGMENTS)
+                       : 0;
   // The box, its tip, a blank row and the percent under it.
   UINT32 X     = G->Cols > BATTERY_CELLS + 3 ? (G->Cols - BATTERY_CELLS - 3) / 2 : 0;
   UINT32 Y     = G->Rows > BATTERY_ROWS + 4 ? (G->Rows - BATTERY_ROWS - 4) / 2 : 0;
@@ -901,11 +909,13 @@ ChargingDraw (IN CONST APP *A)
   for (UINT32 Row = 1; Row <= BATTERY_ROWS; Row++) {
     GridPutc (G, X, Y + Row, GLYPH_BOX_V, ATTR_MID);
     GridPutc (G, Right, Y + Row, GLYPH_BOX_V, ATTR_MID);
-    for (UINT32 Cell = 0; Cell < BATTERY_CELLS; Cell++) {
-      GridPutc (
-        G, X + 1 + Cell, Y + Row, Cell < Full ? GLYPH_FULL : GLYPH_LIGHT,
-        Cell < Full ? ATTR_BRIGHT : ATTR_DIM
-      );
+    for (UINT32 Segment = 0; Segment < BATTERY_SEGMENTS; Segment++) {
+      for (UINT32 Cell = 0; Cell < SEGMENT_CELLS; Cell++) {
+        GridPutc (
+          G, X + 2 + Segment * (SEGMENT_CELLS + 1) + Cell, Y + Row,
+          GLYPH_FULL, Segment < Lit ? ATTR_TEXT : ATTR_DIM
+        );
+      }
     }
   }
   // The tip, beside the middle row.
