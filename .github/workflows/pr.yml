@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Debug build of every chipset for each pull request.
+# Debug build of the Nova's image for each pull request.
 name: Pull request
 
 on:
@@ -46,16 +46,9 @@ jobs:
       - name: Collect the images
         run: |
           mkdir dist
-          for elf in build/out/abl_signed-*.elf; do
-            name=$(basename "$elf" .elf)-debug.elf
-            cp "$elf" "dist/$name"
-            (cd dist && sha256sum "$name" > "$name.sha256")
-          done
-          for addon in build/out/openabl-recovery-flashable-*.zip; do
-            name=$(basename "$addon" .zip)-debug.zip
-            cp "$addon" "dist/$name"
-            (cd dist && sha256sum "$name" > "$name.sha256")
-          done
+          cp build/out/abl_signed-SM8550.elf dist/abl_signed-SM8550-debug.elf
+          cp build/out/openabl-recovery-flashable-sm8550.zip \
+            dist/openabl-recovery-flashable-sm8550-debug.zip
 
       - uses: actions/upload-artifact@v7
         with:
