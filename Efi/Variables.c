@@ -223,6 +223,17 @@ ClearLegacy (
   }
 }
 
+// Whether devinfo's old values are cleared once moved: only where devinfo
+// also holds the settings' copy, which needs their room. Elsewhere they
+// stay, so an older ABL that's flashed back still finds its settings. ABL
+// 1.1.8, which PortareOS updates used to flash over any other, stops with
+// "device model not set" without them.
+STATIC BOOLEAN
+ClearsLegacy (VOID)
+{
+  return !QcomHasVariableServices ();
+}
+
 // Whether Key is one of the settings that were devinfo's persistent values.
 STATIC BOOLEAN
 LegacyKey (IN CONST CHAR8 *Key)
@@ -262,7 +273,7 @@ VariablesMoveOutOfDevinfo (IN LOG_SINK Log)
     HaveRaw = TRUE;
   }
   if (HoldsByte (SETTINGS_KEY_SCHEMA, SETTINGS_SCHEMA)) {
-    if (HaveRaw) {
+    if (HaveRaw && ClearsLegacy ()) {
       ClearLegacy (&Raw, Log);
     }
     goto Done;
@@ -293,7 +304,7 @@ VariablesMoveOutOfDevinfo (IN LOG_SINK Log)
     goto Done;
   }
   // Read devinfo again, as the flush may have written the settings' copy.
-  if (HaveRaw) {
+  if (HaveRaw && ClearsLegacy ()) {
     BufferFree (&Raw);
     if (ReadDevinfo (&Raw)) {
       ClearLegacy (&Raw, Log);

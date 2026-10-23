@@ -228,14 +228,14 @@ It writes PNGs to `build/screens`. Use `--out DIR` or `--filter TEXT` to
 control output, or `--check` to check redraw consistency.
 
 GitHub Actions builds every chipset on `v*` tags and uploads images,
-checksums, recovery addons and `openabl-<TAG>-source.tar.xz` to the release.
-The source archive includes this repository and the fetched sources, so
-`./build.sh` can reuse them without downloading again.
+checksums, recovery addons and `portare-bios-<TAG>-source.tar.xz` to the
+release. The source archive includes this repository and the fetched
+sources, so `./build.sh` can reuse them without downloading again.
 
 Manual builds select a tag and release or debug mode. CI debug images end
 in `-debug.elf` and go to a separate `debug-<TAG>` pre-release. The Package
-workflow creates `openabl-<TAG>.tar.gz` or `openabl-<TAG>-debug.tar.gz`,
-with an image and checksum per chipset. CI caches fetched sources in the
+workflow creates `portare-bios-<TAG>.tar.gz` or
+`portare-bios-<TAG>-debug.tar.gz`, with an image and checksum per chipset. CI caches fetched sources in the
 `sources` pre-release, keyed by the pins in `Scripts/fetch.sh`. Pull
 requests to `main` build every chipset in debug mode.
 

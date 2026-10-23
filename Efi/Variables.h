@@ -54,10 +54,12 @@ VOID
 VariablesChargerScreenToDevinfo (IN LOG_SINK Log);
 
 // Moves the settings out of devinfo, where older ABLs kept them, into
-// variables. Run once a boot, before the ABL reads devinfo. Devinfo's old
-// values are cleared every time, in case a move was cut short or an older
-// ABL booted since. If the variables can't be written, or devinfo can't be
-// read, the settings stay in devinfo for the next boot.
+// variables. Run once a boot, before the ABL reads devinfo. Where devinfo
+// also holds the settings' copy, its old values are cleared every time, in
+// case a move was cut short or an older ABL booted since; elsewhere they
+// stay for an older ABL flashed back. If the variables can't be written,
+// or devinfo can't be read, the settings stay in devinfo for the next
+// boot.
 VOID
 VariablesMoveOutOfDevinfo (IN LOG_SINK Log);
 
