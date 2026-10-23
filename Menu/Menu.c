@@ -897,13 +897,12 @@ PickEntry (IN UINTN Index)
 }
 #endif
 
-// Returns TRUE if Start Linux can boot without a restart. A USB drive also
-// needs live USB host, since fastboot holds the controller.
+// Returns TRUE if Linux can boot without a restart, whatever the boot mode.
+// A USB drive also needs live USB host, since fastboot holds the controller.
 STATIC BOOLEAN
 StartsHere (IN CONST MENU_STATE *M)
 {
-  return M->Stored.BootMode == BOOT_MODE_LINUX &&
-         (M->Stored.BootSource != BOOT_SOURCE_USB || UsbLive (M));
+  return M->Stored.BootSource != BOOT_SOURCE_USB || UsbLive (M);
 }
 
 // Gets what the menu shows about the last Start Linux. Returns FALSE if
@@ -1247,9 +1246,9 @@ SaveExperiments (IN EXPERIMENTS Want)
 
 // Commands
 
-// Returns TRUE if Start Linux may boot without a restart. Only from
-// fastboot's menu. Android, the alternate Volume Up boot, and a USB boot
-// on an ABL without USB host need a restart.
+// Returns TRUE if Linux may boot without a restart. Only from fastboot's
+// menu. The alternate Volume Up boot, and a USB boot on an ABL without USB
+// host, need a restart.
 STATIC BOOLEAN
 MayStartHere (IN MENU_STATE *M)
 {
@@ -1257,11 +1256,38 @@ MayStartHere (IN MENU_STATE *M)
   BOOLEAN         Ok;
 
   Ok = gFastbootUp && !EFI_ERROR (MenuHostState (&M->Host, &State)) &&
-       State.BootMode == 0 && !State.AltVolumeBoot &&
+       !State.AltVolumeBoot &&
        (State.BootSource != MENU_HOST_BOOT_SOURCE_USB ||
         (State.Flags & OPENABL_MENU_STATE_USB_HOST));
   MenuLog ("Start Linux in this boot: %s", Ok ? "yes" : "no, a restart");
   return Ok;
+}
+
+// Keeps Linux or Android for the next boot only (MENU_ONCE_VAR), so the
+// restart starts it whatever the boot mode says.
+STATIC EFI_STATUS
+KeepTarget (IN BOOLEAN Linux)
+{
+  UINT8      Once   = Linux ? MENU_ONCE_LINUX : MENU_ONCE_ANDROID;
+  EFI_STATUS Status = MenuVarPut (MENU_ONCE_VAR, &Once, 1);
+
+  MenuFlush ();
+  MenuLog (
+    "next boot: %s (%s)", Linux ? "Linux" : "Android", MENU_STATUS (Status)
+  );
+  return Status;
+}
+
+// Clears what KeepTarget and Boot entries kept, after a restart that didn't
+// happen, so a later boot doesn't take them.
+STATIC VOID
+ForgetTarget (VOID)
+{
+  MenuVarPut (MENU_ONCE_VAR, NULL, 0);
+#ifdef OABL_STANDARD_BOOT
+  MenuVarPut (MENU_PICK_VAR, NULL, 0);
+#endif
+  MenuFlush ();
 }
 
 // Static, as the app state is large (log and device info lines).
@@ -1278,12 +1304,19 @@ RunCommand (
   switch (Command.Kind) {
   case COMMAND_NONE:
     break;
-  // Where possible, leave the menu with the start frame up and boot without
-  // a restart. Otherwise START restarts and boots, and the host only
-  // returns if it couldn't.
+  // Where possible, leave the menu with the start frame up and boot Linux
+  // without a restart. Otherwise START restarts and boots the system kept
+  // for it, and the host only returns if it couldn't. The boot mode stays.
   case COMMAND_BOOT:
   case COMMAND_BOOT_ENTRY: {
+    BOOT_TARGET Target    = (BOOT_TARGET)Command.Arg;
+    BOOLEAN     ModeLinux = M->Stored.BootMode == BOOT_MODE_LINUX;
+    // Boot entries are all Linux's.
+    BOOLEAN      Linux = Command.Kind == COMMAND_BOOT_ENTRY ||
+                         Target == BOOT_TARGET_PORTAREOS ||
+                         (Target == BOOT_TARGET_ORDER && ModeLinux);
     EFI_STATUS   Status;
+    CONST CHAR8 *Failed = gStrings->AblRestartFailed;
     CONST CHAR8 *Args[1];
     CHAR8        Why[192];
 
@@ -1293,19 +1326,21 @@ RunCommand (
       PickEntry ((UINTN)Command.Arg);
     }
 #endif
-    if (StartsHere (M) && MayStartHere (M)) {
+    if (Linux && StartsHere (M) && MayStartHere (M)) {
       // Shut down as when the ABL asks the menu to leave.
       return TRUE;
     }
-    Status  = Act (M, OPENABL_MENU_ACTION_START);
-#ifdef OABL_STANDARD_BOOT
-    // The restart didn't happen: don't leave the pick for a later Start.
-    MenuVarPut (MENU_PICK_VAR, NULL, 0);
-    MenuFlush ();
-#endif
+    Status = KeepTarget (Linux);
+    if (EFI_ERROR (Status) && Linux != ModeLinux) {
+      // The restart would start the boot mode's system instead.
+      Failed = gStrings->TargetNotKept;
+    } else {
+      Status = Act (M, OPENABL_MENU_ACTION_START);
+    }
+    ForgetTarget ();
     Args[0] = MENU_STATUS (Status);
-    LangFill (Why, sizeof (Why), gStrings->AblRestartFailed, Args, 1);
-    AppOnBootResult (&mApp, FALSE, BOOT_ERROR_LOAD_FAILED, Why);
+    LangFill (Why, sizeof (Why), Failed, Args, 1);
+    AppOnFailed (&mApp, Why);
     break;
   }
   case COMMAND_SAVE_SETTINGS: {
@@ -1561,8 +1596,11 @@ MenuRun (
     MenuLog (
       "Start Linux: USB host didn't come up in this boot; restarting for it"
     );
-    // Returns only if the restart failed, and then the menu runs.
+    // Linux again, whatever the boot mode. Returns only if the restart
+    // failed, and then the menu runs.
+    KeepTarget (TRUE);
     Act (&M, OPENABL_MENU_ACTION_START);
+    ForgetTarget ();
   }
   if (!StartModels) {
     LearnModelRotation (&M);

@@ -773,6 +773,33 @@ ModelListAfterRestart (IN CONST MENU_HOST *Host)
   return MenuHostAction (Host, OPENABL_MENU_ACTION_RESTART_BOOTLOADER);
 }
 
+// Takes the system the menu picked for this boot (MENU_ONCE_*), or 0 for
+// none, and clears it, so a key held now can't leave it for a later boot.
+STATIC UINT8
+TargetOnce (VOID)
+{
+  OABL_BUFFER Once   = {0};
+  UINT8       Target = 0;
+
+  if (!MenuVarGet (MENU_ONCE_VAR, &Once)) {
+    return 0;
+  }
+  MenuVarPut (MENU_ONCE_VAR, NULL, 0);
+  MenuFlush ();
+  // A damaged value picks nothing.
+  if (Once.Len == 1 &&
+      (Once.Data[0] == MENU_ONCE_LINUX || Once.Data[0] == MENU_ONCE_ANDROID)) {
+    Target = Once.Data[0];
+  }
+  BufferFree (&Once);
+  MenuLog (
+    "the menu picked %s for this boot", Target == MENU_ONCE_ANDROID ? "Android"
+                                        : Target                    ? "Linux"
+                                                                    : "nothing"
+  );
+  return Target;
+}
+
 // Runs the boot described at MainBoot.
 STATIC EFI_STATUS
 RunBoot (
@@ -781,7 +808,9 @@ RunBoot (
 )
 {
   BOOT_DECISION_START Start = MenuHostStateStart (State);
+  UINT8               Once  = TargetOnce ();
   BOOLEAN             Charger;
+  BOOLEAN             Android;
   BOOLEAN             Alt;
   BOOLEAN             Usb;
   BOOLEAN             UsbUp;
@@ -807,9 +836,14 @@ RunBoot (
     MenuLog ("powered on by the charger");
   }
   Alt = State->AltVolumeBoot;
-  if ((State->BootMode != 0 || Charger) && !Alt) {
-    BOOLEAN Recovery =
-      BootDecisionRecovery (&Start, QuirksAblSettings ().BootMode != 0);
+  // The menu's pick wins over the boot mode, the charger and Volume Up.
+  // Only the keys for fastboot, above, still apply.
+  Android = Once ? Once == MENU_ONCE_ANDROID
+                 : (State->BootMode != 0 || Charger) && !Alt;
+  if (Android) {
+    BOOLEAN Recovery = BootDecisionRecovery (
+      &Start, Once == MENU_ONCE_ANDROID || QuirksAblSettings ().BootMode != 0
+    );
     EFI_STATUS Status;
 
     MenuLog ("%s", Recovery ? "booting Android's recovery" : "booting Android");
