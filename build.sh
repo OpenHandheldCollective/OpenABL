@@ -6,10 +6,10 @@
 #
 #   ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]
 #
-# Needs git and Docker. The sources are fetched by Scripts/fetch.sh; the
-# program (Makefile) and the ABL (Scripts/abl.sh) are built in the tianocore
-# container. Images go to build/out/abl_signed-<CHIPSET>.elf, the full log
-# to build/abl-build.log.
+# Needs git, and Docker or Apple's container. The sources are fetched by
+# Scripts/fetch.sh; the program (Makefile) and the ABL (Scripts/abl.sh) are
+# built in the tianocore container. Images go to
+# build/out/abl_signed-<CHIPSET>.elf, the full log to build/abl-build.log.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -65,7 +65,18 @@ done
 for soc in "${ASKED[@]}"; do chipset "$soc"; done
 
 command -v git > /dev/null || { echo "git is needed" >&2; exit 1; }
-docker info > /dev/null 2>&1 || { echo "Docker isn't running" >&2; exit 1; }
+# Docker, or else Apple's container, which takes the same arguments for the
+# commands used here. Its containers get 1 GiB and a few CPUs unless asked.
+RUN_OPTS=()
+if docker info > /dev/null 2>&1; then
+  ENGINE=docker
+elif command -v container > /dev/null && container system status > /dev/null 2>&1; then
+  ENGINE=container
+  RUN_OPTS=(--memory 8G --cpus "$(sysctl -n hw.ncpu)")
+else
+  echo "Neither Docker nor Apple's container is running" >&2
+  exit 1
+fi
 
 Scripts/fetch.sh
 mkdir -p build/out
@@ -83,9 +94,9 @@ RUN pip install -q -r /tmp/pip-requirements.txt || true
 RUN git config --global --add safe.directory '*'
 EOF
 TAG=openabl-build:$(cat build/image/Dockerfile build/image/pip-requirements.txt | cksum | cut -d' ' -f1)
-if ! docker image inspect "$TAG" > /dev/null 2>&1; then
+if ! $ENGINE image inspect "$TAG" > /dev/null 2>&1; then
   echo "build: making the build image $TAG (once)"
-  docker build -q --platform linux/amd64 -t "$TAG" build/image > /dev/null
+  $ENGINE build -q --platform linux/amd64 -t "$TAG" build/image > /dev/null
 fi
 
 # Script for the container: build the program, then the ABL, per chipset.
@@ -93,8 +104,8 @@ COMMON=(
   "PREBUILT_HOST_TOOLS=BUILD_CC=clang BUILD_CXX=clang++ LDPATH=-fuse-ld=lld BUILD_AR=llvm-ar"
   QSPA_BOOTCONFIG_ENABLE=0 AB_RETRYCOUNT_DISABLE=0 VERIFIED_BOOT_ENABLED=1
   USER_BUILD_VARIANT=1 DISABLE_PARALLEL_DOWNLOAD_FLASH=0 TARGET_ARCHITECTURE=arm64
-  CLANG_PREFIX=aarch64-linux-gnu- BOARD_BOOTLOADER_PRODUCT_NAME=OpenABL
-  BOARD_BOOTLOADER_PRODUCT_VERSION="$VERSION" REMOVE_CARVEOUT_REGION=0 ABL_USB_HOST=1
+  CLANG_PREFIX=aarch64-linux-gnu- BOARD_BOOTLOADER_PRODUCT_NAME=PortareBIOS
+  BOARD_BOOTLOADER_PRODUCT_VERSION="$VERSION" REMOVE_CARVEOUT_REGION=0
   OPENABL_MENU=1
 )
 SCRIPT="exec 2>&1
@@ -131,7 +142,7 @@ watchdog() {
   while sleep 10; do
     if [ $(($(date +%s) - $(mtime "$LOG"))) -gt 600 ]; then
       touch build/.silent
-      docker kill "$1" > /dev/null 2>&1 || true
+      $ENGINE kill "$1" > /dev/null 2>&1 || true
       return
     fi
   done
@@ -150,7 +161,8 @@ for attempt in 1 2; do
   watchdog "$name" &
   dog=$!
   set +e
-  docker run --rm --name "$name" --platform linux/amd64 \
+  # The odd expansion keeps bash 3.2 (macOS) from calling an empty array unset.
+  $ENGINE run --rm --name "$name" --platform linux/amd64 ${RUN_OPTS[@]+"${RUN_OPTS[@]}"} \
     -v "$PWD:/openabl" -v "$PWD/build/edk2:$WORKSPACE" \
     -v "$PWD/build/qtestsign:/qtestsign:ro" -v "$PWD/build/out:/out" \
     -w "$WORKSPACE" "$TAG" bash -lc "$SCRIPT" 2>&1 | tee -a "$LOG" | show
