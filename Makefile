@@ -27,6 +27,10 @@
 #
 # `make sim` builds a host simulator that renders the menu's screens to PNG
 # (needs a host C compiler and zlib).
+#
+# `make test` writes FAT32 and ext4 images with the installer's formatters
+# and checks them (needs dosfstools, mtools and e2fsprogs; Scripts/test.sh
+# runs it in a container that has them).
 
 # Override make's built-in cc and ld defaults. The linker variable is not
 # called LINK because lld-link reads LINK from the environment.
@@ -79,7 +83,7 @@ OWN_FLAGS := $(BASE_FLAGS) $(DEFINES) $(foreach d,$(EDK2_INCLUDES),-isystem $(ED
 
 ASSETS := Font=Assets/montserrat.oablf
 
-.PHONY: all sim clean
+.PHONY: all sim test clean
 all: $(OUT)/openabl-menu.efi
 
 # Linked as a boot service driver: an application would be unloaded when it
@@ -135,5 +139,27 @@ $(OBJ)/sim-$(VARIANT)/assets.o: $(OBJ)/$(VARIANT)/assets.c
 
 -include $(SIM_OBJS:.o=.d)
 
+# Host test of the installer's formatters, against the real tools.
+TEST_SRCS := $(sort $(shell find Base -name '*.c')) Host/Host.c Core/Fat32.c \
+	Core/Fat32Make.c Core/Ext4Make.c Tests/MakeTest.c
+TEST_OBJS := $(patsubst %.c,$(OBJ)/test/%.o,$(TEST_SRCS))
+TEST_DIR  ?= build/test/images
+
+test: build/test/make-test
+	rm -rf $(TEST_DIR) && mkdir -p $(TEST_DIR)
+	build/test/make-test $(TEST_DIR)
+	Tests/check.sh $(TEST_DIR)
+
+build/test/make-test: $(TEST_OBJS)
+	@mkdir -p $(@D)
+	$(HOSTCC) -fsanitize=address,undefined -o $@ $^
+
+$(OBJ)/test/%.o: %.c
+	@mkdir -p $(@D)
+	$(HOSTCC) -O1 -g -std=gnu11 -I. -Wall -Wextra -Wno-unused-parameter -Werror \
+		-fsanitize=address,undefined -MMD -MP -c $< -o $@
+
+-include $(TEST_OBJS:.o=.d)
+
 clean:
-	rm -rf build/obj build/menu build/sim
+	rm -rf build/obj build/menu build/sim build/test
