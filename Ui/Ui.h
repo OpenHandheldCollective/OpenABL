@@ -53,9 +53,17 @@ typedef struct _EXPERIMENTS {
   BOOLEAN PanelLinesOff;
 } EXPERIMENTS;
 
+// What COMMAND_BOOT starts. ORDER is what power-on starts, the first of
+// the boot order.
+typedef enum {
+  BOOT_TARGET_ORDER,
+  BOOT_TARGET_PORTAREOS,
+  BOOT_TARGET_ANDROID,
+} BOOT_TARGET;
+
 typedef enum {
   COMMAND_NONE,
-  COMMAND_BOOT,       // try everything bootable, in order
+  COMMAND_BOOT,       // Arg is a BOOT_TARGET
   COMMAND_BOOT_ENTRY, // Arg is the entry index
   COMMAND_REBOOT,     // Arg is a REBOOT_TARGET
   COMMAND_POWER_OFF,
@@ -87,6 +95,7 @@ typedef enum {
 
 // What the view draws
 
+// Gfx/Icons.c draws these; the menu itself no longer does.
 typedef enum {
   ICON_PLAY,
   ICON_REFRESH,
@@ -128,48 +137,31 @@ typedef enum {
 } ICON;
 
 typedef enum {
-  ITEM_START,
-  ITEM_ENTRIES,
-  ITEM_RESTART_LOADER,
-  ITEM_RECOVERY,
+  ITEM_PORTAREOS,
+  ITEM_ANDROID,
+  ITEM_BOOT_ORDER,
+  ITEM_UNINSTALL, // PortareOS, from internal storage
   ITEM_EDL,
-  ITEM_OTHER_SLOT,
-  ITEM_LANGUAGE,
-  ITEM_BOOT_MODE,
-  ITEM_ABL_MODE,
-  ITEM_ALT_VOLUME_UP,
-  ITEM_BOOT_SOURCE,
-  ITEM_CHARGING,
-  ITEM_ROTATION,
-  ITEM_CUSTOM_LOGO,
-  ITEM_TIMEOUT,
-  ITEM_MODEL,
-  ITEM_UNINSTALL,
-  ITEM_DEVICE_INFO,
-  ITEM_LOG,
+  ITEM_RESTART,
+  ITEM_POWER_OFF,
+  // Debug builds only.
   ITEM_USB_LIVE,
   ITEM_QUIESCE,
   ITEM_PANEL_LINES,
-  ITEM_POWER_OFF,
 } ITEM;
 
-typedef enum { TONE_NORMAL, TONE_PRIMARY, TONE_DANGER } TONE;
-
-// The mark at the end of a row. CYCLE is a selector (Select cycles the
-// value) and NAVIGATE a chevron (Select opens another screen).
-typedef enum { TRAILING_NONE, TRAILING_CYCLE, TRAILING_NAVIGATE } TRAILING;
-
 typedef struct _ROW {
-  CONST CHAR8 *Header; // NULL for an item
+  CONST CHAR8 *Header; // a section's title, NULL for an item
   ITEM         Item;
 } ROW;
 
 typedef struct _ITEM_VIEW {
-  ICON         Icon;
   CONST CHAR8 *Label;
   CHAR8        Value[MODEL_LEN + 16]; // "" for none
-  TONE         Tone;
-  TRAILING     Trailing;
+  // The status line while the row is focused, or NULL for none.
+  CONST CHAR8 *Help;
+  // What Power does on the row, for the footer.
+  CONST CHAR8 *Verb;
 } ITEM_VIEW;
 
 typedef enum {
@@ -185,10 +177,8 @@ typedef enum {
   SCREEN_RESTARTING, // into recovery after an uninstall; takes no input
 } SCREEN;
 
-// An uninstall asks twice: the partitions it erases, then once more.
 typedef enum {
   CONFIRM_UNINSTALL,
-  CONFIRM_UNINSTALL_FINAL,
   CONFIRM_EDL
 } CONFIRM;
 
@@ -253,6 +243,8 @@ typedef struct _APP {
   BOOLEAN    ConfirmYes;
   BOOT_ERROR Error;
   CHAR8      ErrorDetail[192];
+  // What the starting screen and a boot error are about.
+  BOOT_TARGET Starting;
   // On the restarting screen: whether recovery was asked to wipe data.
   BOOLEAN    Wiped;
 

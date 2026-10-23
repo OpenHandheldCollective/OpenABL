@@ -178,8 +178,7 @@ VOID
 IconsReset (VOID);
 
 // The menu font at any size, read in place from the .oablf files in Assets:
-// Montserrat at two weights, plus CJK glyphs in the Chinese build. Glyphs
-// are measured and rasterised on first use and kept.
+// Montserrat at two weights. Glyphs are measured and rasterised on first use and kept.
 
 typedef enum { FONT_WEIGHT_REGULAR, FONT_WEIGHT_MEDIUM } FONT_WEIGHT;
 

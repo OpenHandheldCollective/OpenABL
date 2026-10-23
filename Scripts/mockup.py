@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PortABL's menu as portarelauncher draws a screen: the 53x20 grid, the
+"""BIOS's menu as portarelauncher draws a screen: the 53x20 grid, the
 8x16 font at scale 3, the amber palette. Grid, glyphs and rasteriser are
 the launcher's own tools/mockup.py and tools/mockup_png.py, so a screen
 here and a launcher screen render the same.
@@ -24,7 +24,7 @@ ARROW = "→"
 
 # No clock: the ABL has the RTC's UTC, not the launcher's local time.
 def header(*crumbs):
-    return L.header("  ›  ".join(("PortABL",) + crumbs), "v%s " % VERSION)
+    return L.header("  ›  ".join(("BIOS",) + crumbs), "v%s " % VERSION)
 
 # The Nova's keys: the volume rocker moves, power acts.
 def footer(verb, right="VOL MOVE "):

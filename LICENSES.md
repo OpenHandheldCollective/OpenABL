@@ -31,7 +31,7 @@ GPL-3.0-or-later, with two differences:
 | `Gfx/Raster.c` | rasteriser ported from font-rs and ab_glyph_rasterizer | Apache-2.0 | Copyright 2015 Google Inc.; Copyright (C) 2020 Alex Butler |
 | `Core/LibFdt.h` | libfdt declarations | GPL-2.0-or-later OR BSD-2-Clause | Copyright (C) 2006 David Gibson, IBM Corporation; Copyright 2012 Kim Phillips, Freescale Semiconductor |
 | `Assets/montserrat.oablf` | Montserrat, converted | OFL-1.1 (`Assets/Montserrat-OFL.txt`) | Copyright 2011 The Montserrat Project Authors |
-| `Assets/SourceHanSansSC-Normal.otf` | Source Han Sans SC Normal 2.005, unmodified; the build subsets and converts it to `cjk-sc.oablf`, which is not named with the Reserved Font Name | OFL-1.1 (`Assets/SourceHanSans-OFL.txt`) | Copyright 2014-2025 Adobe |
+| `Assets/Bm437_IBM_VGA_8x16.otb`, `View/Vga.c` | IBM VGA 8x16 from The Ultimate Oldschool PC Font Pack, unmodified; `Scripts/mkvga.py` converts it to the CP437 table in `View/Vga.c` | CC-BY-SA-4.0 (`LICENSES/CC-BY-SA-4.0.txt`), which allows the adaptation under GPLv3 | (c) 2016-2020 VileR, https://int10h.org/oldschool-pc-fonts/ |
 
 ## Fetched at build time
 

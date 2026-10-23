@@ -135,7 +135,6 @@ it.
 
 | Option | |
 |---|---|
-| `--lang zh-hans` | Simplified Chinese menu |
 | `--no-standard-boot` | Leave out standard boot (Linux then boots only from boot images) |
 | `--debug` | Debug build, with a Debug section in the menu |
 | `--clean` | Build each chipset from scratch |

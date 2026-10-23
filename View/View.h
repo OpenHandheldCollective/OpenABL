@@ -4,11 +4,11 @@
  */
 
 /**
-  View - the menu's screens, laid out with microui.
+  View - the menu's screens, drawn on a text grid in the VGA font the way
+  portarelauncher draws its menus.
 
-  Sizes are in layout units (the short edge / 360), so every panel gets the
-  same proportions. Landscape uses a two-pane menu and portrait stacks the
-  panes.
+  The grid has at least the launcher's 53 x 20 cells and takes the largest
+  whole scale of the font that fits them; a larger panel gets more cells.
 */
 
 #ifndef __VIEW_VIEW_H__
@@ -28,14 +28,9 @@ typedef struct _PANEL {
   UINT32 *Logical;
 } PANEL;
 
-// Sets up the view to draw on Panel with the font from Assets. Fails when
-// memory runs out or the font doesn't load.
+// Sets up the view to draw on Panel. Fails when memory runs out.
 BOOLEAN
-ViewInit (
-  IN CONST PANEL *Panel,
-  IN CONST UINT8 *Font,
-  IN UINTN        FontLength
-);
+ViewInit (IN CONST PANEL *Panel);
 
 // Rotates the picture Degrees clockwise (from AppDesiredRotation).
 VOID
@@ -52,11 +47,11 @@ ViewLogicalSize (
 VOID
 ViewSync (IN OUT APP *A);
 
-// Runs the animations and redraws that are due.
+// Draws what changed since the last frame.
 VOID
 ViewRun (VOID);
 
-// Finishes the animations and draws now, for the simulator's stills.
+// Draws now, before a command runs. Nothing animates, so it is ViewRun.
 VOID
 ViewSettle (VOID);
 
