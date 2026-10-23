@@ -4,12 +4,8 @@
  */
 
 /**
-  Gpt - GPT parsing and rewriting for installing and uninstalling
-  PortareOS on internal storage.
-
-  Uninstall removes every partition on disk after userdata and grows
-  userdata to the last usable block in both tables. Android reclaims the
-  space when recovery wipes its data.
+  Gpt - GPT parsing and rewriting for installing PortareOS on internal
+  storage.
 
   Installing makes PortareOS's boot and storage partitions. Dualboot
   shrinks userdata and puts them after it; Replace Android removes
@@ -27,9 +23,6 @@
 
 #define GPT_SIGNATURE "EFI PART"
 
-// Userdata type 1B81E7E6-F50D-419B-A739-2AEEF8DA3335, restored on uninstall
-// when an installer had made userdata a Linux partition.
-extern CONST UINT8 gGptAndroidUserdata[16];
 // Linux filesystem type 0FC63DAF-8483-4772-8E79-3D69D8477DE4.
 extern CONST UINT8 gGptLinuxFs[16];
 // EFI system partition type C12A7328-F81F-11D2-BA4B-00A0C93EC93B, which
@@ -71,25 +64,6 @@ GptCfwAfterUserdata (
   IN UINTN             ArrayLen
 );
 
-// A partition Linux added, for the uninstall confirmation. Name is the
-// entry's name in ASCII, with '?' for anything else.
-typedef struct _GPT_CFW_PART {
-  CHAR8  Name[37];
-  UINT64 Bytes;
-} GPT_CFW_PART;
-
-// Fills Out with up to Max of the partitions GptCfwAfterUserdata looks for,
-// and returns how many there are in all.
-UINTN
-GptCfwParts (
-  IN CONST GPT_HEADER *Header,
-  IN CONST UINT8      *Array,
-  IN UINTN             ArrayLen,
-  IN UINTN             BlockSize,
-  OUT GPT_CFW_PART    *Out,
-  IN UINTN             Max
-);
-
 // Returns TRUE if entry Index is in use and called Name (ASCII).
 BOOLEAN
 GptEntryNamed (
@@ -110,24 +84,6 @@ typedef struct _GPT_WRITES OABL_VEC (GPT_WRITE) GPT_WRITES;
 
 VOID
 GptWritesFree (IN OUT GPT_WRITES *Writes);
-
-// Clears every entry on disk after userdata, grows userdata to the last
-// usable block and gives it back its Android type if it has the Linux one.
-// Header is the primary header block and Array the entries in whole
-// blocks. FALSE if there is nothing to remove, if another entry reaches
-// into userdata, or if either array, the backup's at BackupEntryLba, lies
-// in the usable blocks. The writes rebuild the backup table from the
-// primary, backup first. Free Out with GptWritesFree.
-BOOLEAN
-GptUninstall (
-  IN CONST UINT8 *Header,
-  IN UINTN        HeaderLen,
-  IN CONST UINT8 *Array,
-  IN UINTN        ArrayLen,
-  IN UINTN        BlockSize,
-  IN UINT64       BackupEntryLba,
-  OUT GPT_WRITES *Out
-);
 
 // Name is UTF-8, cut to 36 UTF-16 units. For GptBuild, Blocks 0 means up
 // to the last usable block.
@@ -188,8 +144,10 @@ typedef struct _GPT_INSTALL {
 // Dualboot on a disk with Android alone: userdata shrinks to at least
 // AndroidBlocks, ending where the boot partition starts, on an Align
 // boundary; the storage partition follows the boot partition to the last
-// usable block. Header, Array, BackupEntryLba and Out are as for
-// GptUninstall; Where gets the new partitions. FALSE unless GptSurvey says
+// usable block. Header is the primary header block and Array the entries
+// in whole blocks; the writes rebuild the backup table, whose array is at
+// BackupEntryLba, from the primary, backup first. Free Out with
+// GptWritesFree. Where gets the new partitions. FALSE unless GptSurvey says
 // CanShrink, or if the storage partition would be under MinStorage.
 BOOLEAN
 GptInstallDualboot (

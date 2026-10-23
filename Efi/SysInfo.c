@@ -22,7 +22,7 @@
 #include "Core/Panel.h"
 #include "Core/SysInfoText.h"
 #include "Efi/Qcom.h"
-#include "Efi/Uninstall.h"
+#include "Efi/Disk.h"
 
 #define HOB_RESOURCE_DESCRIPTOR  0x0003
 #define HOB_END                  0xFFFF
@@ -233,13 +233,13 @@ SysInfoAndroidBuild (VOID)
     return NULL;
   }
   for (UINTN Index = 0; Index < Count; Index++) {
-    EFI_BLOCK_IO_PROTOCOL *BlockIo = UninstallBlockIo (Handles[Index]);
+    EFI_BLOCK_IO_PROTOCOL *BlockIo = DiskBlockIo (Handles[Index]);
     OABL_BUFFER            Block   = {0};
     OABL_BUFFER            Array   = {0};
     GPT_HEADER             Header;
     UINTN                  Size;
 
-    if (!BlockIo || !UninstallTable (BlockIo, &Block, &Header, &Array)) {
+    if (!BlockIo || !DiskTable (BlockIo, &Block, &Header, &Array)) {
       BufferFree (&Block);
       BufferFree (&Array);
       continue;
@@ -276,10 +276,10 @@ SysInfoAndroidBuild (VOID)
       OABL_BUFFER            Image = {0};
 
       if (Found.Items[Index].Rank != Rank ||
-          !(BlockIo = UninstallBlockIo (Found.Items[Index].Disk))) {
+          !(BlockIo = DiskBlockIo (Found.Items[Index].Disk))) {
         continue;
       }
-      if (UninstallRead (BlockIo, Found.Items[Index].Lba, VBMETA_MAX, &Image)) {
+      if (DiskRead (BlockIo, Found.Items[Index].Lba, VBMETA_MAX, &Image)) {
         Build = SysInfoVbmetaProperty (Image.Data, Image.Len, mFingerprints, 3);
       }
       BufferFree (&Image);

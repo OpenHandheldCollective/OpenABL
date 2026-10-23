@@ -30,7 +30,7 @@
 #include "Efi/NestedDisk.h"
 #include "Efi/Qcom.h"
 #include "Efi/Splash.h"
-#include "Efi/Uninstall.h"
+#include "Efi/Disk.h"
 #include "Efi/UsbHost.h"
 #include "Efi/Variables.h"
 

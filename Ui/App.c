@@ -90,22 +90,6 @@ AppSetCaps (
 }
 
 VOID
-AppSetCfwParts (
-  IN OUT APP            *A,
-  IN CONST GPT_CFW_PART *Parts OPTIONAL,
-  IN UINTN               Count
-)
-{
-  A->CfwPartCount = Parts && Count < MAX_CFW_PARTS ? Count
-                    : Parts                        ? MAX_CFW_PARTS
-                                                   : 0;
-  for (UINTN Index = 0; Index < A->CfwPartCount; Index++) {
-    A->CfwParts[Index] = Parts[Index];
-  }
-  A->Dirty = TRUE;
-}
-
-VOID
 AppSetPhysicalSize (
   IN OUT APP *A,
   IN UINT32   W,
@@ -309,25 +293,6 @@ AppOnPickFailed (
   A->Error      = Gone ? BOOT_ERROR_PICK_GONE : BOOT_ERROR_PICK_FAILED;
   A->PickFromSd = FromSd;
   AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Name);
-}
-
-VOID
-AppOnUninstalled (
-  IN OUT APP *A,
-  IN BOOLEAN  Restarting,
-  IN BOOLEAN  Wiped
-)
-{
-  A->Dirty      = TRUE;
-  A->ToastUntil = 0;
-  A->Wiped      = Wiped;
-  if (Restarting) {
-    A->Screen = SCREEN_RESTARTING;
-    return;
-  }
-  A->Screen         = SCREEN_ERROR;
-  A->Error          = BOOT_ERROR_WIPE_BY_HAND;
-  A->ErrorDetail[0] = 0;
 }
 
 // Opens the device info or the log (already in A->Lines) at line Focus.
@@ -571,27 +536,13 @@ AppOnBattery (
 }
 
 VOID
-AppOnUninstallFailed (
-  IN OUT APP     *A,
-  IN CONST CHAR8 *Why
-)
-{
-  A->Dirty      = TRUE;
-  A->ToastUntil = 0;
-  A->Screen     = SCREEN_ERROR;
-  A->Error      = BOOT_ERROR_UNINSTALL;
-  AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Why);
-}
-
-VOID
 AppOnFailed (
   IN OUT APP     *A,
   IN CONST CHAR8 *Message
 )
 {
   if (A->Screen == SCREEN_BOOTING || A->Screen == SCREEN_SCANNING ||
-      A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_UNINSTALLING ||
-      A->Screen == SCREEN_INSTALLING) {
+      A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_INSTALLING) {
     A->Screen = SCREEN_MENU;
   }
   ShowToast (A, Message);
@@ -633,10 +584,6 @@ AppRows (
   }
   ADD_HEADER (gStrings->SectionStorage);
   ADD_ITEM (ITEM_INSTALL);
-  // Uninstalling gives Android the space back, so it needs Android.
-  if (Caps->Android && Caps->CfwOnInternal) {
-    ADD_ITEM (ITEM_UNINSTALL);
-  }
   ADD_HEADER (gStrings->SectionSystem);
   ADD_ITEM (ITEM_EDL);
   ADD_ITEM (ITEM_RESTART);
@@ -719,10 +666,6 @@ AppItemView (
     View->Label = gStrings->InstallPortareOs;
     View->Help  = gStrings->HelpInstall;
     break;
-  case ITEM_UNINSTALL:
-    View->Label = gStrings->UninstallPortareOs;
-    View->Help  = gStrings->HelpUninstall;
-    break;
   case ITEM_EDL:
     View->Label = gStrings->Edl;
     View->Help  = gStrings->HelpEdl;
@@ -778,11 +721,6 @@ Activate (
     A->Screen      = SCREEN_INSTALL;
     A->InstallList = (LIST_STATE){
       .Focus = !A->Install.Dualboot && A->Install.Replace ? 1 : 0};
-    return None ();
-  case ITEM_UNINSTALL:
-    A->Screen     = SCREEN_CONFIRM;
-    A->Confirm    = CONFIRM_UNINSTALL;
-    A->ConfirmYes = FALSE;
     return None ();
   case ITEM_EDL:
     A->Screen     = SCREEN_CONFIRM;
@@ -1090,10 +1028,6 @@ ConfirmInput (
     if (!A->ConfirmYes) {
       return None ();
     }
-    if (A->Confirm == CONFIRM_UNINSTALL) {
-      A->Screen = SCREEN_UNINSTALLING;
-      return Command (COMMAND_UNINSTALL_CFW, 0);
-    }
     return Command (COMMAND_REBOOT, REBOOT_EDL);
   }
   return None ();
@@ -1146,8 +1080,6 @@ AppInput (
     return None ();
   case SCREEN_SCANNING:
   case SCREEN_BOOTING:
-  case SCREEN_UNINSTALLING:
-  case SCREEN_RESTARTING:
   case SCREEN_INSTALLING:
     return None ();
   }

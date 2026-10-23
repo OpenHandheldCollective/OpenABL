@@ -579,16 +579,6 @@ ErrorDraw (IN CONST APP *A)
     Message = gStrings->ErrAndroidFailedMsg;
     Hint    = gStrings->ErrAndroidFailedHint;
     break;
-  case BOOT_ERROR_WIPE_BY_HAND:
-    Title   = gStrings->ErrWipeTitle;
-    Message = gStrings->WipeByHand;
-    Hint    = "";
-    break;
-  case BOOT_ERROR_UNINSTALL:
-    Title   = gStrings->UninstallFailed;
-    Message = A->ErrorDetail;
-    Hint    = "";
-    break;
   case BOOT_ERROR_PICK_GONE:
   case BOOT_ERROR_PICK_FAILED: {
     STATIC CHAR8 Named[160];
@@ -695,13 +685,13 @@ InstallConfirm (
   return 2;
 }
 
-// The question, what it does, the partitions an uninstall erases or the
-// space an install gives, then Cancel and the action to pick from.
+// The question, what it does, the space an install gives each system, then
+// Cancel and the action to pick from.
 STATIC VOID
 ConfirmDraw (IN CONST APP *A)
 {
   GRID        *G       = &mView.Grid;
-  SIZED        Rows[MAX_CFW_PARTS];
+  SIZED        Rows[2];
   UINTN        Parts   = 0;
   CONST CHAR8 *Crumb   = gStrings->Edl;
   CONST CHAR8 *Title   = gStrings->ConfirmEdlTitle;
@@ -711,15 +701,7 @@ ConfirmDraw (IN CONST APP *A)
   UINT32       Below;
   UINT32       Y = BODY_Y + 2;
 
-  if (A->Confirm == CONFIRM_UNINSTALL) {
-    Crumb   = gStrings->UninstallPortareOs;
-    Title   = gStrings->ConfirmUninstallTitle;
-    Message = gStrings->ConfirmUninstallMsg;
-    Action  = gStrings->ConfirmUninstall;
-    for (; Parts < A->CfwPartCount; Parts++) {
-      Rows[Parts] = (SIZED){A->CfwParts[Parts].Name, A->CfwParts[Parts].Bytes};
-    }
-  } else if (A->Confirm == CONFIRM_INSTALL) {
+  if (A->Confirm == CONFIRM_INSTALL) {
     Title  = gStrings->ConfirmInstallTitle;
     Action = gStrings->ConfirmInstall;
     Parts  = InstallConfirm (A, &Crumb, &Message, Rows);
@@ -1097,15 +1079,6 @@ ViewSync (IN OUT APP *A)
     break;
   case SCREEN_BOOTING:
     BootingDraw (A);
-    break;
-  case SCREEN_UNINSTALLING:
-    StatusDraw (A, gStrings->Uninstalling, gStrings->DontTurnOff, NULL);
-    break;
-  case SCREEN_RESTARTING:
-    StatusDraw (
-      A, gStrings->RestartingRecovery,
-      A->Wiped ? gStrings->CfwRemoved : gStrings->WipeInRecovery, NULL
-    );
     break;
   case SCREEN_ERROR:
     ErrorDraw (A);

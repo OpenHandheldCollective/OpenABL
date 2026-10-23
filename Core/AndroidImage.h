@@ -101,17 +101,6 @@ AndroidBcbCommand (
   OUT UINT8       Out[ANDROID_BCB_COMMAND_LEN]
 );
 
-// Size of AOSP's struct bootloader_message: command[32], status[32],
-// recovery[768], stage[32], reserved[1184].
-#define ANDROID_BCB_SIZE         2048
-#define ANDROID_BCB_RECOVERY_AT  64
-#define ANDROID_BCB_RECOVERY_LEN 768
-
-// Fills a bootloader message asking recovery to wipe data:
-// "boot-recovery", with "recovery\n--wipe_data\n" as recovery's arguments.
-VOID
-AndroidBcbWipe (OUT UINT8 Out[ANDROID_BCB_SIZE]);
-
 typedef struct _ANDROID_DTB {
   UINTN Offset, Size;
 } ANDROID_DTB;

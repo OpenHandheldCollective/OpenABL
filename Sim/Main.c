@@ -27,7 +27,6 @@
 #include "Ui/Ui.h"
 #include "View/View.h"
 
-
 STATIC CONST INT32 mPanels[][2] = {{1080, 1920}, {960, 1280},  {720, 1280},
                                    {1440, 2560}, {1920, 1080}, {1240, 1080},
                                    {1280, 800}};
@@ -159,12 +158,6 @@ SampleModels (OUT CONST MODEL **Models)
   return sizeof (mModels) / sizeof (mModels[0]);
 }
 
-// PortareOS's partitions on internal storage, shown as 2.1 GB and 105 GB.
-STATIC CONST GPT_CFW_PART mCfwParts[] = {
-  {"PORTAREOS", 2ULL << 30},
-  {"PORTAREOS_STOR", 98ULL << 30},
-};
-
 // The boot list on a Nova with PortareOS inside and a PortareOS card.
 STATIC CONST ENTRY_VIEW mEntries[] = {
   {.Title = "PortareOS", .Drive = "PORTAREOS", .Kind = ENTRY_KIND_BOOT_IMAGE},
@@ -213,7 +206,6 @@ MakeApp (
   SampleInfo (&Info);
   Language.Language = LANG_EN;
   AppInit (A, &Language, &Caps, &Info, SCHEME_HANDHELD, MENU_VERSION);
-  AppSetCfwParts (A, mCfwParts, sizeof (mCfwParts) / sizeof (mCfwParts[0]));
   AppSetEntries (A, mEntries, sizeof (mEntries) / sizeof (mEntries[0]));
   AppSetInstall (A, &mInstall);
 }
@@ -246,8 +238,7 @@ SCountdown (
   AppTick (A, Now + 1200);
 }
 
-// After Uninstall Android: only PortareOS starts, and nothing is left to
-// uninstall.
+// After Replace Android: only PortareOS starts.
 STATIC VOID
 SNoAndroid (
   IN OUT APP *A,
@@ -301,20 +292,6 @@ SModels (
   AppInput (A, INPUT_DOWN);
 }
 
-// Uninstall PortareOS, with Cancel picked.
-STATIC VOID
-SConfirmUninstall (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  (VOID)Now;
-  for (INT32 Index = 0; Index < 3; Index++) {
-    AppInput (A, INPUT_DOWN);
-  }
-  AppInput (A, INPUT_SELECT);
-}
-
 // Emergency download mode, with Enter EDL picked.
 STATIC VOID
 SConfirmEdl (
@@ -323,7 +300,7 @@ SConfirmEdl (
 )
 {
   (VOID)Now;
-  for (INT32 Index = 0; Index < 4; Index++) {
+  for (INT32 Index = 0; Index < 3; Index++) {
     AppInput (A, INPUT_DOWN);
   }
   AppInput (A, INPUT_SELECT);
@@ -392,55 +369,6 @@ SErrorNoImage (
 {
   (VOID)Now;
   AppOnBootResult (A, FALSE, BOOT_ERROR_NO_IMAGE, NULL);
-}
-
-// After an uninstall, waiting for the restart into recovery.
-STATIC VOID
-SRestarting (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  (VOID)Now;
-  AppOnUninstalled (A, TRUE, TRUE);
-}
-
-// With Uninstall picked, while the table is rewritten.
-STATIC VOID
-SUninstalling (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  SConfirmUninstall (A, Now);
-  AppInput (A, INPUT_DOWN);
-  AppInput (A, INPUT_SELECT);
-}
-
-// After an uninstall that couldn't write the partition table.
-STATIC VOID
-SErrorUninstall (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  CONST CHAR8 *Args[1] = {"error 7"};
-  CHAR8        Why[192];
-
-  (VOID)Now;
-  LangFill (Why, sizeof (Why), gStrings->UninstallWriteFailed, Args, 1);
-  AppOnUninstallFailed (A, Why);
-}
-
-// After an uninstall that couldn't make Android the boot mode.
-STATIC VOID
-SErrorWipeByHand (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  (VOID)Now;
-  AppOnUninstalled (A, FALSE, FALSE);
 }
 
 STATIC VOID
@@ -681,7 +609,6 @@ STATIC CONST struct {
   {"boot-list", SBootList},
   {"boot-list-sd", SBootListSd},
   {"models", SModels},
-  {"confirm-uninstall", SConfirmUninstall},
   {"confirm-edl", SConfirmEdl},
   {"install", SInstall},
   {"install-replace", SInstallReplace},
@@ -705,10 +632,6 @@ STATIC CONST struct {
   {"error-pick-gone", SErrorPickGone},
   {"error-pick-failed", SErrorPickFailed},
   {"error-model", SErrorModel},
-  {"uninstalling", SUninstalling},
-  {"restarting", SRestarting},
-  {"error-uninstall", SErrorUninstall},
-  {"error-wipe-by-hand", SErrorWipeByHand},
   {"toast", SToast},
 };
 
@@ -828,11 +751,11 @@ STATIC CONST STEP mSessionLines[]   = {{STEP_LINES, 0, 1},
                                        PRESS (UP, 30),
                                        PRESS (BACK, 1),
                                        PRESS (DOWN, 2)};
-// Uninstall PortareOS and back, then Emergency download mode and back.
+// Install PortareOS's choices and back, then Emergency download mode and
+// back.
 STATIC CONST STEP mSessionConfirm[] = {
-  PRESS (DOWN, 3),   PRESS (SELECT, 1), PRESS (DOWN, 1),
-  PRESS (UP, 1),     PRESS (BACK, 1),   PRESS (DOWN, 1),
-  PRESS (SELECT, 1), PRESS (DOWN, 1),   PRESS (BACK, 1)};
+  PRESS (DOWN, 2),   PRESS (SELECT, 1), PRESS (BACK, 1), PRESS (DOWN, 1),
+  PRESS (SELECT, 1), PRESS (DOWN, 1),   PRESS (UP, 1),   PRESS (BACK, 1)};
 STATIC CONST STEP mSessionToast[] = {{STEP_NOTIFY, 0, 1}, {STEP_WAIT, 0, 3500},
                                      PRESS (DOWN, 3),     {STEP_NOTIFY, 0, 1},
                                      PRESS (UP, 3),       {STEP_WAIT, 0, 3500}};

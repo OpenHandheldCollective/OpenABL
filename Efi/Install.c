@@ -17,7 +17,7 @@
 #include "Core/Fat32.h"
 #include "Core/Fat32Make.h"
 #include "Efi/Files.h"
-#include "Efi/Uninstall.h"
+#include "Efi/Disk.h"
 
 #include <Protocol/EFIChargerEx.h>
 #include <Protocol/EFIEraseBlock.h>
@@ -268,7 +268,7 @@ FindDisk (
   UINTN       Found = 0;
 
   for (UINTN Index = 0; Index < Count; Index++) {
-    EFI_BLOCK_IO_PROTOCOL *BlockIo = UninstallBlockIo (Handles[Index]);
+    EFI_BLOCK_IO_PROTOCOL *BlockIo = DiskBlockIo (Handles[Index]);
     OABL_BUFFER            Block   = {0};
     OABL_BUFFER            Array   = {0};
     GPT_HEADER             Header;
@@ -276,7 +276,7 @@ FindDisk (
     GPT_SURVEY             This;
 
     if (!BlockIo ||
-        !UninstallCheckedTable (BlockIo, &Block, &Header, &Array, &Backup)) {
+        !DiskCheckedTable (BlockIo, &Block, &Header, &Array, &Backup)) {
       continue;
     }
     GptSurvey (&Header, Array.Data, Array.Len, &This);
@@ -526,7 +526,7 @@ ErasePart (
   EFI_STATUS                Status;
 
   for (UINTN Index = 0; Index < Count; Index++) {
-    EFI_BLOCK_IO_PROTOCOL *BlockIo = UninstallBlockIo (Handles[Index]);
+    EFI_BLOCK_IO_PROTOCOL *BlockIo = DiskBlockIo (Handles[Index]);
     OABL_BUFFER            Path    = {0};
     UINT8                  Part[16];
 
@@ -591,7 +591,7 @@ EraseOld (
   GPT_HEADER  Header;
   GPT_HEADER  Backup;
 
-  if (!UninstallCheckedTable (Disk->BlockIo, &Block, &Header, &Array, &Backup)) {
+  if (!DiskCheckedTable (Disk->BlockIo, &Block, &Header, &Array, &Backup)) {
     return;
   }
   for (UINTN Index = 0; Index < Header.Entries; Index++) {
@@ -628,7 +628,7 @@ PartWrite (
       (Offset + Size) / Disk->BlockSize > Disk->Blocks) {
     return FALSE;
   }
-  return UninstallWrite (
+  return DiskWrite (
            Disk->BlockIo, Disk->First + Offset / Disk->BlockSize, Buffer, Size
          ) == EFI_SUCCESS;
 }
@@ -649,7 +649,7 @@ PartRead (
   OABL_BUFFER Data = {0};
   BOOLEAN     Ok;
 
-  Ok = UninstallRead (Disk->BlockIo, Disk->First + Block, Whole, &Data);
+  Ok = DiskRead (Disk->BlockIo, Disk->First + Block, Whole, &Data);
   if (Ok) {
     CopyMem (Buffer, Data.Data + Skip, Size);
   }
@@ -825,7 +825,7 @@ WriteTable (
   // Flushed one by one, so the order Gpt chose reaches the disk.
   for (UINTN Index = 0; Index < Writes->Count && Status == EFI_SUCCESS;
        Index++) {
-    Status = UninstallWrite (
+    Status = DiskWrite (
       Disk->BlockIo, Writes->Items[Index].Lba, Writes->Items[Index].Data.Data,
       Writes->Items[Index].Data.Len
     );
@@ -837,7 +837,7 @@ WriteTable (
     SAY ("writing the table failed");
     return Status;
   }
-  if (!UninstallCheckedTable (Disk->BlockIo, &Block, &Header, &Array, &Backup)) {
+  if (!DiskCheckedTable (Disk->BlockIo, &Block, &Header, &Array, &Backup)) {
     SAY ("the table didn't read back");
     return EFI_CRC_ERROR;
   }
@@ -900,7 +900,7 @@ NewTable (
   GPT_HEADER  Backup;
   BOOLEAN     Ok;
 
-  if (!UninstallCheckedTable (Disk->BlockIo, &Block, &Header, &Array, &Backup)) {
+  if (!DiskCheckedTable (Disk->BlockIo, &Block, &Header, &Array, &Backup)) {
     return EFI_VOLUME_CORRUPTED;
   }
   GptSurvey (&Header, Array.Data, Array.Len, Survey);

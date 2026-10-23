@@ -17,7 +17,6 @@
 
 #include "Base/OablBase.h"
 
-#include "Core/Gpt.h"
 #include "Core/Settings.h"
 
 typedef struct _DEVICE_INFO {
@@ -69,7 +68,6 @@ typedef enum {
   COMMAND_POWER_OFF,
   COMMAND_SAVE_SETTINGS,
   COMMAND_SCAN_MODELS,
-  COMMAND_UNINSTALL_CFW,
   COMMAND_INSTALL, // Arg is an INSTALL_CHOICE; InstallAndroid is Android's share
   COMMAND_DEVICE_INFO,
   COMMAND_LOG,
@@ -90,8 +88,6 @@ typedef enum {
   BOOT_ERROR_ANDROID,        // Android boot isn't available
   BOOT_ERROR_MODEL_NOT_SET,  // a model is needed for the devicetree
   BOOT_ERROR_ANDROID_FAILED, // booting Android (boot_a/b) returned
-  BOOT_ERROR_WIPE_BY_HAND,   // Linux removed, but Android isn't the boot mode
-  BOOT_ERROR_UNINSTALL,      // removing Linux failed; ErrorDetail says why
   // The boot list's pick: its drive is gone, or it didn't start. ErrorDetail
   // names it, or is empty after a restart.
   BOOT_ERROR_PICK_GONE,
@@ -149,7 +145,6 @@ typedef enum {
   ITEM_BOOT, // opens the boot list
   ITEM_BOOT_ORDER,
   ITEM_INSTALL,   // PortareOS, from the SD card to internal storage
-  ITEM_UNINSTALL, // PortareOS, from internal storage
   ITEM_EDL,
   ITEM_RESTART,
   ITEM_POWER_OFF,
@@ -182,8 +177,6 @@ typedef enum {
   SCREEN_BOOTING,
   SCREEN_ERROR,
   SCREEN_LINES,        // the device info, or the log
-  SCREEN_UNINSTALLING, // while Linux is removed; takes no input
-  SCREEN_RESTARTING,   // into recovery after an uninstall; takes no input
   SCREEN_INSTALL,      // Install PortareOS's two choices
   SCREEN_INSTALL_SIZE, // a first Dualboot: what Android keeps
   SCREEN_INSTALLING,   // takes no input
@@ -194,7 +187,6 @@ typedef enum {
 } SCREEN;
 
 typedef enum {
-  CONFIRM_UNINSTALL,
   CONFIRM_EDL,
   CONFIRM_INSTALL,
 } CONFIRM;
@@ -244,7 +236,6 @@ typedef struct _LIST_STATE {
 #define MAX_MODELS  64
 #define MAX_ENTRIES 32
 #define MAX_LINES   512
-#define MAX_CFW_PARTS 8
 // What a first Dualboot offers Android to keep.
 #define MAX_ANDROID_SIZES 6
 
@@ -299,8 +290,6 @@ typedef struct _APP {
   BOOLEAN PickFromSd;
   // What the starting screen and a boot error are about.
   BOOT_TARGET Starting;
-  // On the restarting screen: whether recovery was asked to wipe data.
-  BOOLEAN    Wiped;
 
   ITEM       FocusItem;
   LIST_STATE Menu;
@@ -308,10 +297,6 @@ typedef struct _APP {
   MODEL      Models[MAX_MODELS];
   UINTN      ModelCount;
   LIST_STATE ModelList;
-
-  // Linux's partitions on internal storage, listed before an uninstall.
-  GPT_CFW_PART CfwParts[MAX_CFW_PARTS];
-  UINTN        CfwPartCount;
 
   ENTRY_VIEW Entries[MAX_ENTRIES];
   UINTN      EntryCount;
@@ -407,15 +392,6 @@ AppSetCaps (
   IN CONST SETTINGS_CAPS *Caps
 );
 
-// Sets the partitions the uninstall confirmation lists, at most
-// MAX_CFW_PARTS of them.
-VOID
-AppSetCfwParts (
-  IN OUT APP                *A,
-  IN CONST GPT_CFW_PART     *Parts OPTIONAL,
-  IN UINTN                   Count
-);
-
 // W and H are the panel's size before any rotation.
 VOID
 AppSetPhysicalSize (
@@ -480,17 +456,6 @@ AppOnBootResult (
   IN BOOLEAN      Ok,
   IN BOOT_ERROR   Error,
   IN CONST CHAR8 *Detail OPTIONAL
-);
-
-// After Linux was removed. Restarting shows the restarting screen, which
-// ignores input until the platform restarts; Wiped says whether recovery
-// was asked to wipe Android's data. Without a restart, the error screen
-// says to set the boot mode and wipe by hand.
-VOID
-AppOnUninstalled (
-  IN OUT APP *A,
-  IN BOOLEAN  Restarting,
-  IN BOOLEAN  Wiped
 );
 
 // After the boot list's pick didn't start: Gone if its drive was missing.
@@ -563,13 +528,6 @@ AppOnBattery (
 // Nova's 4.5 V cell, less what charging adds to it. 0 when unknown.
 UINT32
 AppBatteryLevel (IN CONST APP *A);
-
-// After removing Linux failed: the error screen, with Why as its message.
-VOID
-AppOnUninstallFailed (
-  IN OUT APP     *A,
-  IN CONST CHAR8 *Why
-);
 
 // Shows why a command failed, returning to the menu from a screen that was
 // waiting for it.

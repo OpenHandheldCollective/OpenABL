@@ -12,9 +12,6 @@
 
 #include "Base/Memory.h"
 
-CONST UINT8 gGptAndroidUserdata[16] = {0xe6, 0xe7, 0x81, 0x1b, 0x0d, 0xf5,
-                                       0x9b, 0x41, 0xa7, 0x39, 0x2a, 0xee,
-                                       0xf8, 0xda, 0x33, 0x35};
 CONST UINT8 gGptLinuxFs[16] = {0xaf, 0x3d, 0xc6, 0x0f, 0x83, 0x84, 0x72, 0x47,
                                0x8e, 0x79, 0x3d, 0x69, 0xd8, 0x47, 0x7d, 0xe4};
 CONST UINT8 gGptEfiSystem[16] = {0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8,
@@ -204,57 +201,20 @@ GptCfwAfterUserdata (
   IN UINTN             ArrayLen
 )
 {
-  return GptCfwParts (Header, Array, ArrayLen, 0, NULL, 0) > 0;
-}
-
-UINTN
-GptCfwParts (
-  IN CONST GPT_HEADER *Header,
-  IN CONST UINT8      *Array,
-  IN UINTN             ArrayLen,
-  IN UINTN             BlockSize,
-  OUT GPT_CFW_PART    *Out,
-  IN UINTN             Max
-)
-{
   UINTN  Count = EntryCount (Header, ArrayLen);
-  UINTN  Found = 0;
   UINTN  Userdata;
   UINT64 End;
 
   if (!UserdataIndex (Header, Array, ArrayLen, &Userdata)) {
-    return 0;
+    return FALSE;
   }
   End = ReadLe64 (Array + Userdata * Header->EntrySize + 40);
   for (UINTN Index = 0; Index < Count; Index++) {
-    CONST UINT8  *Entry = Array + Index * Header->EntrySize;
-    GPT_CFW_PART *Part;
-    UINT64        First;
-    UINT64        Last;
-    UINTN         Len = 0;
-
-    if (!AfterUserdata (Entry, End)) {
-      continue;
+    if (AfterUserdata (Array + Index * Header->EntrySize, End)) {
+      return TRUE;
     }
-    if (Found++ >= Max) {
-      continue;
-    }
-    Part  = &Out[Found - 1];
-    First = ReadLe64 (Entry + 32);
-    Last  = ReadLe64 (Entry + 40);
-    Part->Bytes =
-      Last >= First ? (Last - First + 1) * (UINT64)BlockSize : 0;
-    // ASCII as is, anything else as '?'; names are ASCII in practice.
-    for (UINTN Unit = 0; Unit < NAME_LEN / 2; Unit++) {
-      UINT16 Char = ReadLe16 (Entry + NAME_AT + 2 * Unit);
-      if (Char == 0) {
-        break;
-      }
-      Part->Name[Len++] = Char >= 0x20 && Char < 0x7f ? (CHAR8)Char : '?';
-    }
-    Part->Name[Len] = 0;
   }
-  return Found;
+  return FALSE;
 }
 
 BOOLEAN
@@ -376,71 +336,6 @@ Fail:
   FreePool (Array2);
   FreePool (Array);
   VecFree (&Writes);
-  return FALSE;
-}
-
-BOOLEAN
-GptUninstall (
-  IN CONST UINT8 *Header,
-  IN UINTN        HeaderLen,
-  IN CONST UINT8 *Array,
-  IN UINTN        ArrayLen,
-  IN UINTN        BlockSize,
-  IN UINT64       BackupEntryLba,
-  OUT GPT_WRITES *Out
-)
-{
-  GPT_HEADER Parsed;
-  UINT8     *Copy;
-  UINT8     *Userdata;
-  UINTN      Count;
-  UINTN      Index;
-  UINT64     Start;
-  UINT64     End;
-  BOOLEAN    Removed = FALSE;
-
-  if (!GptParse (Header, HeaderLen, &Parsed)) {
-    return FALSE;
-  }
-  if (BlockSize == 0 || ArrayLen < GptArraySize (&Parsed) ||
-      !UserdataIndex (&Parsed, Array, ArrayLen, &Index)) {
-    return FALSE;
-  }
-  Copy = AllocateCopyPool (ArrayLen, Array);
-  if (!Copy) {
-    return FALSE;
-  }
-  Userdata = Copy + Index * Parsed.EntrySize;
-  Start    = ReadLe64 (Userdata + 32);
-  End      = ReadLe64 (Userdata + 40);
-  Count    = EntryCount (&Parsed, ArrayLen);
-  if (Start < Parsed.FirstUsable || End < Start || End > Parsed.LastUsable) {
-    goto Fail;
-  }
-  for (UINTN Other = 0; Other < Count; Other++) {
-    UINT8 *Entry = Copy + Other * Parsed.EntrySize;
-    if (AfterUserdata (Entry, End)) {
-      ZeroMem (Entry, Parsed.EntrySize);
-      Removed = TRUE;
-    } else if (Other != Index && InUse (Entry) &&
-               ReadLe64 (Entry + 40) >= Start) {
-      // What's left must end before userdata, which grows over the rest.
-      goto Fail;
-    }
-  }
-  if (!Removed) {
-    goto Fail;
-  }
-  // Only undo an installer's retyping; an OEM's own userdata type stays.
-  if (BytesEq (Userdata, gGptLinuxFs, 16)) {
-    CopyMem (Userdata, gGptAndroidUserdata, 16);
-  }
-  WriteLe64 (Userdata + 40, Parsed.LastUsable);
-  return Tables (
-    Header, HeaderLen, &Parsed, Copy, ArrayLen, BlockSize, BackupEntryLba, Out
-  );
-Fail:
-  FreePool (Copy);
   return FALSE;
 }
 

@@ -181,16 +181,6 @@ Dualboot (VOID)
     Disk.Data + BLOCK, BLOCK, Array.Ptr, Array.Len, BLOCK,
     Header.LastUsable + 1, &mInstall, &Writes, &Where
   ));
-  // The uninstaller takes it back out.
-  CHECK (GptUninstall (
-    Disk.Data + BLOCK, BLOCK, Array.Ptr, Array.Len, BLOCK,
-    Header.LastUsable + 1, &Writes
-  ));
-  CHECK (Apply (&Disk, &Writes, &Header, &Array));
-  GptWritesFree (&Writes);
-  GptSurvey (&Header, Array.Ptr, Array.Len, &Survey);
-  CHECK (Survey.Android && !Survey.PortareOs && Survey.CanShrink);
-  CHECK (Survey.UserdataLast == Header.LastUsable);
   BufferFree (&Disk);
 }
 

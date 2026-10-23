@@ -73,9 +73,6 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ErrAndroidFailedHint;
   CONST CHAR8 *ErrModelTitle;
   CONST CHAR8 *ErrModelMsg;
-  CONST CHAR8 *ConfirmUninstallTitle;
-  CONST CHAR8 *ConfirmUninstallMsg;
-  CONST CHAR8 *ConfirmUninstall;
   CONST CHAR8 *ConfirmEdlTitle;
   CONST CHAR8 *ConfirmEdlMsg;
   CONST CHAR8 *ConfirmEdl;
@@ -90,19 +87,8 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ModelScanFailed;
   CONST CHAR8 *AblActionFailed;
   CONST CHAR8 *PowerOffFailed;
-  CONST CHAR8 *RestartingRecovery;
-  CONST CHAR8 *CfwRemoved;
-  CONST CHAR8 *WipeInRecovery;
-  CONST CHAR8 *UninstallFailed;
-  CONST CHAR8 *Uninstalling;
   CONST CHAR8 *DontTurnOff;
-  CONST CHAR8 *UninstallNotFound;
-  CONST CHAR8 *UninstallUntrusted;
-  CONST CHAR8 *UninstallWriteFailed;
-  CONST CHAR8 *UninstallReadBack;
-  CONST CHAR8 *UninstallError;
-  CONST CHAR8 *ErrWipeTitle;
-  CONST CHAR8 *WipeByHand;
+  CONST CHAR8 *InstallNoMemory;
   CONST CHAR8 *Unknown;
   CONST CHAR8 *NotInserted;
   CONST CHAR8 *SrcAblScan;
@@ -112,7 +98,6 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *PortareOs;
   CONST CHAR8 *Android;
   CONST CHAR8 *BootOrder;
-  CONST CHAR8 *UninstallPortareOs;
   CONST CHAR8 *Restart;
   CONST CHAR8 *ShutDown;
   CONST CHAR8 *OrderPortareOsFirst;
@@ -129,7 +114,6 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ErrPickFailedAny;
   CONST CHAR8 *ErrPickHint;
   CONST CHAR8 *HelpBootOrder;
-  CONST CHAR8 *HelpUninstall;
   CONST CHAR8 *HelpEdl;
   CONST CHAR8 *InstallPortareOs;
   CONST CHAR8 *HelpInstall;
