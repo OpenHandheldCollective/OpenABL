@@ -157,6 +157,13 @@ MenuLiveUsbHostDown (IN CONST MENU_HOST *Host);
 #define MENU_PICK_BOOT_IMAGE   "openabl-boot-image"
 #define MENU_PICK_DEFAULT_FILE "openabl-default-file"
 
+// The system the menu picked for the next boot, kept across a restart: one
+// MENU_ONCE_* byte. The boot takes it and clears it, so it applies once and
+// leaves the boot mode as it was.
+#define MENU_ONCE_VAR     "BootTargetOnce"
+#define MENU_ONCE_LINUX   1
+#define MENU_ONCE_ANDROID 2
+
 // What booting needs from the ABL's state and the settings.
 typedef struct _MENU_BOOT_CONTEXT {
   BOOT_SOURCE Source;

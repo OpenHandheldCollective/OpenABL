@@ -137,6 +137,7 @@ STATIC CONST LANG_STRINGS mEn = {
   .AblModelFailed      = "The ABL couldn't save the device model",
   .AblNotAnswering     = "The ABL stopped answering",
   .AblRestartFailed    = "The ABL couldn't restart ({})",
+  .TargetNotKept       = "Couldn't keep the choice for the restart ({})",
   .RestartingToScan    = "Restarting to scan",
   .RestartToScanFailed = "Couldn't restart to scan",
   .ModelScanFailed     = "Couldn't look for device models",

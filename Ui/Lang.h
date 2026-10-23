@@ -134,6 +134,7 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *AblModelFailed;
   CONST CHAR8 *AblNotAnswering;
   CONST CHAR8 *AblRestartFailed;
+  CONST CHAR8 *TargetNotKept;
   CONST CHAR8 *RestartingToScan;
   CONST CHAR8 *RestartToScanFailed;
   CONST CHAR8 *ModelScanFailed;
