@@ -70,34 +70,10 @@ Removable (IN EFI_HANDLE Fs)
 STATIC CHAR8 *
 PartUuid (IN CONST OABL_BUFFER *Dev)
 {
-  UEFI_NODE    Node;
-  UEFI_NODE    Hd;
-  OABL_BYTES   Data;
-  CONST UINT8 *Guid;
-  BOOLEAN      Found = FALSE;
-  UINTN        At    = 0;
+  CHAR8 Uuid[UEFI_PART_UUID_SIZE];
 
-  while (UefiNextNode (Dev->Data, Dev->Len, &At, &Node)) {
-    if (Node.Type == UEFI_TYPE_MEDIA && Node.SubType == UEFI_MEDIA_HARD_DRIVE) {
-      Hd    = Node;
-      Found = TRUE;
-    }
-  }
-  if (!Found) {
-    return NULL;
-  }
-  Data = UefiNodeData (&Hd);
-  // PartitionNumber(4) Start(8) Size(8) Signature(16) MBRType(1)
-  // SignatureType(1)
-  if (Data.Len < 38 || Data.Ptr[37] != 0x02) {
-    return NULL;
-  }
-  Guid = Data.Ptr + 20;
-  return SPrintAlloc (
-    "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X", (UINT32)ReadLe32 (Guid),
-    (UINT32)ReadLe16 (Guid + 4), (UINT32)ReadLe16 (Guid + 6), Guid[8], Guid[9],
-    Guid[10], Guid[11], Guid[12], Guid[13], Guid[14], Guid[15]
-  );
+  return UefiPartUuid (Dev->Data, Dev->Len, TRUE, Uuid) ? AsciiStrDup (Uuid)
+                                                        : NULL;
 }
 
 // Moves Entry into Out. Frees it if out of memory.

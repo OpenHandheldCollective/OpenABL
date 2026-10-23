@@ -64,6 +64,22 @@ KernelCmdLineCombine (
   return BufferAppend (Out, Text.Ptr, Text.Len);
 }
 
+BOOLEAN
+KernelCmdLineAppendBootPart (
+  IN OUT OABL_BUFFER *Out,
+  IN CONST CHAR8     *PartUuid
+)
+{
+  STATIC CONST CHAR8 Key[] = KERNEL_CMDLINE_BOOT_PART "=PARTUUID=";
+
+  if (Out->Len && Out->Data[Out->Len - 1] != ' ' &&
+      !BufferAppendU8 (Out, ' ')) {
+    return FALSE;
+  }
+  return BufferAppend (Out, Key, sizeof (Key) - 1) &&
+         BufferAppend (Out, PartUuid, AsciiStrLen (PartUuid));
+}
+
 STATIC VOID
 Param (
   OUT KERNEL_CMDLINE_PARAM *Out,

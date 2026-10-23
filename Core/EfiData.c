@@ -281,6 +281,41 @@ UefiFilePathNode (
   return FALSE;
 }
 
+BOOLEAN
+UefiPartUuid (
+  IN CONST UINT8 *DevicePath,
+  IN UINTN        Size,
+  IN BOOLEAN      Upper,
+  OUT CHAR8       Out[UEFI_PART_UUID_SIZE]
+)
+{
+  UEFI_NODE    Node;
+  OABL_BYTES   Hd = {0};
+  CONST UINT8 *Guid;
+
+  for (UINTN At = 0; UefiNextNode (DevicePath, Size, &At, &Node);) {
+    if (Node.Type == UEFI_TYPE_MEDIA && Node.SubType == UEFI_MEDIA_HARD_DRIVE) {
+      Hd = UefiNodeData (&Node);
+    }
+  }
+  Out[0] = 0;
+  // PartitionNumber(4) Start(8) Size(8) Signature(16) MBRType(1)
+  // SignatureType(1), 2 for a GUID.
+  if (Hd.Len < 38 || Hd.Ptr[37] != 0x02) {
+    return FALSE;
+  }
+  Guid = Hd.Ptr + 20;
+  SPrint (
+    Out, UEFI_PART_UUID_SIZE,
+    Upper ? "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X"
+          : "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+    (UINT32)ReadLe32 (Guid), (UINT32)ReadLe16 (Guid + 4),
+    (UINT32)ReadLe16 (Guid + 6), Guid[8], Guid[9], Guid[10], Guid[11], Guid[12],
+    Guid[13], Guid[14], Guid[15]
+  );
+  return TRUE;
+}
+
 CHAR8 *
 UefiFilePathText (
   IN CONST UINT8 *DevicePath,

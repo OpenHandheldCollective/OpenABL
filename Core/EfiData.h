@@ -155,6 +155,20 @@ UefiFilePathNode (
   OUT OABL_BUFFER *Out
 );
 
+// Size for UefiPartUuid's text: a GUID and its NUL.
+#define UEFI_PART_UUID_SIZE 37
+
+// Writes the GPT partition GUID of the path's last HD() node into Out, upper
+// case as systemd's LoaderDevicePartUUID has it, or lower case as Linux's
+// PARTUUID does. Returns FALSE, with Out empty, if there is none.
+BOOLEAN
+UefiPartUuid (
+  IN CONST UINT8 *DevicePath,
+  IN UINTN        Size,
+  IN BOOLEAN      Upper,
+  OUT CHAR8       Out[UEFI_PART_UUID_SIZE]
+);
+
 // Returns the joined FilePath text of a device path, or NULL if it has
 // none. Caller frees the result.
 CHAR8 *
