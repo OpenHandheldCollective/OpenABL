@@ -30,8 +30,7 @@ fastboot flash abl_b abl_signed-SM8550.elf
 fastboot reboot
 ```
 
-Other devices need the image for their chipset and their corresponding ABL
-partition names. Fastboot's `product` is `PortareBIOS`.
+Fastboot's `product` is `PortareBIOS`.
 
 At power-on, unless a one-shot boot has been requested:
 
@@ -185,12 +184,13 @@ a Mac. The build uses a `linux/amd64` container, including on Apple Silicon.
 ./build.sh sm8550
 ```
 
-Give one or more chipsets, or `all`. Output names retain OpenABL naming:
+It builds for the Nova's chipset, SM8550; `all` means the same. Output
+names retain OpenABL naming:
 
 | Output | Contents |
 |---|---|
-| `build/out/abl_signed-<CHIPSET>.elf` | Signed ABL image, with a neighbouring `.sha256` file |
-| `build/out/openabl-recovery-flashable-<chipset>.zip` | Android recovery addon that flashes both ABL slots and installs an `addon.d` script to restore the opposite slot after compatible OTA updates |
+| `build/out/abl_signed-SM8550.elf` | Signed ABL image, with a neighbouring `.sha256` file |
+| `build/out/openabl-recovery-flashable-sm8550.zip` | Android recovery addon that flashes both ABL slots and installs an `addon.d` script to restore the opposite slot after compatible OTA updates |
 | `build/abl-build.log` | Full build log |
 
 `VERSION` holds `MAJOR.MINOR`, reported by the menu, fastboot's
@@ -200,13 +200,13 @@ Give one or more chipsets, or `all`. Output names retain OpenABL naming:
 |---|---|
 | `--no-standard-boot` | Omits the UEFI boot manager, BLS/UKI/extlinux discovery and Boot list population. Default EFI files and boot images remain available to automatic Linux boot. |
 | `--debug` | Adds the Debug menu section and diagnostics |
-| `--clean` | Builds each chipset from scratch |
+| `--clean` | Builds from scratch |
 
 `Scripts/fetch.sh` fetches pinned microui, qtestsign and Qualcomm edk2
 sources into `build/`. The edk2 tag is
 `KERNEL.PLATFORM.3.0.r23-02400-kernel.0`; the script applies
 `Abl/openabl.patch` and copies `Abl/QcomModulePkg` into it. Later builds
-reuse sources and per-chipset build output.
+reuse sources and build output.
 
 To build only `build/menu/openabl-menu.efi` with local clang, lld-link,
 make and Python 3:
@@ -217,7 +217,7 @@ make FEATURES=standard-boot,card-logo
 ```
 
 `FEATURES` selects optional components; the Makefile documents them.
-`build.sh` supplies the appropriate chipset features automatically.
+`build.sh` supplies the Nova's features automatically.
 
 The host simulator needs a C compiler and zlib:
 
@@ -230,17 +230,14 @@ build/sim/openabl-menu-sim
 It writes PNGs to `build/screens`. Use `--out DIR` or `--filter TEXT` to
 control output, or `--check` to check redraw consistency.
 
-GitHub Actions builds every chipset on `v*` tags and uploads images,
-checksums, recovery addons and `portare-bios-<TAG>-source.tar.xz` to the
-release. The source archive includes this repository and the fetched
-sources, so `./build.sh` can reuse them without downloading again.
+GitHub Actions builds on `v*` tags and uploads two files to the release:
+`abl_signed-SM8550.elf` and `openabl-recovery-flashable-sm8550.zip`.
+GitHub shows each file's SHA-256.
 
-Manual builds select a tag and release or debug mode. CI debug images end
-in `-debug.elf` and go to a separate `debug-<TAG>` pre-release. The Package
-workflow creates `portare-bios-<TAG>.tar.gz` or
-`portare-bios-<TAG>-debug.tar.gz`, with an image and checksum per chipset. CI caches fetched sources in the
-`sources` pre-release, keyed by the pins in `Scripts/fetch.sh`. Pull
-requests to `main` build every chipset in debug mode.
+Manual builds select a tag and release or debug mode. Debug files end in
+`-debug` and go to a separate `debug-<TAG>` pre-release. CI caches fetched
+sources in the `sources` pre-release, keyed by the pins in
+`Scripts/fetch.sh`. Pull requests to `main` build in debug mode.
 
 ## Future direction
 

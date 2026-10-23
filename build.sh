@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Builds the ABL with the menu program for one or more chipsets:
+# Builds the ABL with the menu program for the Retroid Pocket Nova's
+# chipset, SM8550 (`all` means the same):
 #
-#   ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]
+#   ./build.sh <sm8550|all> [--debug] [--no-standard-boot] [--clean]
 #
 # Needs git, and Docker or Apple's container. The sources are fetched by
 # Scripts/fetch.sh; the program (Makefile) and the ABL (Scripts/abl.sh) are
@@ -21,30 +22,22 @@ VERSION=$(cat VERSION)
 IMAGE=ghcr.io/tianocore/containers/fedora-40-dev:latest
 # The ABL tree's path in the container; its build cache stores this path.
 WORKSPACE=/workspaces/LinuxLoader
-CHIPSETS="sdm845 sm4450 sm6115 sm6450 sm7675 sm8250 sm8550 sm8650 sm8750"
+CHIPSETS="sm8550"
 
 usage() {
-  echo "usage: ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]" >&2
+  echo "usage: ./build.sh <sm8550|all> [--debug] [--no-standard-boot] [--clean]" >&2
   echo "chipsets: $CHIPSETS" >&2
   exit 1
 }
 
-# Per-chipset settings, as in Qualcomm's make_abl.sh: signing version,
-# protected VM firmware, whether XBL has the kernel protocol (SDM845's
-# doesn't), whether to bundle edk2's USB host stack (where XBL has none),
-# extra ABL make parameters, and extra program features.
+# The chipset's settings, as in Qualcomm's make_abl.sh: signing version,
+# protected VM firmware, whether XBL has the kernel protocol, whether to
+# bundle edk2's USB host stack, extra ABL make parameters, and extra
+# program features. SM8550 needs no extras.
 chipset() {
   SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1 BUNDLED_USB=0 ABL_EXTRA="" OWN="" OWN_FULL=""
   case $1 in
-    sdm845) SIGN=-v5 PVMFW=false KERNEL_PROTOCOL=0 OWN=devinfo-settings,loader-quirks ;;
-    sm4450) OWN=sdcc-sm4450 ;;
-    sm6115) SIGN=-v6 PVMFW=false BUNDLED_USB=1 ABL_EXTRA=TARGET_SOC_SM6115=1 OWN=loader-quirks ;;
-    sm6450) OWN=sdcc-sm6450 ;;
-    sm7675) OWN=sdcc-sm7675 ;;
     sm8550) ;;
-    sm8650) OWN=park-display ;;
-    sm8750) OWN=park-display OWN_FULL=sysfont ;;
-    sm8250) SIGN=-v6 PVMFW=false ;;
     *) echo "unknown chipset $1" >&2; usage ;;
   esac
 }
@@ -99,7 +92,7 @@ if ! $ENGINE image inspect "$TAG" > /dev/null 2>&1; then
   $ENGINE build -q --platform linux/amd64 -t "$TAG" build/image > /dev/null
 fi
 
-# Script for the container: build the program, then the ABL, per chipset.
+# Script for the container: build the program, then the ABL.
 COMMON=(
   "PREBUILT_HOST_TOOLS=BUILD_CC=clang BUILD_CXX=clang++ LDPATH=-fuse-ld=lld BUILD_AR=llvm-ar"
   QSPA_BOOTCONFIG_ENABLE=0 AB_RETRYCOUNT_DISABLE=0 VERIFIED_BOOT_ENABLED=1

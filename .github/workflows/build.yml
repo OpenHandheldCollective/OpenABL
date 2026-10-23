@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Builds every chipset and uploads the images to the tag's release.
+# Builds the Nova's image and uploads it and its recovery zip to the tag's
+# release: those two files and nothing else.
 name: Build
 
 on:
@@ -85,33 +86,12 @@ jobs:
           retention-days: 1
           compression-level: 0
 
-      - name: Archive the sources
-        env:
-          XZ_OPT: -T0
-        run: |
-          src=portare-bios-$TAG
-          mkdir -p "sources/$src" dist
-          git archive HEAD | tar -x -C "sources/$src"
-          for d in edk2 microui qtestsign; do
-            mkdir -p "sources/$src/build/$d"
-            git -C "build/$d" archive HEAD | tar -x -C "sources/$src/build/$d"
-            cp -R "build/$d/.git" "sources/$src/build/$d/"
-            rm -f "sources/$src/build/$d/.git/openabl-patch" "sources/$src/build/$d/.git/index"
-          done
-          tar -C sources -cJf "dist/$src-source.tar.xz" "$src"
-
       - name: Collect the images
         run: |
-          for elf in build/out/abl_signed-*.elf; do
-            name=$(basename "$elf" .elf)$SUFFIX.elf
-            cp "$elf" "dist/$name"
-            (cd dist && sha256sum "$name" > "$name.sha256")
-          done
-          for addon in build/out/openabl-recovery-flashable-*.zip; do
-            name=$(basename "$addon" .zip)$SUFFIX.zip
-            cp "$addon" "dist/$name"
-            (cd dist && sha256sum "$name" > "$name.sha256")
-          done
+          mkdir dist
+          cp build/out/abl_signed-SM8550.elf "dist/abl_signed-SM8550$SUFFIX.elf"
+          cp build/out/openabl-recovery-flashable-sm8550.zip \
+            "dist/openabl-recovery-flashable-sm8550$SUFFIX.zip"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -161,19 +141,10 @@ jobs:
           if [ "$RELEASE" = "$TAG" ]; then
             gh release view "$TAG" > /dev/null 2>&1 ||
               gh release create "$TAG" --verify-tag --title "Portare BIOS $TAG" \
-                --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
+                --notes "For the Retroid Pocket Nova: flash abl_signed-SM8550.elf to abl_a and abl_b, or install openabl-recovery-flashable-sm8550.zip from Android's recovery."
           else
             gh release view "$RELEASE" > /dev/null 2>&1 ||
               gh release create "$RELEASE" --prerelease --target "$COMMIT" --title "Portare BIOS $TAG debug" \
                 --notes "Debug build of $TAG, unreleased: for testing only."
           fi
           gh release upload "$RELEASE" dist/* --clobber
-
-  package:
-    needs: release
-    permissions:
-      contents: write
-    uses: ./.github/workflows/package.yml
-    with:
-      tag: ${{ inputs.tag || github.ref_name }}
-      build: ${{ inputs.build || 'release' }}
