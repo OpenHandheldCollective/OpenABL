@@ -37,6 +37,11 @@
 #define MENU_START_RESULT_FAILED 4u
 // USB host didn't come up (no drive, or XBL kept the core).
 #define MENU_START_RESULT_NO_USB 5u
+// What the boot list picked is on a drive that's gone (the SD card taken
+// out), so nothing was started.
+#define MENU_START_RESULT_PICK_GONE 6u
+// What the boot list picked didn't start, so nothing else was tried.
+#define MENU_START_RESULT_PICK_FAILED 7u
 // Android's start came back.
 #define MENU_START_RESULT_ANDROID_FAILED 0x80u
 

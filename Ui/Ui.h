@@ -91,6 +91,10 @@ typedef enum {
   BOOT_ERROR_ANDROID_FAILED, // booting Android (boot_a/b) returned
   BOOT_ERROR_WIPE_BY_HAND,   // Linux removed, but Android isn't the boot mode
   BOOT_ERROR_UNINSTALL,      // removing Linux failed; ErrorDetail says why
+  // The boot list's pick: its drive is gone, or it didn't start. ErrorDetail
+  // names it, or is empty after a restart.
+  BOOT_ERROR_PICK_GONE,
+  BOOT_ERROR_PICK_FAILED,
 } BOOT_ERROR;
 
 // What the view draws
@@ -137,8 +141,7 @@ typedef enum {
 } ICON;
 
 typedef enum {
-  ITEM_PORTAREOS,
-  ITEM_ANDROID,
+  ITEM_BOOT, // opens the boot list
   ITEM_BOOT_ORDER,
   ITEM_UNINSTALL, // PortareOS, from internal storage
   ITEM_EDL,
@@ -168,13 +171,13 @@ typedef enum {
   SCREEN_MENU,
   SCREEN_SCANNING,
   SCREEN_MODELS,
-  SCREEN_ENTRIES,
+  SCREEN_ENTRIES, // the boot list
   SCREEN_CONFIRM,
   SCREEN_BOOTING,
   SCREEN_ERROR,
-  SCREEN_LINES,      // the device info, or the log
+  SCREEN_LINES,        // the device info, or the log
   SCREEN_UNINSTALLING, // while Linux is removed; takes no input
-  SCREEN_RESTARTING, // into recovery after an uninstall; takes no input
+  SCREEN_RESTARTING,   // into recovery after an uninstall; takes no input
 } SCREEN;
 
 typedef enum {
@@ -207,20 +210,18 @@ typedef enum {
   ENTRY_KIND_EXTLINUX,
   ENTRY_KIND_DEFAULT_FILE,
   ENTRY_KIND_BOOT_IMAGE,
+  ENTRY_KIND_ANDROID, // Android's own boot partitions
 } ENTRY_KIND;
 
-// A boot entry the platform found. Start boots the first.
+// A system the boot list offers: its name, and where it boots from.
 typedef struct _ENTRY_VIEW {
-  CHAR8      Title[96];
+  CHAR8      Title[96];   // the system, such as PortareOS
   CHAR8      Version[64]; // "" for none
   CHAR8      Drive[64];   // the drive's name
   ENTRY_KIND Kind;
-  BOOLEAN    Removable; // the drive is removable
+  BOOLEAN    Removable; // on the SD card, not internal storage
   BOOLEAN    Bad;       // no tries left (Automatic Boot Assessment)
 } ENTRY_VIEW;
-
-// Size for AppEntryDetail's text.
-#define ENTRY_DETAIL_SIZE 192
 
 typedef struct _TEXT_LINE {
   CONST CHAR8 *Label; // "" for a bare line (the log)
@@ -243,6 +244,8 @@ typedef struct _APP {
   BOOLEAN    ConfirmYes;
   BOOT_ERROR Error;
   CHAR8      ErrorDetail[192];
+  // For a failed pick: it was on the SD card.
+  BOOLEAN PickFromSd;
   // What the starting screen and a boot error are about.
   BOOT_TARGET Starting;
   // On the restarting screen: whether recovery was asked to wipe data.
@@ -423,6 +426,16 @@ AppOnUninstalled (
   IN BOOLEAN  Wiped
 );
 
+// After the boot list's pick didn't start: Gone if its drive was missing.
+// Name is the system, "" if unknown (after a restart).
+VOID
+AppOnPickFailed (
+  IN OUT APP     *A,
+  IN BOOLEAN      Gone,
+  IN CONST CHAR8 *Name,
+  IN BOOLEAN      FromSd
+);
+
 // After removing Linux failed: the error screen, with Why as its message.
 VOID
 AppOnUninstallFailed (
@@ -480,22 +493,7 @@ AppItemView (
 CONST CHAR8 *
 AppBootTitle (IN CONST APP *A);
 
-// Writes an entry's version, kind and drive in the current language.
-VOID
-AppEntryDetail (
-  IN CONST ENTRY_VIEW *Entry,
-  OUT CHAR8           *Out,
-  IN UINTN             Cap
-);
 
-// Writes the line under the boot screen's title: the entry's detail, or
-// where the boot looks.
-VOID
-AppBootDetail (
-  IN CONST APP *A,
-  OUT CHAR8    *Out,
-  IN UINTN      Cap
-);
 
 // Returns TRUE during the countdown, with the seconds left rounded up.
 BOOLEAN

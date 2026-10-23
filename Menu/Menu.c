@@ -799,10 +799,19 @@ AddRow (
   }
 }
 
-// Lists what Start would try on the allowed drives, in its order: each
-// drive's entries, then each drive's default file, then the first boot
-// image. Only in Linux boot mode. USB drives are skipped unless USB
-// host is up, since fastboot owns the controller.
+// The name a drive's boot image has in the boot list: PortareOS on its
+// own boot partition, else Linux.
+STATIC CONST CHAR8 *
+BootImageTitle (IN CONST BOOT_ENTRIES_VOLUME *V)
+{
+  return V->Name && AsciiStrEq (V->Name, "PORTAREOS") ? gStrings->PortareOs
+                                                      : "Linux";
+}
+
+// Fills the boot list with every system on internal storage and the SD
+// card, whatever the boot source (which only decides what power-on
+// starts): each drive's entries, then default files, then each drive's
+// boot image, internal drives first; then Android. USB isn't a boot source.
 STATIC VOID
 FillEntries (
   IN MENU_STATE *M,
@@ -812,19 +821,13 @@ FillEntries (
   STATIC ENTRY_VIEW   Views[MAX_ENTRIES];
   VOLUMES_HANDLE_LIST Drives = {0};
   UINTN               Count  = 0;
-  BOOLEAN             Image  = FALSE;
 
   BootEntriesVolumesFree (&mVolumes);
-  if (M->Stored.BootMode == BOOT_MODE_LINUX &&
-      (M->Stored.BootSource != BOOT_SOURCE_USB || UsbHostIsUp ())) {
-    QuirksPrepareStorage (QuirksChipId (), gMenuEfiLog);
-    VolumesAllowed (
-      M->Stored.BootSource, M->Caps.CfwOnInternal, FALSE, &Drives
-    );
-    BootEntriesDiscover (
-      BytesOf (NULL, 0), TRUE, Drives.Items, Drives.Count, FALSE, &mVolumes
-    );
-  }
+  QuirksPrepareStorage (QuirksChipId (), gMenuEfiLog);
+  VolumesAllowed (BOOT_SOURCE_AUTO, M->Caps.CfwOnInternal, FALSE, &Drives);
+  BootEntriesDiscover (
+    BytesOf (NULL, 0), TRUE, Drives.Items, Drives.Count, FALSE, &mVolumes
+  );
   for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
     CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Index];
 
@@ -854,25 +857,30 @@ FillEntries (
       }
     }
   }
-  // Start reaches a boot image only after every drive's entries and
-  // default files.
-  for (UINTN Index = 0; Index < mVolumes.Count && !Image; Index++) {
+  // Each drive's first boot image, as PortareOS boots from one.
+  for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
     for (UINTN Index2 = 0;
-         Index2 < sizeof (gModelsBootImages) / sizeof (*gModelsBootImages) &&
-         !Image;
+         Index2 < sizeof (gModelsBootImages) / sizeof (*gModelsBootImages);
          Index2++) {
       // A file that isn't a valid Android boot image is skipped.
       if (ModelsIsBootImage (
             mVolumes.Items[Index].Fs, gModelsBootImages[Index2]
           )) {
-        // The path without its backslash, such as KERNEL.
         AddRow (
-          Views, &Count, Index, gModelsBootImages[Index2] + 1,
+          Views, &Count, Index, BootImageTitle (&mVolumes.Items[Index]),
           ENTRY_KIND_BOOT_IMAGE, NULL, FALSE, MENU_PICK_BOOT_IMAGE
         );
-        Image = TRUE;
+        break;
       }
     }
+  }
+  // Android boots from its own partitions, not a drive the list scanned.
+  if (M->Caps.Android && Count < MAX_ENTRIES) {
+    Views[Count] = (ENTRY_VIEW){.Kind = ENTRY_KIND_ANDROID};
+    AsciiStrCopy (
+      Views[Count].Title, sizeof (Views[Count].Title), gStrings->Android
+    );
+    mEntryIds[Count++][0] = 0;
   }
   MenuLog ("Boot entries: %llu", (UINT64)Count);
   AppSetEntries (A, Views, Count);
@@ -904,6 +912,11 @@ StartsHere (IN CONST MENU_STATE *M)
 {
   return M->Stored.BootSource != BOOT_SOURCE_USB || UsbLive (M);
 }
+
+// The boot list's last pick and whether it was on the SD card, for its
+// error screen. Gone after a restart.
+STATIC CHAR8   mPicked[sizeof (((ENTRY_VIEW *)0)->Title)];
+STATIC BOOLEAN mPickedFromSd;
 
 // Gets what the menu shows about the last Start Linux. Returns FALSE if
 // there is nothing to show.
@@ -945,6 +958,16 @@ CameBackShown (
   case MENU_START_RESULT_ANDROID_FAILED:
     What   = "Android didn't start";
     *Error = BOOT_ERROR_ANDROID_FAILED;
+    break;
+  case MENU_START_RESULT_PICK_GONE:
+    What    = "the boot list's pick: its drive is gone";
+    *Error  = BOOT_ERROR_PICK_GONE;
+    *Detail = mPicked;
+    break;
+  case MENU_START_RESULT_PICK_FAILED:
+    What    = "the boot list's pick didn't start";
+    *Error  = BOOT_ERROR_PICK_FAILED;
+    *Detail = mPicked;
     break;
   default:
     return FALSE;
@@ -1323,6 +1346,8 @@ RunCommand (
 #ifdef OABL_STANDARD_BOOT
     if (Command.Kind == COMMAND_BOOT_ENTRY &&
         (UINTN)Command.Arg < mApp.EntryCount) {
+      AsciiStrCopy (mPicked, sizeof (mPicked), mApp.Entries[Command.Arg].Title);
+      mPickedFromSd = mApp.Entries[Command.Arg].Removable;
       PickEntry ((UINTN)Command.Arg);
     }
 #endif
@@ -1345,17 +1370,9 @@ RunCommand (
   }
   case COMMAND_SAVE_SETTINGS: {
     SETTINGS     Want    = mApp.Settings;
-    SETTINGS     Was     = M->Stored;
     CONST CHAR8 *Failure = Save (M, &Want);
     AppSetSettings (&mApp, &M->Stored);
     AppSetCaps (&mApp, &M->Caps);
-#ifdef OABL_STANDARD_BOOT
-    // Only these change what Start would try.
-    if (M->Stored.BootMode != Was.BootMode ||
-        M->Stored.BootSource != Was.BootSource) {
-      FillEntries (M, &mApp);
-    }
-#endif
     if (Failure) {
       AppOnFailed (&mApp, Failure);
     }
@@ -1658,7 +1675,13 @@ MenuRun (
     BOOT_ERROR   Error;
     CONST CHAR8 *Detail;
     if (CameBackShown (&M, &Ok, &Error, &Detail)) {
-      AppOnBootResult (&mApp, Ok, Error, Detail);
+      if (Error == BOOT_ERROR_PICK_GONE || Error == BOOT_ERROR_PICK_FAILED) {
+        AppOnPickFailed (
+          &mApp, Error == BOOT_ERROR_PICK_GONE, Detail, mPickedFromSd
+        );
+      } else {
+        AppOnBootResult (&mApp, Ok, Error, Detail);
+      }
     }
   }
   if (StartModels) {

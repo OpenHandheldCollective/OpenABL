@@ -60,9 +60,9 @@ AppInit (
   A->Scheme     = Scheme;
   A->Version    = Version;
   A->Screen     = SCREEN_MENU;
-  A->FocusItem  = ITEM_PORTAREOS;
+  A->FocusItem  = ITEM_BOOT;
   A->LinesTitle = "";
-  A->LinesFrom  = ITEM_PORTAREOS;
+  A->LinesFrom  = ITEM_BOOT;
   A->Booting    = -1;
   A->Dirty      = TRUE;
   LangSet (Settings->Language);
@@ -230,7 +230,7 @@ AppStart (
 COMMAND
 AppOpenModels (IN OUT APP *A)
 {
-  A->FocusItem = ITEM_PORTAREOS;
+  A->FocusItem = ITEM_BOOT;
   A->Screen    = SCREEN_SCANNING;
   A->Dirty     = TRUE;
   return Command (COMMAND_SCAN_MODELS, 0);
@@ -297,6 +297,21 @@ AppOnBootResult (
 }
 
 VOID
+AppOnPickFailed (
+  IN OUT APP     *A,
+  IN BOOLEAN      Gone,
+  IN CONST CHAR8 *Name,
+  IN BOOLEAN      FromSd
+)
+{
+  A->Dirty      = TRUE;
+  A->Screen     = SCREEN_ERROR;
+  A->Error      = Gone ? BOOT_ERROR_PICK_GONE : BOOT_ERROR_PICK_FAILED;
+  A->PickFromSd = FromSd;
+  AsciiStrCopy (A->ErrorDetail, sizeof (A->ErrorDetail), Name);
+}
+
+VOID
 AppOnUninstalled (
   IN OUT APP *A,
   IN BOOLEAN  Restarting,
@@ -346,7 +361,7 @@ AppOnDeviceInfo (
     A->Lines[Index] = Lines[Index];
   }
   A->LineCount = Count;
-  ShowLines (A, gStrings->DeviceInfo, ITEM_PORTAREOS, 0);
+  ShowLines (A, gStrings->DeviceInfo, ITEM_BOOT, 0);
 }
 
 VOID
@@ -367,7 +382,7 @@ AppOnLog (
     );
   }
   A->LineCount = Count;
-  ShowLines (A, gStrings->Log, ITEM_PORTAREOS, Count ? Count - 1 : 0);
+  ShowLines (A, gStrings->Log, ITEM_BOOT, Count ? Count - 1 : 0);
 }
 
 VOID
@@ -438,77 +453,6 @@ AppBootTitle (IN CONST APP *A)
   return Index < A->EntryCount ? A->Entries[Index].Title : NULL;
 }
 
-VOID
-AppEntryDetail (
-  IN CONST ENTRY_VIEW *Entry,
-  OUT CHAR8           *Out,
-  IN UINTN             Cap
-)
-{
-  CONST CHAR8 *Kind = gStrings->BootImage;
-
-  switch (Entry->Kind) {
-  case ENTRY_KIND_BLS:
-    Kind = gStrings->EntryType1;
-    break;
-  case ENTRY_KIND_UKI:
-    Kind = gStrings->EntryUki;
-    break;
-  case ENTRY_KIND_EXTLINUX:
-    Kind = "extlinux.conf";
-    break;
-  case ENTRY_KIND_DEFAULT_FILE:
-    Kind = gStrings->DefaultFile;
-    break;
-  case ENTRY_KIND_BOOT_IMAGE:
-    break;
-  }
-  Out[0] = 0;
-  if (Entry->Version[0]) {
-    AsciiStrAppend (Out, Cap, Entry->Version);
-    AsciiStrAppend (Out, Cap, " \xc2\xb7 ");
-  }
-  AsciiStrAppend (Out, Cap, Kind);
-  AsciiStrAppend (Out, Cap, " \xc2\xb7 ");
-  AsciiStrAppend (Out, Cap, Entry->Drive);
-  AsciiStrAppend (Out, Cap, " (");
-  AsciiStrAppend (
-    Out, Cap,
-    Entry->Removable ? gStrings->RemovableStorage : gStrings->InternalStorage
-  );
-  AsciiStrAppend (Out, Cap, ")");
-}
-
-VOID
-AppBootDetail (
-  IN CONST APP *A,
-  OUT CHAR8    *Out,
-  IN UINTN      Cap
-)
-{
-  UINTN        Index  = A->Booting >= 0 ? (UINTN)A->Booting : 0;
-  CONST CHAR8 *Source = "USB";
-
-  if (Index < A->EntryCount) {
-    AppEntryDetail (&A->Entries[Index], Out, Cap);
-    return;
-  }
-  switch (A->Settings.BootSource) {
-  case BOOT_SOURCE_AUTO:
-    Source = gStrings->SrcFirstDrive;
-    break;
-  case BOOT_SOURCE_INTERNAL:
-    Source = gStrings->SrcInternal;
-    break;
-  case BOOT_SOURCE_SD:
-    Source = gStrings->SrcSd;
-    break;
-  case BOOT_SOURCE_USB:
-    break;
-  }
-  LangFill (Out, Cap, gStrings->LookingOn, &Source, 1);
-}
-
 UINTN
 AppRows (
   IN CONST APP *A,
@@ -521,9 +465,8 @@ AppRows (
 #define ADD_HEADER(Title) (Rows[Count++] = (ROW){.Header = (Title)})
 #define ADD_ITEM(Id)      (Rows[Count++] = (ROW){.Item = (Id)})
   ADD_HEADER (gStrings->SectionStart);
-  ADD_ITEM (ITEM_PORTAREOS);
+  ADD_ITEM (ITEM_BOOT);
   if (Caps->Android) {
-    ADD_ITEM (ITEM_ANDROID);
     ADD_ITEM (ITEM_BOOT_ORDER);
   }
   // Uninstalling gives Android the space back, so it needs Android.
@@ -583,31 +526,6 @@ AppFocusedRow (
   return 1;
 }
 
-// The help line for a system's row: the first of the boot order starts at
-// power-on, the other with Volume Up held.
-STATIC CONST CHAR8 *
-StartHelp (
-  IN CONST APP   *A,
-  IN BOOT_TARGET  Target,
-  OUT CHAR8      *Out,
-  IN UINTN        Cap
-)
-{
-  BOOLEAN      AndroidFirst = A->Settings.BootMode == BOOT_MODE_ANDROID;
-  BOOLEAN      First = (Target == BOOT_TARGET_ANDROID) == AndroidFirst;
-  CONST CHAR8 *Other = Target == BOOT_TARGET_ANDROID ? gStrings->PortareOs
-                                                    : gStrings->Android;
-
-  if (!A->Caps.Android) {
-    return NULL;
-  }
-  if (!First) {
-    return gStrings->HelpSecond;
-  }
-  LangFill (Out, Cap, gStrings->HelpFirst, &Other, 1);
-  return Out;
-}
-
 VOID
 AppItemView (
   IN CONST APP  *A,
@@ -615,25 +533,14 @@ AppItemView (
   OUT ITEM_VIEW *View
 )
 {
-  // Built help lines live here, so they last as long as the caller's view.
-  STATIC CHAR8 Help[2][96];
-  CHAR8       *Value = View->Value;
-  UINTN        Cap   = sizeof (View->Value);
+  CHAR8 *Value = View->Value;
+  UINTN  Cap   = sizeof (View->Value);
 
   *View = (ITEM_VIEW){.Verb = gStrings->VerbSelect};
   switch (Item) {
-  case ITEM_PORTAREOS:
-    View->Label = gStrings->PortareOs;
-    View->Verb  = gStrings->VerbLaunch;
-    AsciiStrCopy (
-      Value, Cap, A->Caps.CfwOnInternal ? gStrings->Internal : gStrings->SdCard
-    );
-    View->Help = StartHelp (A, BOOT_TARGET_PORTAREOS, Help[0], sizeof (Help[0]));
-    break;
-  case ITEM_ANDROID:
-    View->Label = gStrings->Android;
-    View->Verb  = gStrings->VerbLaunch;
-    View->Help  = StartHelp (A, BOOT_TARGET_ANDROID, Help[1], sizeof (Help[1]));
+  case ITEM_BOOT:
+    View->Label = gStrings->Boot;
+    View->Help  = gStrings->HelpBoot;
     break;
   case ITEM_BOOT_ORDER:
     View->Label = gStrings->BootOrder;
@@ -687,10 +594,10 @@ Activate (
   EXPERIMENTS *Experiments = &A->Experiments;
 
   switch (Item) {
-  case ITEM_PORTAREOS:
-    return BeginBoot (A, BOOT_TARGET_PORTAREOS);
-  case ITEM_ANDROID:
-    return BeginBoot (A, BOOT_TARGET_ANDROID);
+  case ITEM_BOOT:
+    A->Screen    = SCREEN_ENTRIES;
+    A->EntryList = (LIST_STATE){0};
+    return None ();
   case ITEM_BOOT_ORDER:
     SettingsToggleBootMode (&A->Settings, &A->Caps);
     return Command (COMMAND_SAVE_SETTINGS, 0);
@@ -789,7 +696,7 @@ STATIC VOID
 LeaveModels (IN OUT APP *A)
 {
   A->Screen    = SCREEN_MENU;
-  A->FocusItem = ITEM_PORTAREOS;
+  A->FocusItem = ITEM_BOOT;
 }
 
 STATIC COMMAND
@@ -843,7 +750,7 @@ STATIC VOID
 LeaveEntries (IN OUT APP *A)
 {
   A->Screen    = SCREEN_MENU;
-  A->FocusItem = ITEM_PORTAREOS;
+  A->FocusItem = ITEM_BOOT;
 }
 
 STATIC COMMAND
@@ -867,6 +774,9 @@ EntriesInput (
     LeaveEntries (A);
     break;
   case INPUT_SELECT:
+    if (Focus < A->EntryCount && A->Entries[Focus].Kind == ENTRY_KIND_ANDROID) {
+      return BeginBoot (A, BOOT_TARGET_ANDROID);
+    }
     if (Focus < A->EntryCount) {
       A->Screen  = SCREEN_BOOTING;
       A->Booting = (INT32)Focus;
