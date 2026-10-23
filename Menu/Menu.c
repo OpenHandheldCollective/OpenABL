@@ -1646,10 +1646,10 @@ STATIC DISPLAY mDisplay;
 
 // The charging screen reads the battery every second, turns the device off
 // once three reads in a row find no charger, and turns the display off a
-// while after the last key.
+// few seconds after it shows or after the last key.
 #define BATTERY_EVERY_MS 1000
 #define UNPLUGGED_READS  3
-#define DARK_AFTER_MS    30000
+#define DARK_AFTER_MS    5000
 // Between its checks the charging screen waits this long with the CPU idle.
 #define CHARGING_IDLE_MS 50
 

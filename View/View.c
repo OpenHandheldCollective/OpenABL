@@ -871,61 +871,52 @@ InstalledDraw (IN CONST APP *A)
 #define GLYPH_FULL      0xDB
 #define GLYPH_LIGHT     0xB0
 #define GLYPH_HALF_LEFT 0xDD
-// Cells inside the battery, 5% of the charge each.
+// The battery's inside: 20 columns, 5% of the charge each, and 3 rows.
 #define BATTERY_CELLS 20
+#define BATTERY_ROWS  3
 
-// The battery in a box, filled to its estimated charge, its tip at the
-// right. Returns the rows it takes.
-STATIC UINT32
-BatteryDraw (
-  IN CONST APP *A,
-  IN UINT32     X,
-  IN UINT32     Y,
-  IN UINT32     Width
-)
-{
-  GRID  *G     = &mView.Grid;
-  UINT32 Cells = Width > BATTERY_CELLS + 3 ? BATTERY_CELLS : Width - 3;
-  UINT32 Full  = (AppBatteryLevel (A) * Cells + 50) / 100;
-
-  GridPutc (G, X, Y, GLYPH_BOX_TL, ATTR_MID);
-  GridPutc (G, X, Y + 1, GLYPH_BOX_V, ATTR_MID);
-  GridPutc (G, X, Y + 2, GLYPH_BOX_BL, ATTR_MID);
-  for (UINT32 Cell = 0; Cell < Cells; Cell++) {
-    GridPutc (G, X + 1 + Cell, Y, GLYPH_RULE, ATTR_MID);
-    GridPutc (
-      G, X + 1 + Cell, Y + 1, Cell < Full ? GLYPH_FULL : GLYPH_LIGHT,
-      Cell < Full ? ATTR_BRIGHT : ATTR_DIM
-    );
-    GridPutc (G, X + 1 + Cell, Y + 2, GLYPH_RULE, ATTR_MID);
-  }
-  GridPutc (G, X + 1 + Cells, Y, GLYPH_BOX_TR, ATTR_MID);
-  GridPutc (G, X + 1 + Cells, Y + 1, GLYPH_BOX_V, ATTR_MID);
-  GridPutc (G, X + 1 + Cells, Y + 2, GLYPH_BOX_BR, ATTR_MID);
-  GridPutc (G, X + 2 + Cells, Y + 1, GLYPH_HALF_LEFT, ATTR_MID);
-  return 3;
-}
-
-// Charging, or that the charger is out, the battery, then what the keys do.
+// The battery and its estimated charge in the middle of an otherwise empty
+// screen, like a charger's. The display goes off a few seconds later.
 STATIC VOID
 ChargingDraw (IN CONST APP *A)
 {
-  UINT32 X, Y, Width;
-  UINT32 Bottom = mView.Grid.Rows - 2;
+  GRID  *G     = &mView.Grid;
+  BOOLEAN Known = A->BatteryKnown && A->BatteryMv;
+  UINT32 Level = AppBatteryLevel (A);
+  UINT32 Full  = Known ? (Level * BATTERY_CELLS + 50) / 100 : 0;
+  // The box, its tip, a blank row and the percent under it.
+  UINT32 X     = G->Cols > BATTERY_CELLS + 3 ? (G->Cols - BATTERY_CELLS - 3) / 2 : 0;
+  UINT32 Y     = G->Rows > BATTERY_ROWS + 4 ? (G->Rows - BATTERY_ROWS - 4) / 2 : 0;
+  UINT32 Right = X + 1 + BATTERY_CELLS;
+  CHAR8  Percent[8];
 
-  HeaderDraw (A, NULL);
-  Block (&X, &Y, &Width);
-  Paragraph (
-    X, &Y, Width, Bottom,
-    A->Charger ? gStrings->Charging : gStrings->ChargerOut, ATTR_BRIGHT, 1
-  );
-  if (A->BatteryKnown && A->BatteryMv) {
-    Y += BatteryDraw (A, X, Y, Width) + 1;
-  } else {
-    Paragraph (X, &Y, Width, Bottom, gStrings->BatteryUnknown, ATTR_TEXT, 1);
+  GridPutc (G, X, Y, GLYPH_BOX_TL, ATTR_MID);
+  GridPutc (G, Right, Y, GLYPH_BOX_TR, ATTR_MID);
+  GridPutc (G, X, Y + BATTERY_ROWS + 1, GLYPH_BOX_BL, ATTR_MID);
+  GridPutc (G, Right, Y + BATTERY_ROWS + 1, GLYPH_BOX_BR, ATTR_MID);
+  for (UINT32 Cell = 0; Cell < BATTERY_CELLS; Cell++) {
+    GridPutc (G, X + 1 + Cell, Y, GLYPH_RULE, ATTR_MID);
+    GridPutc (G, X + 1 + Cell, Y + BATTERY_ROWS + 1, GLYPH_RULE, ATTR_MID);
   }
-  Paragraph (X, &Y, Width, Bottom, gStrings->ChargingHint, ATTR_TEXT, 1);
-  FooterDraw (A, gStrings->VerbLaunch, FALSE);
+  for (UINT32 Row = 1; Row <= BATTERY_ROWS; Row++) {
+    GridPutc (G, X, Y + Row, GLYPH_BOX_V, ATTR_MID);
+    GridPutc (G, Right, Y + Row, GLYPH_BOX_V, ATTR_MID);
+    for (UINT32 Cell = 0; Cell < BATTERY_CELLS; Cell++) {
+      GridPutc (
+        G, X + 1 + Cell, Y + Row, Cell < Full ? GLYPH_FULL : GLYPH_LIGHT,
+        Cell < Full ? ATTR_BRIGHT : ATTR_DIM
+      );
+    }
+  }
+  // The tip, beside the middle row.
+  GridPutc (G, Right + 1, Y + 1 + BATTERY_ROWS / 2, GLYPH_HALF_LEFT, ATTR_MID);
+  if (Known) {
+    SPrint (Percent, sizeof (Percent), "%u%%", Level);
+    GridPuts (
+      G, X + (BATTERY_CELLS + 2 - GridWidth (Percent)) / 2,
+      Y + BATTERY_ROWS + 3, Percent, ATTR_BRIGHT
+    );
+  }
 }
 
 // Frames
