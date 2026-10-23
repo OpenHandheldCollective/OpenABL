@@ -35,8 +35,6 @@
 #include "Boot/BootEntries.h"
 #endif
 
-extern CONST UINT8 gOablAssetFont[];
-extern CONST UINTN gOablAssetFontSize;
 
 // Which model the cached DeviceModelRotation belongs to.
 #define KEY_ROTATION_FOR SETTINGS_KEY_MODEL_ROTATION_FOR
@@ -1576,8 +1574,8 @@ MenuRun (
                   .H       = (UINT32)PanelH,
                   .Present = BlitToPanel,
                   .Now     = NowMs};
-  if (!ViewInit (&Panel, gOablAssetFont, gOablAssetFontSize)) {
-    MenuHostLog (&M.Host, "openabl-menu: the font didn't load");
+  if (!ViewInit (&Panel)) {
+    MenuHostLog (&M.Host, "openabl-menu: no memory for the view");
     ViewDone ();
     return (MENU_END){MENU_END_FAILED, EFI_LOAD_ERROR};
   }

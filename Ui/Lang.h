@@ -159,6 +159,31 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *EntryUki;
   CONST CHAR8 *InternalStorage;
   CONST CHAR8 *RemovableStorage;
+  // BIOS
+  CONST CHAR8 *SectionStart;
+  CONST CHAR8 *SectionStorage;
+  CONST CHAR8 *PortareOs;
+  CONST CHAR8 *Android;
+  CONST CHAR8 *BootOrder;
+  CONST CHAR8 *UninstallPortareOs;
+  CONST CHAR8 *Restart;
+  CONST CHAR8 *ShutDown;
+  CONST CHAR8 *OrderPortareOsFirst;
+  CONST CHAR8 *OrderAndroidFirst;
+  CONST CHAR8 *HelpFirst;
+  CONST CHAR8 *HelpSecond;
+  CONST CHAR8 *HelpBootOrder;
+  CONST CHAR8 *HelpUninstall;
+  CONST CHAR8 *HelpEdl;
+  CONST CHAR8 *KeyPower;
+  CONST CHAR8 *KeyVolume;
+  CONST CHAR8 *KeyEnter;
+  CONST CHAR8 *KeyArrows;
+  CONST CHAR8 *VerbLaunch;
+  CONST CHAR8 *VerbChange;
+  CONST CHAR8 *VerbSelect;
+  CONST CHAR8 *VerbMenu;
+  CONST CHAR8 *VerbMove;
 } LANG_STRINGS;
 
 // Strings in the current language, English until LangSet.

@@ -60,9 +60,9 @@ AppInit (
   A->Scheme     = Scheme;
   A->Version    = Version;
   A->Screen     = SCREEN_MENU;
-  A->FocusItem  = ITEM_START;
+  A->FocusItem  = ITEM_PORTAREOS;
   A->LinesTitle = "";
-  A->LinesFrom  = ITEM_DEVICE_INFO;
+  A->LinesFrom  = ITEM_PORTAREOS;
   A->Booting    = -1;
   A->Dirty      = TRUE;
   LangSet (Settings->Language);
@@ -183,20 +183,28 @@ ShowToast (
   A->Dirty      = TRUE;
 }
 
-// Starts the boot from the menu. Shows the error screen instead when
-// Android is chosen but can't be booted here.
+// Starts Target: PortareOS, Android, or the first of the boot order. Shows
+// the error screen instead when Android can't be booted here.
 STATIC COMMAND
-BeginBoot (IN OUT APP *A)
+BeginBoot (
+  IN OUT APP *A,
+  IN BOOT_TARGET Target
+)
 {
-  if (A->Settings.BootMode == BOOT_MODE_ANDROID && !A->Caps.Android) {
+  if (Target == BOOT_TARGET_ORDER) {
+    Target = A->Settings.BootMode == BOOT_MODE_ANDROID ? BOOT_TARGET_ANDROID
+                                                       : BOOT_TARGET_PORTAREOS;
+  }
+  A->Starting = Target;
+  A->Dirty    = TRUE;
+  if (Target == BOOT_TARGET_ANDROID && !A->Caps.Android) {
     A->Screen = SCREEN_ERROR;
     A->Error  = BOOT_ERROR_ANDROID;
     return None ();
   }
   A->Screen  = SCREEN_BOOTING;
   A->Booting = -1;
-  A->Dirty   = TRUE;
-  return Command (COMMAND_BOOT, 0);
+  return Command (COMMAND_BOOT, Target);
 }
 
 COMMAND
@@ -212,7 +220,7 @@ AppStart (
     return None ();
   }
   if (A->Settings.MenuTimeoutS == 0) {
-    return BeginBoot (A);
+    return BeginBoot (A, BOOT_TARGET_ORDER);
   }
   A->Countdown      = TRUE;
   A->CountdownUntil = Now + (UINT64)A->Settings.MenuTimeoutS * 1000;
@@ -222,7 +230,7 @@ AppStart (
 COMMAND
 AppOpenModels (IN OUT APP *A)
 {
-  A->FocusItem = ITEM_MODEL;
+  A->FocusItem = ITEM_PORTAREOS;
   A->Screen    = SCREEN_SCANNING;
   A->Dirty     = TRUE;
   return Command (COMMAND_SCAN_MODELS, 0);
@@ -242,7 +250,7 @@ AppTick (
   if (A->Countdown) {
     if (Now >= A->CountdownUntil) {
       A->Countdown = FALSE;
-      return BeginBoot (A);
+      return BeginBoot (A, BOOT_TARGET_ORDER);
     }
     UINT64 Seconds = (A->CountdownUntil - Now + 999) / 1000;
     if (A->ShownCountdown != Seconds) {
@@ -338,7 +346,7 @@ AppOnDeviceInfo (
     A->Lines[Index] = Lines[Index];
   }
   A->LineCount = Count;
-  ShowLines (A, gStrings->DeviceInfo, ITEM_DEVICE_INFO, 0);
+  ShowLines (A, gStrings->DeviceInfo, ITEM_PORTAREOS, 0);
 }
 
 VOID
@@ -359,7 +367,7 @@ AppOnLog (
     );
   }
   A->LineCount = Count;
-  ShowLines (A, gStrings->Log, ITEM_LOG, Count ? Count - 1 : 0);
+  ShowLines (A, gStrings->Log, ITEM_PORTAREOS, Count ? Count - 1 : 0);
 }
 
 VOID
@@ -507,44 +515,26 @@ AppRows (
   OUT ROW      *Rows
 )
 {
-  CONST SETTINGS      *Settings = &A->Settings;
-  CONST SETTINGS_CAPS *Caps     = &A->Caps;
-  UINTN                Count    = 0;
+  CONST SETTINGS_CAPS *Caps  = &A->Caps;
+  UINTN                Count = 0;
 
 #define ADD_HEADER(Title) (Rows[Count++] = (ROW){.Header = (Title)})
 #define ADD_ITEM(Id)      (Rows[Count++] = (ROW){.Item = (Id)})
-  ADD_HEADER (gStrings->SectionBoot);
-  ADD_ITEM (ITEM_START);
-  // With one entry, Start already boots it and names it.
-  if (A->EntryCount > 1) {
-    ADD_ITEM (ITEM_ENTRIES);
+  ADD_HEADER (gStrings->SectionStart);
+  ADD_ITEM (ITEM_PORTAREOS);
+  if (Caps->Android) {
+    ADD_ITEM (ITEM_ANDROID);
+    ADD_ITEM (ITEM_BOOT_ORDER);
   }
-  ADD_ITEM (ITEM_RESTART_LOADER);
-  ADD_ITEM (ITEM_RECOVERY);
+  // Uninstalling gives Android the space back, so it needs Android.
+  if (Caps->Android && Caps->CfwOnInternal) {
+    ADD_HEADER (gStrings->SectionStorage);
+    ADD_ITEM (ITEM_UNINSTALL);
+  }
+  ADD_HEADER (gStrings->SectionSystem);
   ADD_ITEM (ITEM_EDL);
-  if (Caps->AlternateSlot) {
-    ADD_ITEM (ITEM_OTHER_SLOT);
-  }
-  ADD_HEADER (gStrings->SectionSettings);
-  // First, so it is easy to find in a language one can't read.
-  ADD_ITEM (ITEM_LANGUAGE);
-  // Without Android support the row stays visible, read-only, so it's
-  // clear where the choice went.
-  ADD_ITEM (ITEM_BOOT_MODE);
-  ADD_ITEM (ITEM_ABL_MODE);
-  ADD_ITEM (ITEM_ALT_VOLUME_UP);
-  if (SettingsBootSourceVisible (Settings, Caps)) {
-    ADD_ITEM (ITEM_BOOT_SOURCE);
-  }
-  ADD_ITEM (ITEM_CHARGING);
-  ADD_ITEM (ITEM_ROTATION);
-  ADD_ITEM (ITEM_CUSTOM_LOGO);
-  if (!Caps->Embedded) {
-    ADD_ITEM (ITEM_TIMEOUT);
-  }
-  if (SettingsModelVisible (Settings)) {
-    ADD_ITEM (ITEM_MODEL);
-  }
+  ADD_ITEM (ITEM_RESTART);
+  ADD_ITEM (ITEM_POWER_OFF);
   // Experiments, in debug builds only.
   if (A->Debug && Caps->Embedded) {
     ADD_HEADER (gStrings->SectionDebug);
@@ -554,17 +544,6 @@ AppRows (
     ADD_ITEM (ITEM_QUIESCE);
     ADD_ITEM (ITEM_PANEL_LINES);
   }
-  ADD_HEADER (gStrings->SectionSystem);
-  if (Caps->Log) {
-    ADD_ITEM (ITEM_LOG);
-  }
-  if (Caps->DeviceInfo) {
-    ADD_ITEM (ITEM_DEVICE_INFO);
-  }
-  if (Caps->CfwOnInternal) {
-    ADD_ITEM (ITEM_UNINSTALL);
-  }
-  ADD_ITEM (ITEM_POWER_OFF);
 #undef ADD_HEADER
 #undef ADD_ITEM
   return Count;
@@ -604,35 +583,29 @@ AppFocusedRow (
   return 1;
 }
 
-// What volume up does at boot, as shown in the menu.
+// The help line for a system's row: the first of the boot order starts at
+// power-on, the other with Volume Up held.
 STATIC CONST CHAR8 *
-AltVolumeLabel (IN CONST APP *A)
-{
-  if (A->Settings.AltVolumeUp) {
-    return gStrings->VolLinuxExternal;
-  }
-  return A->Settings.BootMode == BOOT_MODE_ANDROID ? gStrings->VolRecovery
-                                                   : "Android";
-}
-
-// Formats the rotation value: the degrees, or Auto and what it resolves to.
-STATIC VOID
-RotationLabel (
-  IN CONST APP *A,
-  OUT CHAR8    *Out,
-  IN UINTN      Cap
+StartHelp (
+  IN CONST APP   *A,
+  IN BOOT_TARGET  Target,
+  OUT CHAR8      *Out,
+  IN UINTN        Cap
 )
 {
-  CHAR8 Degrees[8];
+  BOOLEAN      AndroidFirst = A->Settings.BootMode == BOOT_MODE_ANDROID;
+  BOOLEAN      First = (Target == BOOT_TARGET_ANDROID) == AndroidFirst;
+  CONST CHAR8 *Other = Target == BOOT_TARGET_ANDROID ? gStrings->PortareOs
+                                                    : gStrings->Android;
 
-  if (A->Settings.Rotation == ROTATION_AUTO) {
-    CONST CHAR8 *Arg = Degrees;
-    AsciiStrFromU64 (Degrees, sizeof (Degrees), AppDesiredRotation (A));
-    LangFill (Out, Cap, gStrings->RotationAuto, &Arg, 1);
-  } else {
-    AsciiStrFromU64 (Out, Cap, A->Settings.Rotation);
-    AsciiStrAppend (Out, Cap, "°");
+  if (!A->Caps.Android) {
+    return NULL;
   }
+  if (!First) {
+    return gStrings->HelpSecond;
+  }
+  LangFill (Out, Cap, gStrings->HelpFirst, &Other, 1);
+  return Out;
 }
 
 VOID
@@ -642,142 +615,49 @@ AppItemView (
   OUT ITEM_VIEW *View
 )
 {
-  CONST SETTINGS *Settings = &A->Settings;
-  CHAR8          *Value    = View->Value;
-  UINTN           Cap      = sizeof (View->Value);
+  // Built help lines live here, so they last as long as the caller's view.
+  STATIC CHAR8 Help[2][96];
+  CHAR8       *Value = View->Value;
+  UINTN        Cap   = sizeof (View->Value);
 
-  *View = (ITEM_VIEW){.Tone = TONE_NORMAL, .Trailing = TRAILING_CYCLE};
+  *View = (ITEM_VIEW){.Verb = gStrings->VerbSelect};
   switch (Item) {
-  case ITEM_START:
-    View->Icon     = ICON_PLAY;
-    View->Tone     = TONE_PRIMARY;
-    View->Trailing = TRAILING_NONE;
-    if (Settings->BootMode == BOOT_MODE_LINUX && A->EntryCount) {
-      View->Label = gStrings->Start;
-      AsciiStrCopy (Value, Cap, A->Entries[0].Title);
-    } else {
-      View->Label = Settings->BootMode == BOOT_MODE_ANDROID
-                      ? gStrings->StartAndroid
-                      : gStrings->StartLinux;
-    }
-    break;
-  case ITEM_ENTRIES:
-    View->Icon  = ICON_STACK;
-    View->Label = gStrings->BootEntries;
-    AsciiStrFromU64 (Value, Cap, A->EntryCount);
-    View->Trailing = TRAILING_NAVIGATE;
-    break;
-  case ITEM_RESTART_LOADER:
-    View->Icon     = ICON_REFRESH;
-    View->Label    = gStrings->RestartBootloader;
-    View->Trailing = TRAILING_NONE;
-    break;
-  case ITEM_RECOVERY:
-    View->Icon     = ICON_LIFEBUOY;
-    View->Label    = gStrings->RecoveryMode;
-    View->Trailing = TRAILING_NONE;
-    break;
-  case ITEM_EDL:
-    View->Icon     = ICON_CPU;
-    View->Label    = gStrings->Edl;
-    View->Trailing = TRAILING_NAVIGATE;
-    break;
-  case ITEM_OTHER_SLOT:
-    View->Icon     = ICON_SWITCH;
-    View->Label    = gStrings->OtherSlot;
-    View->Tone     = TONE_DANGER;
-    View->Trailing = TRAILING_NONE;
-    break;
-  case ITEM_LANGUAGE:
-    View->Icon  = ICON_SWITCH;
-    View->Label = gStrings->Language;
-    AsciiStrCopy (Value, Cap, LangName (Settings->Language));
-    break;
-  case ITEM_BOOT_MODE:
-    View->Icon  = ICON_FORK;
-    View->Label = gStrings->BootMode;
+  case ITEM_PORTAREOS:
+    View->Label = gStrings->PortareOs;
+    View->Verb  = gStrings->VerbLaunch;
     AsciiStrCopy (
-      Value, Cap, Settings->BootMode == BOOT_MODE_ANDROID ? "Android" : "Linux"
+      Value, Cap, A->Caps.CfwOnInternal ? gStrings->Internal : gStrings->SdCard
     );
-    View->Trailing = A->Caps.Android ? TRAILING_CYCLE : TRAILING_NONE;
+    View->Help = StartHelp (A, BOOT_TARGET_PORTAREOS, Help[0], sizeof (Help[0]));
     break;
-  case ITEM_ABL_MODE:
-    View->Icon  = ICON_MESSAGE;
-    View->Label = gStrings->AblMode;
+  case ITEM_ANDROID:
+    View->Label = gStrings->Android;
+    View->Verb  = gStrings->VerbLaunch;
+    View->Help  = StartHelp (A, BOOT_TARGET_ANDROID, Help[1], sizeof (Help[1]));
+    break;
+  case ITEM_BOOT_ORDER:
+    View->Label = gStrings->BootOrder;
+    View->Verb  = gStrings->VerbChange;
+    View->Help  = gStrings->HelpBootOrder;
     AsciiStrCopy (
       Value, Cap,
-      Settings->AblMode == ABL_MODE_VERBOSE ? gStrings->Verbose
-                                            : gStrings->Silent
+      A->Settings.BootMode == BOOT_MODE_ANDROID ? gStrings->OrderAndroidFirst
+                                                : gStrings->OrderPortareOsFirst
     );
-    break;
-  case ITEM_ALT_VOLUME_UP:
-    View->Icon  = ICON_VOLUME;
-    View->Label = gStrings->VolumeUp;
-    AsciiStrCopy (Value, Cap, AltVolumeLabel (A));
-    break;
-  case ITEM_BOOT_SOURCE: {
-    STATIC CONST CHAR8 *CONST Usb       = "USB";
-    CONST CHAR8 *CONST        Sources[] = {gStrings->Auto, gStrings->Internal,
-                                           gStrings->SdCard, Usb};
-    View->Icon                          = ICON_SD_CARD;
-    View->Label                         = gStrings->BootSource;
-    AsciiStrCopy (Value, Cap, Sources[Settings->BootSource]);
-    break;
-  }
-  case ITEM_CHARGING:
-    View->Icon  = ICON_BATTERY;
-    View->Label = gStrings->Charging;
-    AsciiStrCopy (
-      Value, Cap, Settings->OffmodeCharging ? gStrings->On : gStrings->Off
-    );
-    break;
-  case ITEM_ROTATION:
-    View->Icon  = ICON_ROTATE;
-    View->Label = gStrings->Rotation;
-    RotationLabel (A, Value, Cap);
-    break;
-  case ITEM_CUSTOM_LOGO:
-    View->Icon  = ICON_PHOTO;
-    View->Label = gStrings->CustomLogo;
-    AsciiStrCopy (
-      Value, Cap, Settings->CustomLogo ? gStrings->On : gStrings->Off
-    );
-    break;
-  case ITEM_TIMEOUT:
-    View->Icon  = ICON_CLOCK;
-    View->Label = gStrings->Timeout;
-    if (Settings->MenuTimeoutS == 0) {
-      AsciiStrCopy (Value, Cap, gStrings->Off);
-    } else {
-      CHAR8        Seconds[4];
-      CONST CHAR8 *Arg = Seconds;
-      AsciiStrFromU64 (Seconds, sizeof (Seconds), Settings->MenuTimeoutS);
-      LangFill (Value, Cap, gStrings->Seconds, &Arg, 1);
-    }
-    break;
-  case ITEM_MODEL:
-    View->Icon  = ICON_GAMEPAD;
-    View->Label = gStrings->DeviceModel;
-    AsciiStrCopy (
-      Value, Cap, Settings->Model[0] ? Settings->Model : gStrings->NotSet
-    );
-    View->Trailing = TRAILING_NAVIGATE;
     break;
   case ITEM_UNINSTALL:
-    View->Icon     = ICON_TRASH;
-    View->Label    = gStrings->UninstallCfw;
-    View->Tone     = TONE_DANGER;
-    View->Trailing = TRAILING_NAVIGATE;
+    View->Label = gStrings->UninstallPortareOs;
+    View->Help  = gStrings->HelpUninstall;
     break;
-  case ITEM_DEVICE_INFO:
-    View->Icon     = ICON_INFO;
-    View->Label    = gStrings->DeviceInfo;
-    View->Trailing = TRAILING_NAVIGATE;
+  case ITEM_EDL:
+    View->Label = gStrings->Edl;
+    View->Help  = gStrings->HelpEdl;
     break;
-  case ITEM_LOG:
-    View->Icon     = ICON_TERMINAL;
-    View->Label    = gStrings->Log;
-    View->Trailing = TRAILING_NAVIGATE;
+  case ITEM_RESTART:
+    View->Label = gStrings->Restart;
+    break;
+  case ITEM_POWER_OFF:
+    View->Label = gStrings->ShutDown;
     break;
   case ITEM_USB_LIVE:
   case ITEM_QUIESCE:
@@ -785,20 +665,13 @@ AppItemView (
     BOOLEAN On  = Item == ITEM_USB_LIVE  ? A->Experiments.UsbLive
                   : Item == ITEM_QUIESCE ? A->Experiments.Quiesce
                                          : A->Experiments.PanelLinesOff;
-    View->Icon  = Item == ITEM_USB_LIVE  ? ICON_USB
-                  : Item == ITEM_QUIESCE ? ICON_MONITOR_OFF
-                                         : ICON_PLUG;
     View->Label = Item == ITEM_USB_LIVE  ? gStrings->DbgUsbLive
                   : Item == ITEM_QUIESCE ? gStrings->DbgQuiesce
                                          : gStrings->DbgPanelLines;
+    View->Verb  = gStrings->VerbChange;
     AsciiStrCopy (Value, Cap, On ? gStrings->On : gStrings->Off);
     break;
   }
-  case ITEM_POWER_OFF:
-    View->Icon     = ICON_POWER;
-    View->Label    = gStrings->PowerOff;
-    View->Trailing = TRAILING_NONE;
-    break;
   }
 }
 
@@ -811,72 +684,30 @@ Activate (
   IN ITEM     Item
 )
 {
-  SETTINGS    *Settings    = &A->Settings;
   EXPERIMENTS *Experiments = &A->Experiments;
 
   switch (Item) {
-  case ITEM_START:
-    return BeginBoot (A);
-  case ITEM_ENTRIES:
-    A->Screen    = SCREEN_ENTRIES;
-    A->EntryList = (LIST_STATE){0};
-    return None ();
-  case ITEM_RESTART_LOADER:
-    return Command (COMMAND_REBOOT, REBOOT_LOADER);
-  case ITEM_RECOVERY:
-    return Command (COMMAND_REBOOT, REBOOT_RECOVERY);
-  case ITEM_OTHER_SLOT:
-    return Command (COMMAND_REBOOT, REBOOT_OTHER_SLOT);
-  case ITEM_EDL:
-    A->Screen     = SCREEN_CONFIRM;
-    A->Confirm    = CONFIRM_EDL;
-    A->ConfirmYes = FALSE;
-    return None ();
-  case ITEM_LANGUAGE:
-    SettingsNextLanguage (Settings);
-    LangSet (Settings->Language);
+  case ITEM_PORTAREOS:
+    return BeginBoot (A, BOOT_TARGET_PORTAREOS);
+  case ITEM_ANDROID:
+    return BeginBoot (A, BOOT_TARGET_ANDROID);
+  case ITEM_BOOT_ORDER:
+    SettingsToggleBootMode (&A->Settings, &A->Caps);
     return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_BOOT_MODE:
-    if (!A->Caps.Android) {
-      ShowToast (A, gStrings->ToastAndroidInAbl);
-      return None ();
-    }
-    SettingsToggleBootMode (Settings, &A->Caps);
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_ABL_MODE:
-    Settings->AblMode =
-      Settings->AblMode == ABL_MODE_SILENT ? ABL_MODE_VERBOSE : ABL_MODE_SILENT;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_ALT_VOLUME_UP:
-    Settings->AltVolumeUp = !Settings->AltVolumeUp;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_BOOT_SOURCE:
-    SettingsNextBootSource (Settings, &A->Caps);
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_CHARGING:
-    Settings->OffmodeCharging = !Settings->OffmodeCharging;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_ROTATION:
-    SettingsNextRotation (Settings);
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_CUSTOM_LOGO:
-    Settings->CustomLogo = !Settings->CustomLogo;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_TIMEOUT:
-    SettingsNextTimeout (Settings);
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_MODEL:
-    A->Screen = SCREEN_SCANNING;
-    return Command (COMMAND_SCAN_MODELS, 0);
   case ITEM_UNINSTALL:
     A->Screen     = SCREEN_CONFIRM;
     A->Confirm    = CONFIRM_UNINSTALL;
     A->ConfirmYes = FALSE;
     return None ();
-  case ITEM_DEVICE_INFO:
-    return Command (COMMAND_DEVICE_INFO, 0);
-  case ITEM_LOG:
-    return Command (COMMAND_LOG, 0);
+  case ITEM_EDL:
+    A->Screen     = SCREEN_CONFIRM;
+    A->Confirm    = CONFIRM_EDL;
+    A->ConfirmYes = FALSE;
+    return None ();
+  case ITEM_RESTART:
+    return Command (COMMAND_REBOOT, REBOOT_NORMAL);
+  case ITEM_POWER_OFF:
+    return Command (COMMAND_POWER_OFF, 0);
   case ITEM_USB_LIVE:
   case ITEM_QUIESCE:
   case ITEM_PANEL_LINES: {
@@ -891,8 +722,6 @@ Activate (
     Save.Experiments = *Experiments;
     return Save;
   }
-  case ITEM_POWER_OFF:
-    return Command (COMMAND_POWER_OFF, 0);
   }
   return None ();
 }
@@ -960,7 +789,7 @@ STATIC VOID
 LeaveModels (IN OUT APP *A)
 {
   A->Screen    = SCREEN_MENU;
-  A->FocusItem = ITEM_MODEL;
+  A->FocusItem = ITEM_PORTAREOS;
 }
 
 STATIC COMMAND
@@ -1014,7 +843,7 @@ STATIC VOID
 LeaveEntries (IN OUT APP *A)
 {
   A->Screen    = SCREEN_MENU;
-  A->FocusItem = ITEM_ENTRIES;
+  A->FocusItem = ITEM_PORTAREOS;
 }
 
 STATIC COMMAND
@@ -1049,8 +878,7 @@ EntriesInput (
   return None ();
 }
 
-// Up and down switch between Cancel and the action; Back cancels. Yes on
-// the first uninstall card shows the second, with Cancel picked again.
+// Up and down switch between Cancel and the action; Back cancels.
 STATIC COMMAND
 ConfirmInput (
   IN OUT APP *A,
@@ -1071,12 +899,6 @@ ConfirmInput (
       return None ();
     }
     if (A->Confirm == CONFIRM_UNINSTALL) {
-      A->Screen     = SCREEN_CONFIRM;
-      A->Confirm    = CONFIRM_UNINSTALL_FINAL;
-      A->ConfirmYes = FALSE;
-      return None ();
-    }
-    if (A->Confirm == CONFIRM_UNINSTALL_FINAL) {
       A->Screen = SCREEN_UNINSTALLING;
       return Command (COMMAND_UNINSTALL_CFW, 0);
     }

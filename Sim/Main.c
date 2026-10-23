@@ -27,8 +27,6 @@
 #include "Ui/Ui.h"
 #include "View/View.h"
 
-extern CONST UINT8 gOablAssetFont[];
-extern CONST UINTN gOablAssetFontSize;
 
 STATIC CONST INT32 mPanels[][2] = {{1080, 1920}, {960, 1280},  {720, 1280},
                                    {1440, 2560}, {1920, 1080}, {1240, 1080},
@@ -161,27 +159,10 @@ SampleModels (OUT CONST MODEL **Models)
   return sizeof (mModels) / sizeof (mModels[0]);
 }
 
-// The entries of a card with a Linux image, a UKI and a fallback kernel.
-STATIC CONST ENTRY_VIEW mEntries[] = {
-  {"Linux", "20261003", "Linux", ENTRY_KIND_BLS, TRUE, FALSE},
-  {"Linux (previous)", "20260901", "Linux", ENTRY_KIND_BLS, TRUE, FALSE},
-  {"Debian GNU/Linux 13", "6.12", "ESP", ENTRY_KIND_UKI, FALSE, FALSE},
-  {"Linux nightly", "20261004", "Linux", ENTRY_KIND_BLS, TRUE, TRUE},
-  {"Recovery shell", "", "Linux", ENTRY_KIND_EXTLINUX, TRUE, FALSE},
-  {"KERNEL", "", "Linux", ENTRY_KIND_BOOT_IMAGE, TRUE, FALSE},
-};
-
-STATIC UINTN
-SampleEntries (OUT CONST ENTRY_VIEW **Entries)
-{
-  *Entries = mEntries;
-  return sizeof (mEntries) / sizeof (mEntries[0]);
-}
-
-// Linux's partitions on internal storage, as a ROCKNIX install leaves them.
+// PortareOS's partitions on internal storage, shown as 2.1 GB and 105 GB.
 STATIC CONST GPT_CFW_PART mCfwParts[] = {
-  {"ROCKNIX", 2ULL << 30},
-  {"STORAGE", 48ULL << 30},
+  {"PORTAREOS", 2ULL << 30},
+  {"PORTAREOS_STOR", 98ULL << 30},
 };
 
 // Screens
@@ -236,34 +217,46 @@ SCountdown (
   AppTick (A, Now + 1200);
 }
 
-// Values too long for the info card's boxes, shrunk to fit: an SoC name as
-// the ABL reports it and a long device model name.
+// After Uninstall Android: only PortareOS starts, and nothing is left to
+// uninstall.
 STATIC VOID
-SLongValues (
+SNoAndroid (
   IN OUT APP *A,
   IN UINT64   Now
 )
 {
-  SETTINGS      Settings = A->Settings;
-  DEVICE_INFO   Info;
   SETTINGS_CAPS Caps = SampleCaps ();
-  AsciiStrCopy (
-    Settings.Model, sizeof (Settings.Model), "Retroid Pocket Flip2 Visionox"
-  );
-  SampleInfo (&Info);
-  AsciiStrCopy (Info.Soc, sizeof (Info.Soc), "Dragonwing QCS8550");
-  AppInit (A, &Settings, &Caps, &Info, SCHEME_HANDHELD, MENU_VERSION);
-  AppStart (A, Now, TRUE);
+
+  (VOID)Now;
+  Caps.Android = FALSE;
+  AppSetCaps (A, &Caps);
 }
 
+// What Boot order does, and the CHANGE it takes.
+STATIC VOID
+SBootOrder (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppInput (A, INPUT_DOWN);
+  AppInput (A, INPUT_DOWN);
+}
+
+// A debug build's menu doesn't fit, so it scrolls to the last item.
 STATIC VOID
 SScrolled (
   IN OUT APP *A,
   IN UINT64   Now
 )
 {
+  SETTINGS_CAPS Caps = SampleCaps ();
+
   (VOID)Now;
-  AppInput (A, INPUT_UP);
+  Caps.Embedded = TRUE;
+  AppSetCaps (A, &Caps);
+  A->Debug = TRUE;
   AppInput (A, INPUT_UP);
 }
 
@@ -280,6 +273,7 @@ SModels (
   AppInput (A, INPUT_DOWN);
 }
 
+// Uninstall PortareOS, with Cancel picked.
 STATIC VOID
 SConfirmUninstall (
   IN OUT APP *A,
@@ -287,23 +281,13 @@ SConfirmUninstall (
 )
 {
   (VOID)Now;
-  AppInput (A, INPUT_UP);
-  AppInput (A, INPUT_UP);
+  for (INT32 Index = 0; Index < 3; Index++) {
+    AppInput (A, INPUT_DOWN);
+  }
   AppInput (A, INPUT_SELECT);
 }
 
-// Past the first card, to the second with Cancel picked.
-STATIC VOID
-SConfirmUninstallFinal (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  SConfirmUninstall (A, Now);
-  AppInput (A, INPUT_DOWN);
-  AppInput (A, INPUT_SELECT);
-}
-
+// Emergency download mode, with Enter EDL picked.
 STATIC VOID
 SConfirmEdl (
   IN OUT APP *A,
@@ -311,7 +295,7 @@ SConfirmEdl (
 )
 {
   (VOID)Now;
-  for (INT32 Index = 0; Index < 3; Index++) {
+  for (INT32 Index = 0; Index < 4; Index++) {
     AppInput (A, INPUT_DOWN);
   }
   AppInput (A, INPUT_SELECT);
@@ -325,6 +309,17 @@ SBooting (
 )
 {
   (VOID)Now;
+  AppInput (A, INPUT_SELECT);
+}
+
+STATIC VOID
+SBootingAndroid (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppInput (A, INPUT_DOWN);
   AppInput (A, INPUT_SELECT);
 }
 
@@ -349,14 +344,14 @@ SRestarting (
   AppOnUninstalled (A, TRUE, TRUE);
 }
 
-// Past the second card with Erase picked, while the table is rewritten.
+// With Uninstall picked, while the table is rewritten.
 STATIC VOID
 SUninstalling (
   IN OUT APP *A,
   IN UINT64   Now
 )
 {
-  SConfirmUninstallFinal (A, Now);
+  SConfirmUninstall (A, Now);
   AppInput (A, INPUT_DOWN);
   AppInput (A, INPUT_SELECT);
 }
@@ -407,43 +402,20 @@ SToast (
   AppNotify (A, "Settings saved");
 }
 
-STATIC VOID
-SMenuEntries (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  CONST ENTRY_VIEW *Entries;
-  UINTN             Count = SampleEntries (&Entries);
-  (VOID)Now;
-  AppSetEntries (A, Entries, Count);
-}
-
-STATIC VOID
-SEntries (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  SMenuEntries (A, Now);
-  AppInput (A, INPUT_DOWN);
-  AppInput (A, INPUT_SELECT);
-  AppInput (A, INPUT_DOWN);
-}
-
 STATIC CONST struct {
   CONST CHAR8  *Name;
   SESSION_SETUP Setup;
 } mScreens[] = {
   {"menu", SMenu},
   {"menu-countdown", SCountdown},
-  {"menu-long-values", SLongValues},
+  {"menu-no-android", SNoAndroid},
+  {"menu-boot-order", SBootOrder},
   {"menu-scrolled", SScrolled},
   {"models", SModels},
   {"confirm-uninstall", SConfirmUninstall},
-  {"confirm-uninstall-final", SConfirmUninstallFinal},
   {"confirm-edl", SConfirmEdl},
   {"booting", SBooting},
+  {"booting-android", SBootingAndroid},
   {"error-no-image", SErrorNoImage},
   {"error-model", SErrorModel},
   {"uninstalling", SUninstalling},
@@ -451,8 +423,6 @@ STATIC CONST struct {
   {"error-uninstall", SErrorUninstall},
   {"error-wipe-by-hand", SErrorWipeByHand},
   {"toast", SToast},
-  {"menu-entries", SMenuEntries},
-  {"entries", SEntries},
 };
 
 STATIC APP mApp;
@@ -491,7 +461,7 @@ Render (
                       .Present = BlitToPanel,
                       .Now     = Tick,
                       .Logical = mLogical};
-  if (!ViewInit (&Panel, gOablAssetFont, gOablAssetFontSize)) {
+  if (!ViewInit (&Panel)) {
     fprintf (stderr, "the view didn't start\n");
     exit (1);
   }
@@ -544,7 +514,6 @@ typedef enum {
   STEP_SCAN,
   STEP_BOOT_ERROR,
   STEP_FRESH,
-  STEP_ENTRIES,
   STEP_ROTATE
 } STEP_KIND;
 
@@ -557,6 +526,7 @@ typedef struct _STEP {
 #define PRESS(Key, Count) {STEP_KEY, INPUT_##Key, Count}
 // Presses 40 ms apart, like a held key, so each lands mid-animation.
 #define PRESS_FAST(Key, Count) {STEP_FAST, INPUT_##Key, Count}
+#define ROTATE(Degrees)        {STEP_ROTATE, 0, Degrees}
 
 STATIC CONST STEP mSessionMenu[]   = {PRESS (DOWN, 24),
                                       PRESS (UP, 24),
@@ -571,19 +541,20 @@ STATIC CONST STEP mSessionLines[]   = {{STEP_LINES, 0, 1},
                                        PRESS (UP, 30),
                                        PRESS (BACK, 1),
                                        PRESS (DOWN, 2)};
+// Uninstall PortareOS and back, then Emergency download mode and back.
 STATIC CONST STEP mSessionConfirm[] = {
-  PRESS (UP, 2),     PRESS (SELECT, 1), PRESS (DOWN, 1),
-  PRESS (UP, 1),     PRESS (BACK, 1),   PRESS (DOWN, 5),
+  PRESS (DOWN, 3),   PRESS (SELECT, 1), PRESS (DOWN, 1),
+  PRESS (UP, 1),     PRESS (BACK, 1),   PRESS (DOWN, 1),
   PRESS (SELECT, 1), PRESS (DOWN, 1),   PRESS (BACK, 1)};
 STATIC CONST STEP mSessionToast[] = {{STEP_NOTIFY, 0, 1}, {STEP_WAIT, 0, 3500},
                                      PRESS (DOWN, 3),     {STEP_NOTIFY, 0, 1},
                                      PRESS (UP, 3),       {STEP_WAIT, 0, 3500}};
-// Steps through the Display rotation choices, turning the screen.
+// Turns the screen through every rotation between presses.
 STATIC CONST STEP mSessionRotate[] = {
-  PRESS (DOWN, 9),     PRESS (SELECT, 1),   {STEP_WAIT, 0, 300},
-  PRESS (SELECT, 1),   {STEP_WAIT, 0, 300}, PRESS (SELECT, 1),
-  {STEP_WAIT, 0, 300}, PRESS (SELECT, 1),   {STEP_WAIT, 0, 300},
-  PRESS (SELECT, 1),   PRESS (DOWN, 3),     PRESS (UP, 6)};
+  ROTATE (90),         {STEP_WAIT, 0, 300}, PRESS (DOWN, 3),
+  ROTATE (180),        {STEP_WAIT, 0, 300}, PRESS (UP, 2),
+  ROTATE (270),        {STEP_WAIT, 0, 300}, ROTATE (0),
+  {STEP_WAIT, 0, 300}, PRESS (DOWN, 3),     PRESS (UP, 6)};
 
 STATIC CONST STEP mSessionHeld[] = {PRESS_FAST (DOWN, 20), {STEP_WAIT, 0, 400},
                                     PRESS_FAST (UP, 20),   {STEP_WAIT, 0, 400},
@@ -632,14 +603,10 @@ STATIC CONST STEP mSessionPaths[] = {FRESH,
                                      {STEP_WAIT, 0, 300},
                                      FRESH};
 
-// Boot entries, and rotation changes under every kind of screen.
-#define ROTATE(Degrees) {STEP_ROTATE, 0, Degrees}
-STATIC CONST STEP mSessionPaths2[] = {{STEP_ENTRIES, 0, 1},
-                                      FRESH,
-                                      PRESS (DOWN, 1),
+// Rotation changes under every kind of screen.
+STATIC CONST STEP mSessionPaths2[] = {FRESH,
+                                      PRESS (DOWN, 3),
                                       PRESS (SELECT, 1),
-                                      FRESH,
-                                      PRESS_FAST (DOWN, 3),
                                       FRESH,
                                       ROTATE (90),
                                       FRESH,
@@ -660,12 +627,8 @@ STATIC CONST STEP mSessionPaths2[] = {{STEP_ENTRIES, 0, 1},
                                       ROTATE (0),
                                       FRESH,
                                       PRESS (BACK, 1),
-                                      PRESS (UP, 2),
-                                      PRESS (SELECT, 1),
                                       FRESH,
                                       ROTATE (90),
-                                      FRESH,
-                                      PRESS (BACK, 1),
                                       FRESH,
                                       {STEP_BOOT_ERROR, 0, 1},
                                       ROTATE (180),
@@ -805,7 +768,7 @@ FreshCheck (
   CopyMem (mSnap, mPhysical, PixelCount * 4);
   ViewDone ();
   ZeroMem (mPhysical, PixelCount * 4);
-  if (!ViewInit (&mCheckPanel, gOablAssetFont, gOablAssetFontSize)) {
+  if (!ViewInit (&mCheckPanel)) {
     fprintf (stderr, "the view didn't start again\n");
     exit (1);
   }
@@ -864,7 +827,7 @@ Check (
                              .Present = BlitToPanel,
                              .Now     = Tick,
                              .Logical = mLogical};
-  if (!ViewInit (&mCheckPanel, gOablAssetFont, gOablAssetFontSize)) {
+  if (!ViewInit (&mCheckPanel)) {
     fprintf (stderr, "the view didn't start\n");
     exit (1);
   }
@@ -925,12 +888,6 @@ Check (
       case STEP_BOOT_ERROR:
         AppOnBootResult (&mApp, FALSE, BOOT_ERROR_NO_IMAGE, NULL);
         break;
-      case STEP_ENTRIES: {
-        CONST ENTRY_VIEW *Entries;
-        UINTN             EntryCount = SampleEntries (&Entries);
-        AppSetEntries (&mApp, Entries, EntryCount);
-        break;
-      }
       case STEP_ROTATE: {
         SETTINGS Changed = mApp.Settings;
         Changed.Rotation = (UINT16)Step->Value;
