@@ -16,6 +16,7 @@
 #include "Core/SysInfoText.h"
 #include "Core/UsbHostRegs.h"
 #include "Efi/Abl.h"
+#include "Efi/Battery.h"
 #include "Efi/Efi.h"
 #include "Efi/DefaultFiles.h"
 #include "Efi/Display.h"
@@ -1643,6 +1644,84 @@ RunCommand (
 
 STATIC DISPLAY mDisplay;
 
+// The charging screen reads the battery every second, turns the device off
+// once three reads in a row find no charger, and turns the display off a
+// while after the last key.
+#define BATTERY_EVERY_MS 1000
+#define UNPLUGGED_READS  3
+#define DARK_AFTER_MS    30000
+// Between its checks the charging screen waits this long with the CPU idle.
+#define CHARGING_IDLE_MS 50
+
+STATIC UINT64    mBatteryAt;
+STATIC UINT64    mAwakeAt;
+STATIC UINT32    mUnplugged;
+STATIC BOOLEAN   mDark;
+STATIC EFI_EVENT mIdleTimer;
+
+// Turns a dark display back on and draws it all again.
+STATIC VOID
+Wake (IN UINT64 Now)
+{
+  EFI_STATUS Status = DisplaySetPower (TRUE);
+
+  MenuLog ("charging: display on (%s)", MENU_STATUS (Status));
+  mDark      = FALSE;
+  mAwakeAt   = Now;
+  mApp.Dirty = TRUE;
+  ViewSync (&mApp);
+  ViewRedraw (TRUE);
+}
+
+// The charging screen's checks, between frames.
+STATIC VOID
+ChargingTick (
+  IN MENU_STATE *M,
+  IN UINT64      Now
+)
+{
+  BATTERY_STATE Battery;
+  BOOLEAN       Known;
+
+  if (Now >= mBatteryAt) {
+    mBatteryAt = Now + BATTERY_EVERY_MS;
+    Known      = BatteryRead (&Battery);
+    AppOnBattery (&mApp, Known, Battery.Charger, Battery.MilliVolts);
+    mUnplugged = Known && !Battery.Charger ? mUnplugged + 1 : 0;
+    if (mUnplugged >= UNPLUGGED_READS) {
+      MenuLog ("charging: the charger is out at %u mV; turning off",
+               Battery.MilliVolts);
+      MenuFlush ();
+      Act (M, OPENABL_MENU_ACTION_POWER_OFF);
+      mUnplugged = 0;
+    }
+  }
+  if (!mDark && Now - mAwakeAt >= DARK_AFTER_MS) {
+    EFI_STATUS Status = DisplaySetPower (FALSE);
+    MenuLog ("charging: display off (%s)", MENU_STATUS (Status));
+    // If it didn't go off, it isn't tried again until the next key.
+    mDark    = Status == EFI_SUCCESS;
+    mAwakeAt = Now;
+  }
+}
+
+// Waits Ms with the CPU idle. FALSE if it can't, so the caller spins.
+STATIC BOOLEAN
+IdleWait (IN UINT64 Ms)
+{
+  UINTN Index;
+
+  if (!mIdleTimer &&
+      gBS->CreateEvent (EVT_TIMER, TPL_CALLBACK, NULL, NULL, &mIdleTimer) !=
+        EFI_SUCCESS) {
+    mIdleTimer = NULL;
+    return FALSE;
+  }
+  return gBS->SetTimer (mIdleTimer, TimerRelative, Ms * 10000) ==
+           EFI_SUCCESS &&
+         gBS->WaitForEvent (1, &mIdleTimer, &Index) == EFI_SUCCESS;
+}
+
 STATIC VOID
 BlitToPanel (
   IN CONST UINT32 *Px,
@@ -1787,6 +1866,13 @@ MenuRun (
   }
 #endif
   AppStart (&mApp, ClockNowMs (), TRUE);
+  if (M.CameBack == MENU_START_RESULT_CHARGING) {
+    MenuLog ("charging: powered on by the charger, with no Android");
+    AppStartCharging (&mApp);
+    mBatteryAt = 0;
+    mAwakeAt   = ClockNowMs ();
+    mUnplugged = 0;
+  }
   {
     BOOLEAN      Ok;
     BOOT_ERROR   Error;
@@ -1823,6 +1909,14 @@ MenuRun (
     UINT16       Want;
 
     InputKeysPoll (&Keys, Now, &Events);
+    // A key wakes a dark charging screen and does nothing else.
+    if (Events.Count) {
+      if (mDark) {
+        Wake (Now);
+        Events.Count = 0;
+      }
+      mAwakeAt = Now;
+    }
     // Once an uninstall waits to restart into recovery, keys and timers do
     // nothing, so its settings can't be changed back before the wipe.
     for (UINTN Index = 0; Index < Events.Count && !M.RestartAt; Index++) {
@@ -1834,6 +1928,11 @@ MenuRun (
       if (!M.RestartAt) {
         Pend (&Pending, Tick);
       }
+    }
+    if (mApp.Screen == SCREEN_CHARGING) {
+      ChargingTick (&M, Now);
+    } else if (mDark) {
+      Wake (Now);
     }
     Want = AppDesiredRotation (&mApp);
     if (Want != Rotation) {
@@ -1861,6 +1960,19 @@ MenuRun (
         return (MENU_END){MENU_END_START_HERE, EFI_ABORTED};
       }
       continue;
+    }
+    // While charging, a poll, then the CPU idles: the device may sit on this
+    // screen for hours.
+    if (mApp.Screen == SCREEN_CHARGING) {
+      Status = MenuHostPoll (&M.Host);
+      if (Status != EFI_SUCCESS) {
+        MenuLog ("the ABL asked to leave (%s)", MENU_STATUS (Status));
+        ViewDone ();
+        return (MENU_END){MENU_END_LEFT, Status};
+      }
+      if (IdleWait (CHARGING_IDLE_MS)) {
+        continue;
+      }
     }
     // Give idle time to fastboot. The ABL serves one USB event per poll,
     // and a download needs polls back to back.

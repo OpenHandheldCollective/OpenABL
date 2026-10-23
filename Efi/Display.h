@@ -43,6 +43,12 @@ DisplaySize (
   *H = Display->H;
 }
 
+// Switches the panel and its backlight off or on through XBL's display
+// power protocol. The framebuffer keeps its contents; redraw after On all
+// the same. EFI_UNSUPPORTED where XBL has no such protocol.
+EFI_STATUS
+DisplaySetPower (IN BOOLEAN On);
+
 // Copies a W x H rectangle of 0x00RRGGBB pixels, Stride pixels per row, to
 // (X, Y) on the screen. The arguments match the Gfx presenter's PRESENT_BLIT.
 // A rectangle that doesn't fit the mode is skipped.

@@ -878,6 +878,12 @@ RunBoot (
     State->OffmodeCharging != 0 &&
     MenuHostAction (Host, OPENABL_MENU_ACTION_CHARGER_BOOT) == EFI_SUCCESS;
   if (Charger) {
+    // Without Android there's no charger screen to boot: BIOS shows one,
+    // unless the menu picked something to start.
+    if (!Once && !MenuCapsOf (State).Android) {
+      MenuLog ("powered on by the charger, with no Android to charge in");
+      return FastbootPath (Host, MENU_START_RESULT_CHARGING);
+    }
     gMenuHostChargerBoot = TRUE;
     MenuLog ("powered on by the charger");
   }

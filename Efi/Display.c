@@ -11,6 +11,8 @@
 
 #include "Efi/Handover.h"
 
+#include <Protocol/EFIDisplayPwr.h>
+
 // GET_PROTOCOL leaves the console driver bound to the GOP. We only call Blt
 // and read the mode.
 STATIC EFI_STATUS
@@ -134,5 +136,19 @@ DisplayBlit (
   Display->Gop->Blt (
     Display->Gop, (EFI_GRAPHICS_OUTPUT_BLT_PIXEL *)Pixels, EfiBltBufferToVideo,
     0, 0, X, Y, W, H, (UINTN)Stride * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
+  );
+}
+
+EFI_STATUS
+DisplaySetPower (IN BOOLEAN On)
+{
+  EFI_DISPLAY_POWER_PROTOCOL *Power =
+    LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
+
+  if (!Power) {
+    return EFI_UNSUPPORTED;
+  }
+  return Power->SetDisplayPowerState (
+    Power, On ? EfiDisplayPowerStateOn : EfiDisplayPowerStateOff
   );
 }

@@ -188,6 +188,10 @@ typedef enum {
   SCREEN_INSTALL_SIZE, // a first Dualboot: what Android keeps
   SCREEN_INSTALLING,   // takes no input
   SCREEN_INSTALLED,    // Select restarts
+  // The charger powered the Nova on and Android isn't there to show its
+  // charger screen. Select starts the default system; Up and Down open the
+  // menu.
+  SCREEN_CHARGING,
 } SCREEN;
 
 typedef enum {
@@ -323,6 +327,12 @@ typedef struct _APP {
   INSTALL_STAGE  InstallStage;
   UINT32         InstallPermille;
   BOOLEAN        InstallChanged;
+
+  // The charging screen: whether the battery could be read, whether a
+  // charger is in, and the battery's voltage.
+  BOOLEAN BatteryKnown;
+  BOOLEAN Charger;
+  UINT32  BatteryMv;
 
   // The device info or the log. LinesFrom is the menu item it was opened
   // from, focused again on the way back.
@@ -535,6 +545,25 @@ AppOnInstalled (
   IN CONST CHAR8 *Why OPTIONAL,
   IN BOOLEAN      Changed
 );
+
+// Shows the charging screen instead of the menu, with no countdown.
+VOID
+AppStartCharging (IN OUT APP *A);
+
+// The battery as the platform last read it. Marks the state dirty only when
+// the charger comes or goes or the level shown changes.
+VOID
+AppOnBattery (
+  IN OUT APP *A,
+  IN BOOLEAN  Known,
+  IN BOOLEAN  Charger,
+  IN UINT32   MilliVolts
+);
+
+// The battery's charge in percent, estimated from its voltage for the
+// Nova's 4.5 V cell, less what charging adds to it. 0 when unknown.
+UINT32
+AppBatteryLevel (IN CONST APP *A);
 
 // After removing Linux failed: the error screen, with Why as its message.
 VOID

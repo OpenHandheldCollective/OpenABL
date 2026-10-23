@@ -23,7 +23,6 @@
 #include <Protocol/EFIEraseBlock.h>
 #include <Protocol/EFIRng.h>
 
-EFI_GUID gChargerExProtocolGuid     = EFI_CHARGER_EX_PROTOCOL_GUID;
 EFI_GUID gEfiEraseBlockProtocolGuid = EFI_ERASE_BLOCK_PROTOCOL_GUID;
 EFI_GUID gQcomRngProtocolGuid       = {
   0x3152bca5, 0xeade, 0x433d, {0x86, 0x2e, 0xc0, 0x1c, 0xdc, 0x29, 0x1f, 0x44}

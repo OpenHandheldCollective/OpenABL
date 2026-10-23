@@ -505,6 +505,72 @@ AppOnInstalled (
 }
 
 VOID
+AppStartCharging (IN OUT APP *A)
+{
+  A->Screen     = SCREEN_CHARGING;
+  A->Countdown  = FALSE;
+  A->ToastUntil = 0;
+  A->Dirty      = TRUE;
+}
+
+// Open-circuit voltage to charge for a 4.5 V lithium-ion cell, in mV and
+// percent: at rest the Nova read 4497 mV at 99%.
+STATIC CONST UINT32 mCharge[][2] = {
+  {3400, 0},  {3600, 3},  {3700, 8},  {3750, 15}, {3800, 25},
+  {3850, 35}, {3900, 45}, {3950, 52}, {4000, 58}, {4100, 68},
+  {4200, 78}, {4300, 87}, {4400, 95}, {4480, 100},
+};
+#define CHARGE_POINTS (sizeof (mCharge) / sizeof (mCharge[0]))
+// What charging adds to the voltage, roughly.
+#define CHARGING_MV 60
+
+UINT32
+AppBatteryLevel (IN CONST APP *A)
+{
+  UINT32 Mv = A->BatteryMv;
+
+  if (!A->BatteryKnown || Mv == 0) {
+    return 0;
+  }
+  if (A->Charger) {
+    Mv = Mv > CHARGING_MV ? Mv - CHARGING_MV : 0;
+  }
+  if (Mv <= mCharge[0][0]) {
+    return 0;
+  }
+  for (UINTN Index = 1; Index < CHARGE_POINTS; Index++) {
+    if (Mv < mCharge[Index][0]) {
+      UINT32 Low  = mCharge[Index - 1][0];
+      UINT32 High = mCharge[Index][0];
+      return mCharge[Index - 1][1] + (mCharge[Index][1] - mCharge[Index - 1][1]) *
+                                       (Mv - Low) / (High - Low);
+    }
+  }
+  return 100;
+}
+
+VOID
+AppOnBattery (
+  IN OUT APP *A,
+  IN BOOLEAN  Known,
+  IN BOOLEAN  Charger,
+  IN UINT32   MilliVolts
+)
+{
+  UINT32 Before = AppBatteryLevel (A) / 10;
+
+  if (Known != A->BatteryKnown || Charger != A->Charger) {
+    A->Dirty = TRUE;
+  }
+  A->BatteryKnown = Known;
+  A->Charger      = Charger;
+  A->BatteryMv    = MilliVolts;
+  if (AppBatteryLevel (A) / 10 != Before) {
+    A->Dirty = TRUE;
+  }
+}
+
+VOID
 AppOnUninstallFailed (
   IN OUT APP     *A,
   IN CONST CHAR8 *Why
@@ -1071,6 +1137,13 @@ AppInput (
     // The menu's view of storage is out of date; only a restart is offered.
     return Input == INPUT_SELECT ? Command (COMMAND_REBOOT, REBOOT_NORMAL)
                                  : None ();
+  case SCREEN_CHARGING:
+    if (Input == INPUT_SELECT) {
+      return BeginBoot (A, BOOT_TARGET_ORDER);
+    }
+    A->Screen    = SCREEN_MENU;
+    A->FocusItem = ITEM_BOOT;
+    return None ();
   case SCREEN_SCANNING:
   case SCREEN_BOOTING:
   case SCREEN_UNINSTALLING:

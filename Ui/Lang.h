@@ -174,6 +174,10 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *InstallReadBack;
   CONST CHAR8 *InstallWriteFailed;
   CONST CHAR8 *InstallChangedHint;
+  CONST CHAR8 *Charging;
+  CONST CHAR8 *ChargerOut;
+  CONST CHAR8 *BatteryUnknown;
+  CONST CHAR8 *ChargingHint;
   CONST CHAR8 *KeyPower;
   CONST CHAR8 *KeyVolume;
   CONST CHAR8 *KeyEnter;

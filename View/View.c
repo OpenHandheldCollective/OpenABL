@@ -860,6 +860,74 @@ InstalledDraw (IN CONST APP *A)
   FooterDraw (A, gStrings->VerbRestart, FALSE);
 }
 
+// Charging
+
+// CP437's box drawing, blocks and shades for the battery.
+#define GLYPH_BOX_TL    0xDA
+#define GLYPH_BOX_TR    0xBF
+#define GLYPH_BOX_BL    0xC0
+#define GLYPH_BOX_BR    0xD9
+#define GLYPH_BOX_V     0xB3
+#define GLYPH_FULL      0xDB
+#define GLYPH_LIGHT     0xB0
+#define GLYPH_HALF_LEFT 0xDD
+// Cells inside the battery, 5% of the charge each.
+#define BATTERY_CELLS 20
+
+// The battery in a box, filled to its estimated charge, its tip at the
+// right. Returns the rows it takes.
+STATIC UINT32
+BatteryDraw (
+  IN CONST APP *A,
+  IN UINT32     X,
+  IN UINT32     Y,
+  IN UINT32     Width
+)
+{
+  GRID  *G     = &mView.Grid;
+  UINT32 Cells = Width > BATTERY_CELLS + 3 ? BATTERY_CELLS : Width - 3;
+  UINT32 Full  = (AppBatteryLevel (A) * Cells + 50) / 100;
+
+  GridPutc (G, X, Y, GLYPH_BOX_TL, ATTR_MID);
+  GridPutc (G, X, Y + 1, GLYPH_BOX_V, ATTR_MID);
+  GridPutc (G, X, Y + 2, GLYPH_BOX_BL, ATTR_MID);
+  for (UINT32 Cell = 0; Cell < Cells; Cell++) {
+    GridPutc (G, X + 1 + Cell, Y, GLYPH_RULE, ATTR_MID);
+    GridPutc (
+      G, X + 1 + Cell, Y + 1, Cell < Full ? GLYPH_FULL : GLYPH_LIGHT,
+      Cell < Full ? ATTR_BRIGHT : ATTR_DIM
+    );
+    GridPutc (G, X + 1 + Cell, Y + 2, GLYPH_RULE, ATTR_MID);
+  }
+  GridPutc (G, X + 1 + Cells, Y, GLYPH_BOX_TR, ATTR_MID);
+  GridPutc (G, X + 1 + Cells, Y + 1, GLYPH_BOX_V, ATTR_MID);
+  GridPutc (G, X + 1 + Cells, Y + 2, GLYPH_BOX_BR, ATTR_MID);
+  GridPutc (G, X + 2 + Cells, Y + 1, GLYPH_HALF_LEFT, ATTR_MID);
+  return 3;
+}
+
+// Charging, or that the charger is out, the battery, then what the keys do.
+STATIC VOID
+ChargingDraw (IN CONST APP *A)
+{
+  UINT32 X, Y, Width;
+  UINT32 Bottom = mView.Grid.Rows - 2;
+
+  HeaderDraw (A, NULL);
+  Block (&X, &Y, &Width);
+  Paragraph (
+    X, &Y, Width, Bottom,
+    A->Charger ? gStrings->Charging : gStrings->ChargerOut, ATTR_BRIGHT, 1
+  );
+  if (A->BatteryKnown && A->BatteryMv) {
+    Y += BatteryDraw (A, X, Y, Width) + 1;
+  } else {
+    Paragraph (X, &Y, Width, Bottom, gStrings->BatteryUnknown, ATTR_TEXT, 1);
+  }
+  Paragraph (X, &Y, Width, Bottom, gStrings->ChargingHint, ATTR_TEXT, 1);
+  FooterDraw (A, gStrings->VerbLaunch, FALSE);
+}
+
 // Frames
 
 // Puts Area of the picture on the panel, rotated.
@@ -1058,6 +1126,9 @@ ViewSync (IN OUT APP *A)
     break;
   case SCREEN_INSTALLED:
     InstalledDraw (A);
+    break;
+  case SCREEN_CHARGING:
+    ChargingDraw (A);
     break;
   }
   mView.Pending = TRUE;

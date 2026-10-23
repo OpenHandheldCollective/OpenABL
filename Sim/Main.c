@@ -634,6 +634,41 @@ SErrorInstall (
   AppOnInstalled (A, FALSE, Why, TRUE);
 }
 
+// Powered on by the charger with Android gone: about half charged.
+STATIC VOID
+SCharging (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppStartCharging (A);
+  AppOnBattery (A, TRUE, TRUE, 4010);
+}
+
+STATIC VOID
+SChargingLow (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppStartCharging (A);
+  AppOnBattery (A, TRUE, TRUE, 3690);
+}
+
+// XBL couldn't read the battery's voltage.
+STATIC VOID
+SChargingUnknown (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppStartCharging (A);
+  AppOnBattery (A, TRUE, TRUE, 0);
+}
+
 STATIC CONST struct {
   CONST CHAR8  *Name;
   SESSION_SETUP Setup;
@@ -660,6 +695,9 @@ STATIC CONST struct {
   {"installed", SInstalled},
   {"error-no-card", SErrorNoCard},
   {"error-install", SErrorInstall},
+  {"charging", SCharging},
+  {"charging-low", SChargingLow},
+  {"charging-unknown", SChargingUnknown},
   {"booting", SBooting},
   {"booting-sd", SBootingSd},
   {"booting-android", SBootingAndroid},
