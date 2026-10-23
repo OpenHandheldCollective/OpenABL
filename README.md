@@ -106,6 +106,11 @@ order:
   lacks: `SetVirtualAddressMap` on SDM845, all of them on SM6115.
 - Boot sources are internal storage (UFS or eMMC), the SD card and USB
   drives. For USB the port is switched to host mode.
+- A boot image found on a GPT partition gets
+  `portare.bootpart=PARTUUID=<guid>` added to its command line, naming that
+  partition in lower case as Linux's PARTUUID does. A card written from an
+  image and an install copied from it carry the same labels, so this is how
+  the initramfs mounts the installation the kernel came from.
 - A disk image written to `userdata` boots too: its ESP is found
   automatically. Linux doesn't read a partition table inside a partition,
   so the initramfs must map the image's root itself (for example

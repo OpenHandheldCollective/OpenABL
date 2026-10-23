@@ -19,6 +19,7 @@
 
 #include "Efi/Efi.h"
 
+#include "Core/EfiData.h"
 #include "Efi/DefaultFiles.h"
 #include "Efi/MenuHost.h"
 #include "Efi/Serial.h"
@@ -31,6 +32,8 @@ typedef struct _BOOT_IMAGE_FOUND {
   UINTN  Size;
   // Found on a USB drive, so USB is handed over to the OS before boot.
   BOOLEAN Usb;
+  // The GPT partition it was found on, for KERNEL_CMDLINE_BOOT_PART, or "".
+  CHAR8 PartUuid[UEFI_PART_UUID_SIZE];
 } BOOT_IMAGE_FOUND;
 
 // Finds the first of gModelsBootImages on Drives, in order. If XBL's FAT

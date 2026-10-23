@@ -163,6 +163,25 @@ FromFileSystem (
   return Image;
 }
 
+// Describes Image, found on Drive.
+STATIC BOOT_IMAGE_FOUND
+FoundOn (
+  IN EFI_HANDLE Drive,
+  IN UINT8     *Image,
+  IN UINTN      Size
+)
+{
+  BOOT_IMAGE_FOUND Found = {
+    .Buffer = Image, .Size = Size, .Usb = VolumesMedium (Drive).Usb};
+  OABL_BUFFER Path = {0};
+
+  if (PathsHandlePath (Drive, &Path)) {
+    UefiPartUuid (Path.Data, Path.Len, FALSE, Found.PartUuid);
+  }
+  BufferFree (&Path);
+  return Found;
+}
+
 BOOLEAN
 BootImageFind (
   IN CONST EFI_HANDLE         *Drives,
@@ -176,7 +195,7 @@ BootImageFind (
 
   for (UINTN Index = 0; Index < Count; Index++) {
     if ((Image = FromFileSystem (Drives[Index], Host, &Size))) {
-      *Out = (BOOT_IMAGE_FOUND){Image, Size, VolumesMedium (Drives[Index]).Usb};
+      *Out = FoundOn (Drives[Index], Image, Size);
       return TRUE;
     }
   }
@@ -190,8 +209,7 @@ BootImageFind (
           Host, "%s: found straight off FAT32, %llu bytes",
           gModelsBootImages[Index2], (UINT64)Size
         );
-        *Out =
-          (BOOT_IMAGE_FOUND){Image, Size, VolumesMedium (Drives[Index]).Usb};
+        *Out = FoundOn (Drives[Index], Image, Size);
         return TRUE;
       }
     }
@@ -451,6 +469,11 @@ LayOut (
   if (!Ok) {
     BufferFree (&Cmdline);
     Ok = BufferFrom (&Cmdline, BaseCmdline, BaseCmdlineLength);
+  }
+  // Even after a command-line file: it says where the kernel came from.
+  if (Ok && Found->PartUuid[0]) {
+    Ok = KernelCmdLineAppendBootPart (&Cmdline, Found->PartUuid);
+    SAY (Log, "booted from partition %s", Found->PartUuid);
   }
   if (!Ok || !BufferAppendU8 (&Cmdline, 0)) {
     BufferFree (&Cmdline);

@@ -47,6 +47,19 @@ KernelCmdLineCombine (
   IN OUT OABL_BUFFER    *Out
 );
 
+// Names the partition a boot image was loaded from, as PARTUUID=<guid>, so
+// the initramfs mounts that installation. An SD card written from an image
+// and an internal install made from it carry the same labels.
+#define KERNEL_CMDLINE_BOOT_PART "portare.bootpart"
+
+// Appends KERNEL_CMDLINE_BOOT_PART "=PARTUUID=" PartUuid to the
+// unterminated Out, after a space unless Out is empty or ends in one.
+BOOLEAN
+KernelCmdLineAppendBootPart (
+  IN OUT OABL_BUFFER *Out,
+  IN CONST CHAR8     *PartUuid
+);
+
 // Key has a leading space and a trailing '=', like the ABL's own keys.
 typedef struct _KERNEL_CMDLINE_PARAM {
   CONST CHAR8 *Key;
