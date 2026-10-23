@@ -121,8 +121,9 @@ with Qualcomm's ABL, including verified boot and recovery.
 
 ## Building
 
-Requires git and Docker. The build runs in an amd64 container, so on Apple
-Silicon use Docker Desktop or OrbStack.
+Requires git and Docker, or Apple's `container` on a Mac. The build runs in
+an amd64 container, so on Apple Silicon use Docker Desktop, OrbStack or
+`container`; `build.sh` uses Docker when it is running.
 
 ```bash
 ./build.sh sm8550
