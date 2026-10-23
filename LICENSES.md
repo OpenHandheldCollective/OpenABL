@@ -20,6 +20,8 @@ GPL-3.0-or-later, with two differences:
   only and still requires its source. The edk2 changes the patch backports
   stay BSD-2-Clause-Patent, and the code the patch changes keeps its licence.
 - `Linux/`: the kernel patch is GPL-2.0-only, the Linux kernel's licence.
+  The patch in `Linux/minkipc/` is BSD-3-Clause-Clear, the licence of
+  qualcomm/minkipc, which it changes.
 
 ## Third-party parts in this repository
 

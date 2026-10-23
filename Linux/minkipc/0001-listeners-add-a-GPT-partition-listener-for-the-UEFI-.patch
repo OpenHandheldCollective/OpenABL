@@ -1,0 +1,1281 @@
+From 2ec0d93ed31428f367737b63547e9579cd06c747 Mon Sep 17 00:00:00 2001
+From: sunshineinabox <aqemail@gmail.com>
+Date: Sun, 18 Oct 2026 05:13:17 +0000
+Subject: [PATCH] listeners: add a GPT partition listener for the UEFI variable
+ store
+
+QTEE reaches GPT partitions of the non-secure storage through listener
+0x2001, and uefisecapp keeps the UEFI variable store in one. Without the
+listener, non-volatile UEFI variable writes from Linux fail with
+EFI_DEVICE_ERROR.
+
+The listener serves the variable store and nothing else, and checks it
+before registering, so a mistake costs a failed variable write rather
+than other partitions:
+
+- It looks only on UFS logical units 4 and 0, where UEFI keeps the
+  store, never on removable media, and wants exactly one partition of
+  the store's type in a GPT whose header and entry CRCs check out.
+- It opens the kernel's block device for that partition, exclusively,
+  after matching its number, extent and device number against the GPT
+  entry, so the kernel bounds every access to the partition.
+- It reads the store's table of contents from its first block and lets
+  writes land only inside the tables listed there. A store it can't
+  parse gets no listener at all.
+
+UEFI serves the listener until ExitBootServices and uefisecapp keeps
+using the context IDs UEFI handed out without sending INIT again. UEFI
+opens only the variable store through it, so the listener takes a
+context ID it didn't hand out to mean the variable store.
+
+GPTSVC_MODE=ro or log refuse writes, GPTSVC_SHADOW serves the store
+from a file, and GPTSVC_DEBUG dumps each sector, for bring-up.
+---
+ CMakeLists.txt                         |   6 +
+ listeners/libgptservice/CMakeLists.txt |  37 +
+ listeners/libgptservice/gpt_service.c  | 997 +++++++++++++++++++++++++
+ listeners/libgptservice/gpt_service.h  | 123 +++
+ qtee_supplicant/CMakeLists.txt         |   5 +
+ qtee_supplicant/src/listener_mngr.c    |   8 +
+ 6 files changed, 1176 insertions(+)
+ create mode 100644 listeners/libgptservice/CMakeLists.txt
+ create mode 100644 listeners/libgptservice/gpt_service.c
+ create mode 100644 listeners/libgptservice/gpt_service.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 90a52ff..23e1565 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -20,6 +20,8 @@ option(USE_GLIB "Use GLIB functions" FALSE)
+ option(CFG_USE_PKGCONFIG "Use pkg-config for discovering install target directory for systemd and udev files." OFF)
+ # Build RPMB listener
+ option(BUILD_RPMB_LISTENER "Build RPMB Listener" TRUE)
++# Build GPT listener
++option(BUILD_GPT_LISTENER "Build GPT Listener" TRUE)
+ # Build RPMB Client
+ option(BUILD_RPMB_CLIENT "Build RPMB Client" TRUE)
+ 
+@@ -81,6 +83,10 @@ if(BUILD_RPMB_LISTENER)
+ 	add_subdirectory(listeners/librpmbservice)
+ endif()
+ 
++if(BUILD_GPT_LISTENER)
++	add_subdirectory(listeners/libgptservice)
++endif()
++
+ if (BUILD_PKCS11)
+ 	add_subdirectory(optee-client)
+ 	if (BUILD_UNITTEST)
+diff --git a/listeners/libgptservice/CMakeLists.txt b/listeners/libgptservice/CMakeLists.txt
+new file mode 100644
+index 0000000..2eae251
+--- /dev/null
++++ b/listeners/libgptservice/CMakeLists.txt
+@@ -0,0 +1,37 @@
++project(libgptservice
++	VERSION 1.0.0
++	LANGUAGES C
++)
++
++add_compile_options(
++	-Wstrict-prototypes -Wmissing-prototypes -Wbad-function-cast
++)
++
++set(SRC
++	../listenercbo/src/CListenerCBO.c
++	../listenercbo/src/memscpy.h
++	gpt_service.c
++)
++
++add_library(gptservice SHARED ${SRC})
++
++set_target_properties(gptservice PROPERTIES
++	VERSION ${PROJECT_VERSION}
++	SOVERSION ${PROJECT_VERSION_MAJOR}
++)
++
++add_dependencies(gptservice listenercbo_MINKHEADERS)
++
++target_include_directories(gptservice
++	PRIVATE ../listenercbo/include
++	PRIVATE ../listenercbo/idl
++	PRIVATE ${CMAKE_SOURCE_DIR}/libminkadaptor/include
++)
++
++target_link_libraries(gptservice
++	PRIVATE minkadaptor
++)
++
++install(TARGETS gptservice
++	LIBRARY DESTINATION "${PLUGIN_INSTALL_DIR}"
++)
+diff --git a/listeners/libgptservice/gpt_service.c b/listeners/libgptservice/gpt_service.c
+new file mode 100644
+index 0000000..9cfd5c9
+--- /dev/null
++++ b/listeners/libgptservice/gpt_service.c
+@@ -0,0 +1,997 @@
++// SPDX-License-Identifier: BSD-3-Clause-Clear
++
++/*
++ * GPT partition MinkIPC listener service.
++ *
++ * Registers with QTEE as a CBO listener for GPT_SERVICE_ID. QTEE's storage
++ * manager uses it to reach GPT partitions on the non-secure storage; at
++ * runtime uefisecapp uses it to store non-volatile UEFI variables:
++ *
++ *   TZ_CM_CMD_GPT_INIT      (0x401) -- open a partition by type GUID
++ *   TZ_CM_CMD_GPT_READ      (0x402) -- read sectors
++ *   TZ_CM_CMD_GPT_WRITE     (0x403) -- write sectors
++ *   TZ_CM_CMD_GPT_PARTITION (0x404) -- create partitions (not supported)
++ *
++ * The listener serves the UEFI variable store and nothing else, and checks
++ * it hard before registering, so a mistake costs a failed variable write
++ * rather than other partitions:
++ *
++ *  - It looks only on UFS logical units 4 and 0, where UEFI keeps the store,
++ *    never on removable media, and wants exactly one partition of the
++ *    store's type in a GPT whose header and entries pass their CRCs.
++ *  - It opens the kernel's block device for that partition, exclusively,
++ *    after checking it matches the GPT entry, so the kernel bounds every
++ *    access to the partition.
++ *  - It reads the store's own table of contents from its first block and
++ *    lets writes land only inside the tables it lists. Writes to the table
++ *    of contents itself, to space between tables, or partly outside one,
++ *    are refused. A store it can't parse gets no listener at all.
++ *
++ * UEFI serves this listener itself until ExitBootServices, and uefisecapp
++ * goes on using the context IDs UEFI handed out, which are UEFI pointers,
++ * without sending INIT again. UEFI opens only the variable store through
++ * the listener, so a context ID this listener didn't hand out is taken to
++ * mean the variable store.
++ *
++ * Environment:
++ *   GPTSVC_MODE=rw   serve reads and writes (default)
++ *   GPTSVC_MODE=ro   serve reads, refuse writes
++ *   GPTSVC_MODE=log  log requests, refuse all of them
++ *   GPTSVC_SHADOW=<file>  serve the store from <file>, a copy of it, instead
++ *                         of the device, which is then only read
++ *   GPTSVC_DEBUG=1   also dump the start of every sector read or written
++ *   GPTSVC_ADOPT=0   refuse context IDs UEFI handed out
++ */
++
++#include <dirent.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <inttypes.h>
++#include <linux/fs.h>
++#include <limits.h>
++#include <stdarg.h>
++#include <stdbool.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/ioctl.h>
++#include <sys/stat.h>
++#include <sys/sysmacros.h>
++#include <time.h>
++#include <unistd.h>
++
++#include "gpt_service.h"
++
++#include "CListenerCBO.h"
++#include "CRegisterListenerCBO.h"
++#include "IRegisterListenerCBO.h"
++#include "IClientEnv.h"
++#include "MinkCom.h"
++
++/* Exported symbols called by the shared-library loader */
++int init(void);
++void deinit(void);
++
++/* Dispatch callback registered with MinkIPC */
++int smci_dispatch(void *buf, size_t buf_len);
++
++/* MinkIPC objects -- module-level lifetime */
++static Object register_obj = Object_NULL;
++static Object mo = Object_NULL;
++static Object cbo = Object_NULL;
++
++enum gpt_mode { GPT_MODE_RW, GPT_MODE_RO, GPT_MODE_LOG };
++
++static enum gpt_mode mode = GPT_MODE_RW;
++static const char *shadow_path;
++static bool debug;
++static bool adopt = true;
++
++/* Partition type GUID of the UEFI variable store, in EFI_GUID layout. */
++static const uint8_t varstore_guid[16] = {
++	0xbc, 0xd6, 0x5b, 0x16, 0x50, 0x92, 0xc8, 0x4a,
++	0x95, 0xa7, 0xa9, 0x3f, 0x4a, 0x44, 0x00, 0x66,
++};
++
++/* UFS logical units to search for the store, in UEFI's order. */
++static const unsigned int varstore_luns[] = { 4, 0 };
++
++/* The context ID INIT hands out for the store. */
++#define VARSTORE_CTX_ID 1
++
++/*
++ * The store's table of contents in its first block: a header, then one
++ * entry per variable table giving the table's blocks.
++ */
++#define VS_TOC_MAGIC "PTBL"
++#define VS_TOC_VERSION 0x100
++#define VS_TOC_HDR_LEN 16
++#define VS_TOC_ENTRY_LEN 16
++#define VS_MAX_TABLES 16
++
++struct vs_table {
++	uint32_t id;
++	uint32_t first;
++	uint32_t count;
++};
++
++/* The UEFI variable store, the only partition this listener serves. */
++static struct {
++	int fd;
++	unsigned int lun;
++	uint32_t block_size;
++	uint64_t num_blocks;
++	struct vs_table tables[VS_MAX_TABLES];
++	unsigned int n_tables;
++	uint32_t last_adopted;
++	char name[PATH_MAX];
++} vs = { .fd = -1 };
++
++/*
++ * Logging
++ */
++
++static void gpt_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
++
++static void gpt_log(const char *fmt, ...)
++{
++	struct timespec ts;
++	va_list ap;
++
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	fprintf(stderr, "[%5ld.%03ld] gptservice: ", (long)ts.tv_sec,
++		ts.tv_nsec / 1000000);
++	va_start(ap, fmt);
++	vfprintf(stderr, fmt, ap);
++	va_end(ap);
++	fflush(stderr);
++}
++
++static void gpt_dump(const char *what, const uint8_t *p, size_t len)
++{
++	char line[3 * 32 + 1];
++	size_t i, n = len < 32 ? len : 32;
++
++	for (i = 0; i < n; i++)
++		snprintf(line + 3 * i, sizeof(line) - 3 * i, " %02x", p[i]);
++	line[3 * n] = '\0';
++	gpt_log("  %s:%s\n", what, line);
++}
++
++/* Formats an EFI_GUID as stored in memory and in GPT entries. */
++static void guid_str(const uint8_t *g, char *s, size_t len)
++{
++	snprintf(s, len,
++		 "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
++		 "%02x%02x%02x%02x%02x%02x",
++		 g[3], g[2], g[1], g[0], g[5], g[4], g[7], g[6], g[8], g[9],
++		 g[10], g[11], g[12], g[13], g[14], g[15]);
++}
++
++/*
++ * Helpers
++ */
++
++static int read_full(int fd, void *buf, size_t len, off_t off)
++{
++	uint8_t *p = buf;
++
++	while (len) {
++		ssize_t n = pread(fd, p, len, off);
++
++		if (n < 0 && errno == EINTR)
++			continue;
++		if (n <= 0)
++			return -1;
++		p += n;
++		off += n;
++		len -= n;
++	}
++	return 0;
++}
++
++static int write_full(int fd, const void *buf, size_t len, off_t off)
++{
++	const uint8_t *p = buf;
++
++	while (len) {
++		ssize_t n = pwrite(fd, p, len, off);
++
++		if (n < 0 && errno == EINTR)
++			continue;
++		if (n <= 0)
++			return -1;
++		p += n;
++		off += n;
++		len -= n;
++	}
++	return 0;
++}
++
++static uint16_t le16(const uint8_t *p)
++{
++	return p[0] | p[1] << 8;
++}
++
++static uint32_t le32(const uint8_t *p)
++{
++	return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24;
++}
++
++static uint64_t le64(const uint8_t *p)
++{
++	return le32(p) | (uint64_t)le32(p + 4) << 32;
++}
++
++/* CRC-32 as GPT uses it (IEEE 802.3, reflected). */
++static uint32_t crc32_gpt(const uint8_t *p, size_t len)
++{
++	uint32_t crc = 0xffffffff;
++	int k;
++
++	while (len--) {
++		crc ^= *p++;
++		for (k = 0; k < 8; k++)
++			crc = (crc >> 1) ^ (0xedb88320 & -(crc & 1));
++	}
++	return ~crc;
++}
++
++/* Reads a short sysfs attribute into @buf, without the newline. */
++static int sysfs_read(const char *path, char *buf, size_t len)
++{
++	FILE *f = fopen(path, "r");
++	char *nl;
++
++	if (!f)
++		return -1;
++	if (!fgets(buf, len, f)) {
++		fclose(f);
++		return -1;
++	}
++	fclose(f);
++	nl = strchr(buf, '\n');
++	if (nl)
++		*nl = '\0';
++	return 0;
++}
++
++/*
++ * Finding the store
++ */
++
++/* Returns the SCSI host number of the UFS controller, or -1. */
++static int ufs_host(void)
++{
++	char path[PATH_MAX], proc_name[32];
++	struct dirent *de;
++	int host = -1;
++	DIR *dir;
++
++	dir = opendir("/sys/class/scsi_host");
++	if (!dir)
++		return -1;
++
++	while (host < 0 && (de = readdir(dir))) {
++		if (strncmp(de->d_name, "host", 4))
++			continue;
++		snprintf(path, sizeof(path), "/sys/class/scsi_host/%.32s/proc_name",
++			 de->d_name);
++		if (!sysfs_read(path, proc_name, sizeof(proc_name)) &&
++		    !strcmp(proc_name, "ufshcd"))
++			host = atoi(de->d_name + 4);
++	}
++	closedir(dir);
++
++	return host;
++}
++
++/* Finds the disk of UFS logical unit @lun, as its name in /sys/block. */
++static int ufs_lu_disk(unsigned int lun, char *disk, size_t len)
++{
++	char path[PATH_MAX], target[PATH_MAX], val[8];
++	int host = ufs_host();
++	struct dirent *de;
++	int ret = -1;
++	DIR *dir;
++
++	if (host < 0)
++		return -1;
++
++	dir = opendir("/sys/block");
++	if (!dir)
++		return -1;
++
++	while (ret && (de = readdir(dir))) {
++		unsigned int h, c, t, l;
++		const char *base;
++		ssize_t n;
++
++		if (strncmp(de->d_name, "sd", 2) || strlen(de->d_name) > 32)
++			continue;
++		snprintf(path, sizeof(path), "/sys/block/%s/device",
++			 de->d_name);
++		n = readlink(path, target, sizeof(target) - 1);
++		if (n <= 0)
++			continue;
++		target[n] = '\0';
++		base = strrchr(target, '/');
++		base = base ? base + 1 : target;
++		if (sscanf(base, "%u:%u:%u:%u", &h, &c, &t, &l) != 4 ||
++		    (int)h != host || l != lun)
++			continue;
++		snprintf(path, sizeof(path), "/sys/block/%s/removable",
++			 de->d_name);
++		if (sysfs_read(path, val, sizeof(val)) || strcmp(val, "0"))
++			continue;
++		snprintf(disk, len, "%s", de->d_name);
++		ret = 0;
++	}
++	closedir(dir);
++
++	return ret;
++}
++
++/*
++ * Looks for partitions of type @type_guid in the primary GPT of the disk
++ * open as @fd, checking the header and entry CRCs. Returns the number
++ * found and the first one's entry index and extent in blocks, or -1 for a
++ * missing or damaged GPT.
++ */
++static int gpt_find(int fd, uint32_t bs, uint64_t disk_blocks,
++		    const uint8_t *type_guid, uint32_t *part_idx, uint64_t *first,
++		    uint64_t *count)
++{
++	uint64_t entries_lba;
++	uint32_t hdr_size, num_entries, entry_size, crc, i;
++	uint8_t *hdr, *entries;
++	size_t entries_len;
++	int found = 0;
++
++	hdr = malloc(bs);
++	if (!hdr)
++		return -1;
++	if (read_full(fd, hdr, bs, bs) || memcmp(hdr, "EFI PART", 8)) {
++		free(hdr);
++		return -1;
++	}
++
++	hdr_size = le32(hdr + 12);
++	crc = le32(hdr + 16);
++	if (hdr_size < 92 || hdr_size > bs || le64(hdr + 24) != 1) {
++		free(hdr);
++		return -1;
++	}
++	memset(hdr + 16, 0, 4);
++	if (crc32_gpt(hdr, hdr_size) != crc) {
++		gpt_log("  GPT header CRC mismatch\n");
++		free(hdr);
++		return -1;
++	}
++
++	entries_lba = le64(hdr + 72);
++	num_entries = le32(hdr + 80);
++	entry_size = le32(hdr + 84);
++	crc = le32(hdr + 88);
++	free(hdr);
++	if (num_entries == 0 || num_entries > 1024 || entry_size < 128 ||
++	    entry_size > 4096 || entries_lba < 2 || entries_lba >= disk_blocks)
++		return -1;
++
++	entries_len = (size_t)num_entries * entry_size;
++	entries = malloc(entries_len);
++	if (!entries)
++		return -1;
++	if (read_full(fd, entries, entries_len, entries_lba * bs) ||
++	    crc32_gpt(entries, entries_len) != crc) {
++		gpt_log("  GPT entries unreadable or CRC mismatch\n");
++		free(entries);
++		return -1;
++	}
++
++	for (i = 0; i < num_entries; i++) {
++		const uint8_t *e = entries + (size_t)i * entry_size;
++		uint64_t start = le64(e + 32), last = le64(e + 40);
++
++		if (memcmp(e, type_guid, 16))
++			continue;
++		if (found++ == 0) {
++			*part_idx = i;
++			*first = start;
++			*count = last >= start ? last - start + 1 : 0;
++		}
++	}
++	free(entries);
++
++	return found;
++}
++
++/*
++ * Finds the kernel's partition of @disk that is GPT entry @part_idx and spans
++ * exactly @first + @count blocks of @bs bytes. Returns its /dev path and
++ * device number.
++ */
++static int part_node(const char *disk, uint32_t part_idx, uint64_t first,
++		     uint64_t count, uint32_t bs, char *dev, size_t len,
++		     dev_t *devt)
++{
++	char path[PATH_MAX], val[32];
++	unsigned int maj, min;
++	struct dirent *de;
++	int ret = -1;
++	DIR *dir;
++
++	snprintf(path, sizeof(path), "/sys/block/%s", disk);
++	dir = opendir(path);
++	if (!dir)
++		return -1;
++
++	while (ret && (de = readdir(dir))) {
++		unsigned long long v;
++
++		if (strncmp(de->d_name, disk, strlen(disk)) ||
++		    strlen(de->d_name) > 32)
++			continue;
++
++		snprintf(path, sizeof(path), "/sys/block/%s/%s/partition", disk,
++			 de->d_name);
++		if (sysfs_read(path, val, sizeof(val)) ||
++		    strtoull(val, NULL, 10) != part_idx + 1ULL)
++			continue;
++
++		/* sysfs counts in 512-byte sectors. */
++		snprintf(path, sizeof(path), "/sys/block/%s/%s/start", disk,
++			 de->d_name);
++		if (sysfs_read(path, val, sizeof(val)))
++			continue;
++		v = strtoull(val, NULL, 10);
++		if (v != first * (bs / 512))
++			continue;
++		snprintf(path, sizeof(path), "/sys/block/%s/%s/size", disk,
++			 de->d_name);
++		if (sysfs_read(path, val, sizeof(val)))
++			continue;
++		v = strtoull(val, NULL, 10);
++		if (v != count * (bs / 512))
++			continue;
++
++		snprintf(path, sizeof(path), "/sys/block/%s/%s/dev", disk,
++			 de->d_name);
++		if (sysfs_read(path, val, sizeof(val)) ||
++		    sscanf(val, "%u:%u", &maj, &min) != 2)
++			continue;
++
++		snprintf(dev, len, "/dev/%s", de->d_name);
++		*devt = makedev(maj, min);
++		ret = 0;
++	}
++	closedir(dir);
++
++	return ret;
++}
++
++/*
++ * Opens the store's partition on @disk: exclusively, read-write only when
++ * this listener will write to it, and only if the node is the partition
++ * the GPT describes. Returns the fd or -1.
++ */
++static int part_open(const char *disk, uint32_t part_idx, uint64_t first,
++		     uint64_t count, uint32_t bs, bool writable)
++{
++	uint64_t bytes;
++	struct stat st;
++	char dev[64];
++	dev_t devt;
++	int fd, sbs;
++
++	if (part_node(disk, part_idx, first, count, bs, dev, sizeof(dev), &devt)) {
++		gpt_log("  no kernel partition matches GPT entry %u of %s\n",
++			part_idx + 1, disk);
++		return -1;
++	}
++
++	fd = open(dev, (writable ? O_RDWR : O_RDONLY) | O_EXCL | O_CLOEXEC);
++	if (fd < 0) {
++		gpt_log("  open %s: %s\n", dev, strerror(errno));
++		return -1;
++	}
++	if (fstat(fd, &st) || !S_ISBLK(st.st_mode) || st.st_rdev != devt ||
++	    ioctl(fd, BLKSSZGET, &sbs) || (uint32_t)sbs != bs ||
++	    ioctl(fd, BLKGETSIZE64, &bytes) || bytes != count * bs) {
++		gpt_log("  %s isn't the partition the GPT describes\n", dev);
++		close(fd);
++		return -1;
++	}
++
++	snprintf(vs.name, sizeof(vs.name), "%s (LU%u, GPT entry %u, %" PRIu64
++		 " blocks)", dev, vs.lun, part_idx + 1, count);
++	return fd;
++}
++
++/*
++ * Reads the store's table of contents and keeps the tables' extents, the
++ * only places writes may land. Fails on anything unexpected: entries out
++ * of order, overlapping, outside the partition, or not adding up.
++ */
++static int vs_read_toc(void)
++{
++	uint8_t *blk;
++	uint32_t total, n, i, sum = 0;
++	int ret = -1;
++
++	blk = malloc(vs.block_size);
++	if (!blk)
++		return -1;
++	if (read_full(vs.fd, blk, vs.block_size, 0))
++		goto out;
++
++	if (memcmp(blk, VS_TOC_MAGIC, 4) || le32(blk + 4) != VS_TOC_VERSION) {
++		gpt_log("  no variable store table of contents (%.4s %08x)\n",
++			(const char *)blk, le32(blk + 4));
++		goto out;
++	}
++	total = le32(blk + 8);
++	n = le32(blk + 12);
++	if (n == 0 || n > VS_MAX_TABLES ||
++	    VS_TOC_HDR_LEN + n * VS_TOC_ENTRY_LEN > vs.block_size)
++		goto bad;
++
++	for (i = 0; i < n; i++) {
++		const uint8_t *e = blk + VS_TOC_HDR_LEN + i * VS_TOC_ENTRY_LEN;
++		struct vs_table *t = &vs.tables[i];
++
++		t->id = le32(e);
++		t->first = le16(e + 4);
++		t->count = le16(e + 6);
++		if (t->first == 0 || t->count == 0 ||
++		    t->first + t->count > vs.num_blocks)
++			goto bad;
++		if (i > 0 && t->first < vs.tables[i - 1].first +
++						vs.tables[i - 1].count)
++			goto bad;
++		sum += t->count;
++	}
++	if (sum != total)
++		goto bad;
++
++	vs.n_tables = n;
++	for (i = 0; i < n; i++)
++		gpt_log("  table %u: blocks %u-%u\n", vs.tables[i].id,
++			vs.tables[i].first,
++			vs.tables[i].first + vs.tables[i].count - 1);
++	ret = 0;
++	goto out;
++
++bad:
++	gpt_log("  variable store table of contents not understood\n");
++	gpt_dump("toc", blk, 32);
++out:
++	free(blk);
++	return ret;
++}
++
++/*
++ * Finds, checks and opens the store. Without a store this listener can
++ * trust, it doesn't register.
++ */
++static int vs_open(void)
++{
++	bool writable = mode == GPT_MODE_RW && !shadow_path;
++	uint64_t disk_bytes, first = 0, count = 0;
++	unsigned int i;
++	uint32_t part_idx = 0;
++	int fd, found, bs = 0;
++	char disk[40], dev[64];
++
++	for (i = 0; i < sizeof(varstore_luns) / sizeof(varstore_luns[0]); i++) {
++		if (ufs_lu_disk(varstore_luns[i], disk, sizeof(disk)))
++			continue;
++
++		snprintf(dev, sizeof(dev), "/dev/%s", disk);
++		fd = open(dev, O_RDONLY | O_CLOEXEC);
++		if (fd < 0)
++			continue;
++		if (ioctl(fd, BLKSSZGET, &bs) || bs < 512 || bs % 512 ||
++		    ioctl(fd, BLKGETSIZE64, &disk_bytes)) {
++			close(fd);
++			continue;
++		}
++		found = gpt_find(fd, bs, disk_bytes / bs, varstore_guid,
++				 &part_idx, &first, &count);
++		close(fd);
++		if (found == 0)
++			continue;
++		if (found != 1 || count == 0 ||
++		    first + count > disk_bytes / bs) {
++			gpt_log("  %s (LU%u): %d variable store partitions or "
++				"bad GPT\n", dev, varstore_luns[i], found);
++			return -1;
++		}
++		vs.lun = varstore_luns[i];
++		break;
++	}
++	if (count == 0) {
++		gpt_log("  no UEFI variable store on UFS\n");
++		return -1;
++	}
++
++	vs.block_size = bs;
++	vs.num_blocks = count;
++	vs.fd = part_open(disk, part_idx, first, count, bs, writable);
++	if (vs.fd < 0)
++		return -1;
++
++	if (shadow_path) {
++		struct stat st;
++		int sfd;
++
++		sfd = open(shadow_path, O_RDWR | O_CLOEXEC);
++		if (sfd < 0 || fstat(sfd, &st) || !S_ISREG(st.st_mode) ||
++		    (uint64_t)st.st_size != count * bs) {
++			gpt_log("  shadow %s unusable (needs %" PRIu64
++				" bytes)\n", shadow_path, count * bs);
++			if (sfd >= 0)
++				close(sfd);
++			close(vs.fd);
++			vs.fd = -1;
++			return -1;
++		}
++		close(vs.fd);
++		vs.fd = sfd;
++		snprintf(vs.name + strlen(vs.name),
++			 sizeof(vs.name) - strlen(vs.name), ", shadow %s",
++			 shadow_path);
++	}
++
++	gpt_log("  variable store: %s, %u-byte blocks\n", vs.name,
++		vs.block_size);
++
++	if (vs_read_toc()) {
++		close(vs.fd);
++		vs.fd = -1;
++		return -1;
++	}
++	return 0;
++}
++
++/* Is every block of @start + @count inside one table of the store? */
++static bool vs_write_allowed(uint32_t start, uint32_t count)
++{
++	unsigned int i;
++
++	for (i = 0; i < vs.n_tables; i++) {
++		const struct vs_table *t = &vs.tables[i];
++
++		if (start >= t->first &&
++		    (uint64_t)start + count <= (uint64_t)t->first + t->count)
++			return true;
++	}
++	return false;
++}
++
++/* The store, if @ctx_id names it. */
++static bool vs_ctx(uint32_t ctx_id)
++{
++	if (ctx_id == VARSTORE_CTX_ID)
++		return true;
++	if (!adopt)
++		return false;
++
++	if (ctx_id != vs.last_adopted) {
++		gpt_log("  ctx 0x%x from UEFI taken as the variable store\n",
++			ctx_id);
++		vs.last_adopted = ctx_id;
++	}
++	return true;
++}
++
++/*
++ * Command handlers. Each request shares the buffer with its response, so
++ * the handlers copy the request out first.
++ */
++
++static int gpt_handle_init(void *buf, size_t buf_len)
++{
++	tz_gpt_init_req_t req;
++	tz_gpt_init_rsp_t rsp = { 0 };
++	char guid[40];
++
++	memcpy(&req, buf, sizeof(req));
++	guid_str(req.type_guid, guid, sizeof(guid));
++	gpt_log("INIT version=%u dev_id=%u type=%s\n", req.version, req.dev_id,
++		guid);
++
++	rsp.cmd_id = req.cmd_id;
++	rsp.version = GPT_LSTNR_VERSION;
++	rsp.status = GPT_STATUS_DEVICE_NOT_FOUND;
++
++	if (req.version < GPT_LSTNR_VERSION) {
++		rsp.status = GPT_STATUS_VERSION_MISMATCH;
++		goto out;
++	}
++	if (mode == GPT_MODE_LOG)
++		goto out;
++
++	/* Only the store, and only on the storage it is on. */
++	if (memcmp(req.type_guid, varstore_guid, 16)) {
++		gpt_log("  not the UEFI variable store, refused\n");
++		goto out;
++	}
++	if (req.dev_id != GPT_DEV_EMMC_ALL && req.dev_id != vs.lun) {
++		gpt_log("  the store is on LU%u, refused\n", vs.lun);
++		goto out;
++	}
++
++	rsp.status = GPT_STATUS_SUCCESS;
++	rsp.num_sectors = vs.num_blocks;
++	rsp.buf_size = buf_len;
++	rsp.ctx_id = VARSTORE_CTX_ID;
++	rsp.bytes_per_sector = vs.block_size;
++
++out:
++	gpt_log("  -> status %d\n", rsp.status);
++	memcpy(buf, &rsp, sizeof(rsp));
++	return 0;
++}
++
++static int gpt_handle_rw(void *buf, size_t buf_len, bool write)
++{
++	tz_gpt_rw_req_t req;
++	tz_gpt_rw_rsp_t rsp = { 0 };
++	uint8_t *data;
++	uint64_t bytes = 0, i;
++	off_t off;
++
++	memcpy(&req, buf, sizeof(req));
++	gpt_log("%s ctx=0x%x start=%u count=%u buf_len=%u buf_off=%u\n",
++		write ? "WRITE" : "READ", req.ctx_id, req.start_sector,
++		req.num_sectors, req.req_buff_len, req.req_buff_offset);
++
++	rsp.cmd_id = req.cmd_id;
++	rsp.ctx_id = req.ctx_id;
++	rsp.status = GPT_STATUS_INVALID_PARAM;
++	rsp.rsp_buff_offset = sizeof(rsp);
++
++	if (!vs_ctx(req.ctx_id)) {
++		gpt_log("  unknown ctx, refused\n");
++		goto out;
++	}
++
++	bytes = (uint64_t)req.num_sectors * vs.block_size;
++	if (req.num_sectors == 0 ||
++	    (uint64_t)req.start_sector + req.num_sectors > vs.num_blocks) {
++		gpt_log("  outside the store, refused\n");
++		goto out;
++	}
++	off = (off_t)req.start_sector * vs.block_size;
++
++	if (write) {
++		if (req.req_buff_len != bytes ||
++		    req.req_buff_offset < sizeof(req) ||
++		    (uint64_t)req.req_buff_offset + bytes > buf_len) {
++			gpt_log("  malformed write, refused\n");
++			goto out;
++		}
++		if (!vs_write_allowed(req.start_sector, req.num_sectors)) {
++			gpt_log("  not inside one variable table, refused\n");
++			rsp.status = GPT_STATUS_ERROR;
++			goto out;
++		}
++		if (mode != GPT_MODE_RW) {
++			gpt_log("  write refused (%s mode)\n",
++				mode == GPT_MODE_RO ? "ro" : "log");
++			rsp.status = GPT_STATUS_ERROR;
++			goto out;
++		}
++
++		data = (uint8_t *)buf + req.req_buff_offset;
++		if (debug)
++			for (i = 0; i < req.num_sectors; i++)
++				gpt_dump("w", data + i * vs.block_size,
++					 vs.block_size);
++		if (write_full(vs.fd, data, bytes, off) || fdatasync(vs.fd)) {
++			gpt_log("  write failed: %s\n", strerror(errno));
++			rsp.status = GPT_STATUS_ERROR;
++		} else {
++			rsp.status = GPT_STATUS_SUCCESS;
++		}
++		bytes = 0;
++	} else {
++		if (sizeof(rsp) + bytes > buf_len) {
++			gpt_log("  read larger than the buffer, refused\n");
++			goto out;
++		}
++		if (mode == GPT_MODE_LOG) {
++			rsp.status = GPT_STATUS_ERROR;
++			goto out;
++		}
++
++		data = (uint8_t *)buf + sizeof(rsp);
++		if (read_full(vs.fd, data, bytes, off)) {
++			gpt_log("  read failed: %s\n", strerror(errno));
++			rsp.status = GPT_STATUS_ERROR;
++		} else {
++			rsp.status = GPT_STATUS_SUCCESS;
++			if (debug)
++				for (i = 0; i < req.num_sectors; i++)
++					gpt_dump("r", data + i * vs.block_size,
++						 vs.block_size);
++		}
++	}
++
++out:
++	rsp.rsp_buff_len = rsp.status == GPT_STATUS_SUCCESS ? bytes : 0;
++	gpt_log("  -> status %d\n", rsp.status);
++	memcpy(buf, &rsp, sizeof(rsp));
++	return 0;
++}
++
++static int gpt_handle_partition(void *buf)
++{
++	tz_gpt_partition_req_t req;
++	tz_gpt_partition_rsp_t rsp = { 0 };
++	char guid[40];
++
++	memcpy(&req, buf, sizeof(req));
++	guid_str(req.type_guid, guid, sizeof(guid));
++	gpt_log("PARTITION version=0x%x dev_id=%u type=%s: not supported\n",
++		req.version, req.dev_id, guid);
++
++	rsp.cmd_id = req.cmd_id;
++	rsp.status = GPT_STATUS_NOT_SUPPORTED;
++	rsp.rsp_buff_offset = sizeof(rsp);
++	memcpy(buf, &rsp, sizeof(rsp));
++	return 0;
++}
++
++/*
++ * MinkIPC dispatch callback
++ */
++
++int smci_dispatch(void *buf, size_t buf_len)
++{
++	uint32_t cmd_id;
++
++	if (vs.fd < 0 || buf_len < sizeof(tz_gpt_init_rsp_t)) {
++		gpt_log("No store or buffer too small: %zu\n", buf_len);
++		return -1;
++	}
++
++	cmd_id = *(uint32_t *)buf;
++	if (debug)
++		gpt_dump("req", buf, 48);
++
++	switch ((tz_gpt_cmd_id_t)cmd_id) {
++	case TZ_CM_CMD_GPT_INIT:
++		return gpt_handle_init(buf, buf_len);
++	case TZ_CM_CMD_GPT_READ:
++		return gpt_handle_rw(buf, buf_len, false);
++	case TZ_CM_CMD_GPT_WRITE:
++		return gpt_handle_rw(buf, buf_len, true);
++	case TZ_CM_CMD_GPT_PARTITION:
++		return gpt_handle_partition(buf);
++	default:
++		gpt_log("Unknown GPT command: 0x%x\n", cmd_id);
++		gpt_dump("req", buf, 48);
++		return -1;
++	}
++}
++
++/*
++ * Service lifecycle
++ */
++
++int init(void)
++{
++	int32_t rv;
++	Object root = Object_NULL;
++	Object client_env = Object_NULL;
++	void *buf = NULL;
++	size_t buf_len = 0;
++	const char *env;
++
++	env = getenv("GPTSVC_MODE");
++	if (!env || !strcmp(env, "rw"))
++		mode = GPT_MODE_RW;
++	else if (!strcmp(env, "ro"))
++		mode = GPT_MODE_RO;
++	else if (!strcmp(env, "log"))
++		mode = GPT_MODE_LOG;
++	else {
++		gpt_log("unknown GPTSVC_MODE %s\n", env);
++		return -1;
++	}
++	shadow_path = getenv("GPTSVC_SHADOW");
++	if (shadow_path && !*shadow_path)
++		shadow_path = NULL;
++	env = getenv("GPTSVC_DEBUG");
++	debug = env && *env && strcmp(env, "0");
++	env = getenv("GPTSVC_ADOPT");
++	adopt = !env || strcmp(env, "0");
++
++	gpt_log("GPT service initializing (%s mode%s%s)\n",
++		mode == GPT_MODE_RW ? "rw" : mode == GPT_MODE_RO ? "ro" : "log",
++		shadow_path ? ", shadow " : "", shadow_path ? shadow_path : "");
++
++	if (vs_open()) {
++		gpt_log("No UEFI variable store to serve, not registering\n");
++		return -1;
++	}
++
++	rv = MinkCom_getRootEnvObject(&root);
++	if (Object_isERROR(rv)) {
++		gpt_log("getRootEnvObject failed: 0x%x\n", rv);
++		goto err;
++	}
++
++	rv = MinkCom_getClientEnvObject(root, &client_env);
++	if (Object_isERROR(rv)) {
++		gpt_log("getClientEnvObject failed: 0x%x\n", rv);
++		goto err;
++	}
++
++	rv = IClientEnv_open(client_env, CRegisterListenerCBO_UID,
++			     &register_obj);
++	if (Object_isERROR(rv)) {
++		gpt_log("IClientEnv_open(CRegisterListenerCBO) failed: 0x%x\n",
++			rv);
++		goto err;
++	}
++
++	rv = MinkCom_getMemoryObject(root, GPT_BUF_LEN, &mo);
++	if (Object_isERROR(rv)) {
++		gpt_log("getMemoryObject failed: 0x%x\n", rv);
++		goto err;
++	}
++
++	rv = MinkCom_getMemoryObjectInfo(mo, &buf, &buf_len);
++	if (Object_isERROR(rv)) {
++		gpt_log("getMemoryObjectInfo failed: 0x%x\n", rv);
++		goto err;
++	}
++
++	rv = CListenerCBO_new(&cbo, GPT_SERVICE_ID, smci_dispatch, buf,
++			      buf_len);
++	if (Object_isERROR(rv)) {
++		gpt_log("CListenerCBO_new failed: 0x%x\n", rv);
++		goto err;
++	}
++
++	rv = IRegisterListenerCBO_register(register_obj, GPT_SERVICE_ID, cbo,
++					   mo);
++	if (Object_isERROR(rv)) {
++		gpt_log("IRegisterListenerCBO_register(0x%x) failed: %d\n",
++			GPT_SERVICE_ID, rv);
++		goto err;
++	}
++
++	Object_ASSIGN_NULL(client_env);
++	Object_ASSIGN_NULL(root);
++
++	gpt_log("GPT service registered (service ID: 0x%x, %zu-byte buffer)\n",
++		GPT_SERVICE_ID, buf_len);
++	return 0;
++
++err:
++	Object_ASSIGN_NULL(cbo);
++	Object_ASSIGN_NULL(mo);
++	Object_ASSIGN_NULL(register_obj);
++	Object_ASSIGN_NULL(client_env);
++	Object_ASSIGN_NULL(root);
++	close(vs.fd);
++	vs.fd = -1;
++	return -1;
++}
++
++void deinit(void)
++{
++	gpt_log("GPT service deinitializing\n");
++	Object_ASSIGN_NULL(register_obj);
++	Object_ASSIGN_NULL(cbo);
++	Object_ASSIGN_NULL(mo);
++
++	if (vs.fd >= 0)
++		close(vs.fd);
++	vs.fd = -1;
++}
+diff --git a/listeners/libgptservice/gpt_service.h b/listeners/libgptservice/gpt_service.h
+new file mode 100644
+index 0000000..3afa245
+--- /dev/null
++++ b/listeners/libgptservice/gpt_service.h
+@@ -0,0 +1,123 @@
++// SPDX-License-Identifier: BSD-3-Clause-Clear
++
++#ifndef __GPT_SERVICE_H__
++#define __GPT_SERVICE_H__
++
++#include <stdint.h>
++
++/*
++ * GPT partition listener.
++ *
++ * QTEE's storage manager reaches GPT partitions of the non-secure world
++ * through this listener, for example the UEFI variable store, which
++ * uefisecapp keeps in a partition of the boot device.
++ */
++
++/* GPT listener service ID */
++#define GPT_SERVICE_ID 0x2001
++
++/*
++ * Shared-memory buffer size. The listener reports it to QTEE in the init
++ * response, and QTEE splits reads and writes to fit.
++ */
++#define GPT_BUF_LEN (260 * 1024)
++
++/* Message version this listener speaks. */
++#define GPT_LSTNR_VERSION 2
++
++/*
++ * TZ <-> HLOS command IDs
++ */
++
++typedef enum {
++	TZ_CM_CMD_GPT_INIT = 0x401, /* open a partition by type GUID */
++	TZ_CM_CMD_GPT_READ = 0x402, /* read sectors */
++	TZ_CM_CMD_GPT_WRITE = 0x403, /* write sectors */
++	TZ_CM_CMD_GPT_PARTITION = 0x404, /* create partitions */
++} tz_gpt_cmd_id_t;
++
++/*
++ * Status values
++ */
++
++#define GPT_STATUS_SUCCESS 0
++#define GPT_STATUS_ERROR (-1)
++#define GPT_STATUS_INVALID_PARAM (-2)
++#define GPT_STATUS_DEVICE_NOT_FOUND (-3)
++#define GPT_STATUS_PARTITION_NOT_FOUND (-4)
++#define GPT_STATUS_VERSION_MISMATCH (-5)
++#define GPT_STATUS_OUT_OF_RESOURCES (-6)
++#define GPT_STATUS_NOT_SUPPORTED (-7)
++
++/*
++ * Storage devices QTEE names in the init request. On UFS the eMMC names
++ * stand for logical units: user = LU0, boot1 = LU1, boot2 = LU2,
++ * GPP1-4 = LU4-7.
++ */
++
++typedef enum {
++	GPT_DEV_EMMC_USER = 0,
++	GPT_DEV_EMMC_BOOT1 = 1,
++	GPT_DEV_EMMC_BOOT2 = 2,
++	GPT_DEV_EMMC_RPMB = 3,
++	GPT_DEV_EMMC_GPP1 = 4,
++	GPT_DEV_EMMC_GPP2 = 5,
++	GPT_DEV_EMMC_GPP3 = 6,
++	GPT_DEV_EMMC_GPP4 = 7,
++	GPT_DEV_EMMC_ALL = 8, /* search GPP1, then user */
++} tz_gpt_dev_id_t;
++
++/*
++ * TZ request / response wire structures
++ */
++
++typedef struct {
++	uint32_t cmd_id;
++	uint32_t version;
++	uint32_t dev_id;
++	uint8_t type_guid[16]; /* partition type GUID, EFI_GUID layout */
++} __attribute__((packed)) tz_gpt_init_req_t;
++
++typedef struct {
++	uint32_t cmd_id;
++	uint32_t version;
++	int32_t status;
++	uint32_t num_sectors;
++	uint32_t buf_size; /* listener buffer size in bytes */
++	uint32_t ctx_id; /* handle for later reads and writes */
++	uint32_t bytes_per_sector;
++	uint32_t reserved[4];
++} __attribute__((packed)) tz_gpt_init_rsp_t;
++
++typedef struct {
++	uint32_t cmd_id;
++	uint32_t ctx_id;
++	uint32_t start_sector; /* relative to the partition */
++	uint32_t num_sectors;
++	uint32_t req_buff_len;
++	uint32_t req_buff_offset; /* write data, from the start of the request */
++} __attribute__((packed)) tz_gpt_rw_req_t;
++
++typedef struct {
++	uint32_t cmd_id;
++	uint32_t ctx_id;
++	int32_t status;
++	uint32_t rsp_buff_len;
++	uint32_t rsp_buff_offset; /* read data, from the start of the response */
++} __attribute__((packed)) tz_gpt_rw_rsp_t;
++
++typedef struct {
++	uint32_t cmd_id;
++	uint32_t version;
++	uint32_t dev_id;
++	uint8_t type_guid[16];
++} __attribute__((packed)) tz_gpt_partition_req_t;
++
++typedef struct {
++	uint32_t cmd_id;
++	int32_t status;
++	uint32_t num_partitions;
++	uint32_t rsp_buff_offset;
++} __attribute__((packed)) tz_gpt_partition_rsp_t;
++
++#endif /* __GPT_SERVICE_H__ */
+diff --git a/qtee_supplicant/CMakeLists.txt b/qtee_supplicant/CMakeLists.txt
+index 0d18462..a08f5b3 100644
+--- a/qtee_supplicant/CMakeLists.txt
++++ b/qtee_supplicant/CMakeLists.txt
+@@ -44,6 +44,11 @@ if(BUILD_RPMB_LISTENER)
+ 		PRIVATE -DRPMB_LISTENER)
+ endif()
+ 
++if(BUILD_GPT_LISTENER)
++	target_compile_definitions(${PROJECT_NAME}
++		PRIVATE -DGPT_LISTENER)
++endif()
++
+ # ''Headers and dependencies''.
+ 
+ target_link_libraries(${PROJECT_NAME}
+diff --git a/qtee_supplicant/src/listener_mngr.c b/qtee_supplicant/src/listener_mngr.c
+index c9fd512..f7173d3 100644
+--- a/qtee_supplicant/src/listener_mngr.c
++++ b/qtee_supplicant/src/listener_mngr.c
+@@ -55,6 +55,14 @@ static struct listener_svc listeners[] = {
+ 		.lib_handle = NULL,
+ 	},
+ #endif
++#ifdef GPT_LISTENER
++	{
++		.service_name = "GPT service",
++		.is_registered = false,
++		.file_name = PLUGIN_PATH "libgptservice.so.1",
++		.lib_handle = NULL,
++	},
++#endif
+ };
+ 
+ /**
+-- 
+2.47.3
+
