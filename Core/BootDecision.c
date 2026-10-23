@@ -27,11 +27,10 @@ BootDecisionUpHeld (IN CONST BOOT_DECISION_START *Start)
 BOOLEAN
 BootDecisionAndroid (
   IN CONST BOOT_DECISION_START *Start,
-  IN BOOLEAN                    AndroidSetting,
-  IN BOOLEAN                    Charger
+  IN BOOLEAN                    AndroidSetting
 )
 {
-  return AndroidSetting || BootDecisionUpHeld (Start) || Charger;
+  return AndroidSetting || BootDecisionUpHeld (Start);
 }
 
 BOOLEAN

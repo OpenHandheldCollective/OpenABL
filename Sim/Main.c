@@ -634,7 +634,7 @@ SErrorInstall (
   AppOnInstalled (A, FALSE, Why, TRUE);
 }
 
-// Powered on by the charger with Android gone: about half charged.
+// Powered on by the charger, about half charged.
 STATIC VOID
 SCharging (
   IN OUT APP *A,

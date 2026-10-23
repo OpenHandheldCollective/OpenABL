@@ -41,9 +41,12 @@ At power-on, unless a one-shot boot has been requested:
 | Volume Down | Opens the menu, with fastboot available over USB. `fastboot reboot bootloader` also opens it; a keyboard's Delete key requests it too. |
 | Volume Up | With PortareOS/Linux as the default, starts Android. With Android as the default, starts Android recovery. The stored `AltVolumeUp` setting can override this with external Linux boot. |
 
-When off-mode charging is enabled, a charger-triggered boot uses Android's
-charging path, unless a one-shot choice or the external Linux override
-takes precedence.
+When off-mode charging is enabled and a charger switches the device on,
+BIOS shows its charging screen, unless a one-shot choice is pending: the
+battery and its percent, estimated from the voltage, then the display goes
+off after 5 seconds and any key shows it again. Power starts the default
+system, a volume key opens the menu, and unplugging the charger turns the
+device off.
 
 In the menu, Volume Up and Down move the selection and Power selects.
 Keyboard arrows and Enter also work. Lists have a **Back** row.

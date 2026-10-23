@@ -1867,7 +1867,7 @@ MenuRun (
 #endif
   AppStart (&mApp, ClockNowMs (), TRUE);
   if (M.CameBack == MENU_START_RESULT_CHARGING) {
-    MenuLog ("charging: powered on by the charger, with no Android");
+    MenuLog ("charging: powered on by the charger");
     AppStartCharging (&mApp);
     mBatteryAt = 0;
     mAwakeAt   = ClockNowMs ();

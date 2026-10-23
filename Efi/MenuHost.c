@@ -15,7 +15,6 @@
 #include "Efi/Quirks.h"
 #include "Efi/UsbHost.h"
 
-BOOLEAN gMenuHostChargerBoot;
 
 CONST CHAR8 *
 MenuHostActionName (IN UINT32 Action)
@@ -91,7 +90,7 @@ OwnSettings (IN OUT MENU_HOST_STATE *State)
   BOOT_DECISION_START Start    = MenuHostStateStart (State);
 
   State->BootMode =
-    BootDecisionAndroid (&Start, Settings.BootMode != 0, gMenuHostChargerBoot);
+    BootDecisionAndroid (&Start, Settings.BootMode != 0);
   State->AblMode     = Settings.AblMode;
   State->AltVolumeUp = Settings.AltVolumeUp;
   State->BootSource  = Settings.BootSource == MENU_HOST_BOOT_SOURCE_USB &&

@@ -42,13 +42,12 @@ BootDecisionFastboot (IN CONST BOOT_DECISION_START *Start);
 BOOLEAN
 BootDecisionUpHeld (IN CONST BOOT_DECISION_START *Start);
 
-// Returns TRUE for the Android boot mode: set in the settings, Volume Up or
-// Home held, or a charger boot.
+// Returns TRUE for the Android boot mode: set in the settings, or Volume Up
+// or Home held. A charger boot shows BIOS's charging screen instead.
 BOOLEAN
 BootDecisionAndroid (
   IN CONST BOOT_DECISION_START *Start,
-  IN BOOLEAN                    AndroidSetting,
-  IN BOOLEAN                    Charger
+  IN BOOLEAN                    AndroidSetting
 );
 
 BOOLEAN

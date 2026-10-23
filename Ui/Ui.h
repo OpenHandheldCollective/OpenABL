@@ -188,9 +188,8 @@ typedef enum {
   SCREEN_INSTALL_SIZE, // a first Dualboot: what Android keeps
   SCREEN_INSTALLING,   // takes no input
   SCREEN_INSTALLED,    // Select restarts
-  // The charger powered the Nova on and Android isn't there to show its
-  // charger screen. Select starts the default system; Up and Down open the
-  // menu.
+  // The charger powered the Nova on. Select starts the default system; Up
+  // and Down open the menu.
   SCREEN_CHARGING,
 } SCREEN;
 
