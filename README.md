@@ -37,7 +37,7 @@ At power-on:
 |---|---|
 | Nothing | Boots the selected *Boot mode* (Linux or Android) from the *Boot source*. If nothing boots, the menu opens and shows why. |
 | Volume Down | Opens the menu. Fastboot still works over USB while it is open. `fastboot reboot bootloader` also opens it. |
-| Volume Up | Boots Android when the boot mode is Linux, or Android recovery when it is Android. With *Volume up at boot* set to *Linux (external)*, boots Linux from the SD card or a USB drive instead. |
+| Volume Up | Boots Android when the boot mode is Linux, or Android recovery when it is Android. With *Volume up at boot* set to *Linux (external)*, boots Linux from the SD card instead. |
 
 In the menu, Volume Up and Down move the selection and Power selects.
 
@@ -52,7 +52,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Boot mode | Linux or Android. |
 | ABL mode | Silent, or Verbose to show the ABL's log on screen while booting. |
 | Volume up at boot | Sets what holding Volume Up at power-on does. |
-| Boot source | Auto (internal storage first), Internal, SD card or USB. |
+| Boot source | Auto (internal storage first), Internal or SD card. |
 | Off-mode charging | Shows the charger screen when plugged in while powered off. |
 | Display rotation | Auto (from the device model) or fixed at 0, 90, 180 or 270 degrees. |
 | Custom boot logo | Replaces the manufacturer's logo at boot with the pictures in a `\logo` folder (see below), or the OpenABL wordmark if there are none. Off by default. |
@@ -104,8 +104,8 @@ order:
   `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor).
 - An `EFI_RT_PROPERTIES_TABLE` tells Linux which runtime services XBL
   lacks: `SetVirtualAddressMap` on SDM845, all of them on SM6115.
-- Boot sources are internal storage (UFS or eMMC), the SD card and USB
-  drives. For USB the port is switched to host mode.
+- Boot sources are internal storage (UFS or eMMC) and the SD card. USB is
+  only for fastboot; it isn't a boot source.
 - A boot image found on a GPT partition gets
   `portare.bootpart=PARTUUID=<guid>` added to its command line, naming that
   partition in lower case as Linux's PARTUUID does. A card written from an
