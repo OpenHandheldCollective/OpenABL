@@ -161,8 +161,9 @@ ListDir (
   return Ok;
 }
 
-// The FAT date and time of now, or 2026-01-01 if the clock can't be read.
-// Seconds gets the time since 1970.
+// The FAT date and time of now, or 2026-01-01 if the clock can't be read
+// or isn't set: until an OS sets it, the Nova's clock counts from January
+// 1980. Seconds gets the time since 1970.
 STATIC VOID
 Now (
   OUT UINT16 *Date,
@@ -175,7 +176,7 @@ Now (
   UINT32   Month;
   UINT64   Days;
 
-  if (gRT->GetTime (&Clock, NULL) != EFI_SUCCESS || Clock.Year < 1980 ||
+  if (gRT->GetTime (&Clock, NULL) != EFI_SUCCESS || Clock.Year < 2026 ||
       Clock.Month < 1 || Clock.Month > 12) {
     Clock = (EFI_TIME){.Year = 2026, .Month = 1, .Day = 1};
   }
