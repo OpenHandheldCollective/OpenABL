@@ -424,7 +424,7 @@ ModelRow (
   }
 }
 
-// Each entry, then "Back". Start tries the first.
+// Each system with where it boots from, then "Back".
 STATIC VOID
 EntryRow (
   IN CONST APP     *A,
@@ -434,16 +434,20 @@ EntryRow (
   IN UINTN          Cap
 )
 {
+  CONST ENTRY_VIEW *Entry;
+
   if (Index >= A->EntryCount) {
     *Label = gStrings->Back;
     return;
   }
-  *Label = A->Entries[Index].Title;
-  if (A->Entries[Index].Bad) {
-    AsciiStrCopy (Value, Cap, gStrings->NoTriesLeft);
-  } else if (Index == 0) {
-    AsciiStrCopy (Value, Cap, gStrings->Default);
-  }
+  Entry  = &A->Entries[Index];
+  *Label = Entry->Title;
+  AsciiStrCopy (
+    Value, Cap,
+    Entry->Bad         ? gStrings->NoTriesLeft
+    : Entry->Removable ? gStrings->SdCard
+                       : gStrings->Internal
+  );
 }
 
 // A label and its value, or a bare line of the log.
@@ -525,15 +529,24 @@ StatusDraw (
   }
 }
 
+// The system, and where it starts from when that is known: a pick from the
+// boot list, or Android.
 STATIC VOID
 BootingDraw (IN CONST APP *A)
 {
-  CONST CHAR8 *Title = A->Booting >= 0 ? AppBootTitle (A) : NULL;
+  CONST CHAR8 *Title  = A->Booting >= 0 ? AppBootTitle (A) : NULL;
+  CONST CHAR8 *Source = NULL;
 
-  if (!Title) {
+  if (Title) {
+    Source = A->Entries[A->Booting].Removable ? gStrings->FromSdCard
+                                              : gStrings->FromInternal;
+  } else {
     Title = TargetName (A, A->Starting);
+    if (A->Starting == BOOT_TARGET_ANDROID) {
+      Source = gStrings->FromInternal;
+    }
   }
-  StatusDraw (A, Title, gStrings->Starting, NULL);
+  StatusDraw (A, Title, gStrings->Starting, Source);
 }
 
 // What went wrong, in bright, then why and what to do.
@@ -576,6 +589,28 @@ ErrorDraw (IN CONST APP *A)
     Message = A->ErrorDetail;
     Hint    = "";
     break;
+  case BOOT_ERROR_PICK_GONE:
+  case BOOT_ERROR_PICK_FAILED: {
+    STATIC CHAR8 Named[160];
+    STATIC CHAR8 Failed[192];
+    CONST CHAR8 *Args[2] = {
+      A->ErrorDetail, A->PickFromSd ? gStrings->SrcSd : gStrings->SrcInternal};
+    BOOLEAN Known = A->ErrorDetail[0] != 0;
+
+    LangFill (Named, sizeof (Named), gStrings->ErrPickTitle, Args, 1);
+    LangFill (Failed, sizeof (Failed), gStrings->ErrPickFailed, Args, 2);
+    Title = Known ? Named : gStrings->ErrPickTitleAny;
+    Hint  = gStrings->ErrPickHint;
+    if (A->Error == BOOT_ERROR_PICK_FAILED) {
+      Message = Known ? Failed : gStrings->ErrPickFailedAny;
+    } else if (A->PickFromSd) {
+      Message = gStrings->ErrPickGoneSd;
+      Hint    = gStrings->ErrPickGoneSdHint;
+    } else {
+      Message = gStrings->ErrPickGone;
+    }
+    break;
+  }
   default:
     Title   = gStrings->ErrModelTitle;
     Message = gStrings->ErrModelMsg;
@@ -807,9 +842,11 @@ ViewSync (IN OUT APP *A)
     );
     break;
   case SCREEN_ENTRIES:
+    // Back, the last row, returns to the menu.
     ListDraw (
-      A, gStrings->BootEntries, A->EntryCount + 1, &A->EntryList, EntryRow,
-      gStrings->VerbLaunch
+      A, gStrings->Boot, A->EntryCount + 1, &A->EntryList, EntryRow,
+      A->EntryList.Focus < A->EntryCount ? gStrings->VerbLaunch
+                                         : gStrings->VerbMenu
     );
     break;
   case SCREEN_LINES:

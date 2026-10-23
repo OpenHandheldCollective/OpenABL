@@ -3,203 +3,263 @@
   <img alt="OpenABL" src="Docs/logo-light.png" width="320">
 </picture>
 
-A graphical boot menu and standard Linux boot for Qualcomm handhelds,
-built into Qualcomm's Android bootloader (ABL). OpenABL is Qualcomm's ABL
-with one patch and a few added files (`Abl/`). It carries the menu program
-in its firmware volume and starts it instead of its own fastboot menu.
+Portare BIOS is a fork of OpenABL by the Open Handheld Collective:
+Qualcomm's Android bootloader (ABL) with a graphical boot menu and standard
+Linux boot. It is built for the Retroid Pocket Nova (SM8550), running
+PortareOS and Android. The ABL patch and integration files are in `Abl/`;
+the menu program is embedded in the firmware volume.
+
+The build also supports SDM845, SM4450, SM6115, SM6450, SM7675, SM8250,
+SM8650 and SM8750.
 
 <p>
   <img alt="The main menu" src="Docs/main-menu.png" width="49%">
-  <img alt="Choosing a boot entry" src="Docs/boot-entries.png" width="49%">
+  <img alt="The boot list" src="Docs/boot-list.png" width="49%">
 </p>
 
-The main menu and the boot entries, rendered by the simulator (`make sim`).
-
-Supported chipsets: SDM845, SM4450, SM6115, SM6450, SM7675, SM8250, SM8550,
-SM8650 and SM8750.
+The main menu and the boot list, rendered by the simulator (`make sim`).
 
 ## Using it
 
-Flash the image for your chipset to the ABL partition (both slots on A/B
-devices):
+For the Nova, use `abl_signed-SM8550.elf`. From fastboot, with ABL flashing
+unlocked, write both slots:
 
 ```bash
 fastboot flash abl_a abl_signed-SM8550.elf
-```
-
-```bash
 fastboot flash abl_b abl_signed-SM8550.elf
+fastboot reboot
 ```
 
-At power-on:
+Other devices need the image for their chipset and their corresponding ABL
+partition names. Fastboot's `product` is `PortareBIOS`.
+
+At power-on, unless a one-shot boot has been requested:
 
 | Held | What happens |
 |---|---|
-| Nothing | Boots the selected *Boot mode* (Linux or Android) from the *Boot source*. If nothing boots, the menu opens and shows why. |
-| Volume Down | Opens the menu. Fastboot still works over USB while it is open. `fastboot reboot bootloader` also opens it. |
-| Volume Up | Boots Android when the boot mode is Linux, or Android recovery when it is Android. With *Volume up at boot* set to *Linux (external)*, boots Linux from the SD card instead. |
+| Nothing | Starts the saved default system: PortareOS/Linux by default, or Android. A failed boot opens the menu with an error. |
+| Volume Down | Opens the menu, with fastboot available over USB. `fastboot reboot bootloader` also opens it; a keyboard's Delete key requests it too. |
+| Volume Up | With PortareOS/Linux as the default, starts Android. With Android as the default, starts Android recovery. The stored `AltVolumeUp` setting can override this with external Linux boot. |
+
+When off-mode charging is enabled, a charger-triggered boot uses Android's
+charging path, unless a one-shot choice or the external Linux override
+takes precedence.
 
 In the menu, Volume Up and Down move the selection and Power selects.
+Keyboard arrows and Enter also work. Lists have a **Back** row.
 
 | Item | What it does |
 |---|---|
-| Start | Boots the current boot mode (*Start Linux* or *Start Android*). |
-| Boot entries | Lists everything *Start* would try, in order: boot entries, each drive's `\EFI\BOOT\BOOTAA64.EFI`, then the boot image. Picking one boots only that entry. Shown only when there is more than one. |
-| Restart bootloader | Restarts into the menu. |
-| Recovery mode | Restarts into Android recovery. |
-| Emergency download mode | Restarts into Qualcomm EDL mode, after a confirmation. |
-| Boot other slot | Switches to the other A/B slot. Shown on A/B devices. |
-| Boot mode | Linux or Android. |
-| ABL mode | Silent, or Verbose to show the ABL's log on screen while booting. |
-| Volume up at boot | Sets what holding Volume Up at power-on does. |
-| Boot source | Auto (internal storage first), Internal or SD card. |
-| Off-mode charging | Shows the charger screen when plugged in while powered off. |
-| Display rotation | Auto (from the device model) or fixed at 0, 90, 180 or 270 degrees. |
-| Custom boot logo | Replaces the manufacturer's logo at boot with the pictures in a `\logo` folder (see below), or the OpenABL wordmark if there are none. Off by default. |
-| Device model | Selects the devicetree Linux boots with, from the `.dtb` files in `\boot\grub`, `\dtbs`, `\dtbs\qcom`, `\dtb` or `\dtb\qcom` on the boot source's drives, or else the devicetrees appended to a drive's boot image. A boot entry's own devicetree takes precedence. *Firmware default* uses the firmware's own. |
-| Log | Shows the ABL's and the menu's log. |
-| Device info | Shows the chip, platform, PMICs, memory, storage, panel and firmware versions. |
-| Uninstall CFW | Removes a Linux install from internal storage, after a confirmation. Shown only when one is installed. |
-| Power off | Shuts down. |
+| Boot | Opens the boot list. Selecting a system requests a one-shot boot without changing the saved boot order. |
+| Boot order | Switches between **PortareOS, Android** and **Android, PortareOS**. Shown when Android is available. |
+| Uninstall PortareOS | Removes the internal installation and returns its space to Android, after confirmation. This also requests an Android factory reset, erasing Android's data. Shown only when an internal installation and Android are detected. |
+| Emergency download mode | Restarts into Qualcomm EDL mode, after confirmation. |
+| Restart | Restarts normally, using the saved default. |
+| Shut down | Powers off. |
 
-Settings are stored as UEFI variables and kept across restarts.
+Debug builds add a **Debug** section with display experiments and, where
+supported, a USB host experiment.
 
-**Boot logo:** with *Custom boot logo* on, put uncompressed 24- or 32-bit
-BMP files in a `\logo` folder on a drive the boot source can use, such as the SD card's boot
-partition, oriented the way the device is held. A single BMP is shown
-centred on black. Several BMPs play once as an animation in name order, at
-10 frames per second or the rate given in a text file `\logo\fps` (1 to
-60), and the last frame stays on screen.
+**Boot order** chooses the default OS; it does not edit the UEFI
+`BootOrder` variable. If the automatic boot fails, the menu opens.
+
+The **Boot** list scans internal storage and the SD card regardless of the
+saved boot source. It lists BLS entries, unified kernel images and extlinux
+labels, then default EFI files, then each drive's first Android-format boot
+image, followed by Android. Boot images on a volume labelled `PORTAREOS`
+are named **PortareOS**; other boot images are named **Linux**. Rows show
+internal storage or SD card.
+
+A Linux choice is tied to its drive and consumed once. If the drive is
+missing or the attempt fails, the menu reports the error without continuing
+the normal cross-drive boot search. Android choices also apply once.
+One-shot choices override the saved default and Volume Up decisions;
+requests to enter fastboot still take priority.
+
+## Settings and boot logo
+
+The older settings menu is gone. Its **Boot mode** setting is now controlled
+through **Boot order**. These other settings still affect the code, but
+have no controls in the main menu or dedicated fastboot setters:
+
+| Setting | Effect |
+|---|---|
+| `AblMode` | Silent or verbose ABL output. Verbose mode keeps the failed boot's log on screen until a key is pressed. |
+| `AltVolumeUp` | Makes Volume Up start external Linux instead of Android or recovery. |
+| `BootSource` | Restricts automatic Linux boot to Auto, Internal or SD card. Auto searches internal storage first; Internal falls back to SD when no internal Linux installation is detected. The Boot list ignores this restriction. |
+| `DisplayRotation` | Automatic rotation, or 0, 90, 180 or 270 degrees. Automatic rotation uses model information and panel orientation. |
+| `CustomLogo` | Enables the custom Linux boot splash. Off by default. |
+| `DeviceModel` | Selects the model used to find Linux's devicetree. The model picker also opens from the "Device model isn't set" error screen. |
+
+Settings use UEFI variables; SDM845 builds also persist them through
+`devinfo`. Names and encodings are in `Core/Settings.h` and
+`Core/Settings.c`; the vendor GUID is in `Efi/Variables.h`.
+
+Off-mode charging remains available through fastboot:
+
+```bash
+fastboot oem off-mode-charge 1
+```
+
+Use `0` to disable it. `fastboot oem device-info` reports verification,
+unlock and charger-screen flags; it does not provide the former menu's
+full hardware information screen.
+
+**Boot logo:** when `CustomLogo` is enabled, builds with `card-logo` read
+uncompressed 24- or 32-bit BMPs from `\logo` on the first allowed drive with
+usable pictures. Orient them as the device is held. A single picture is
+centred on black; multiple pictures play once in name order, at 10 frames
+per second or the rate in `\logo\fps` (1 to 60). The last frame stays on screen.
+Without usable pictures, the splash shows the OpenABL wordmark.
 
 ## Boot methods
 
-**Linux** is booted from the drives allowed by the boot source, in this
-order:
+Supported boot storage is internal UFS/eMMC and the SD card. USB is for
+fastboot and EDL.
 
-1. `Boot####` options: `BootNext`, then `BootOrder`.
-2. On each drive: Boot Loader Specification entries and unified kernel
-   images, then extlinux.conf labels, then the default boot file.
-3. If none of those boot, an Android boot image from a drive, started by
-   the ABL.
+Automatic Linux boot uses the allowed drives in these stages:
+
+1. The standard boot manager: `BootNext`, `LoaderEntryOneShot`,
+   `LoaderEntryDefault`, UEFI `BootOrder`, then discovered entries in drive
+   order.
+2. Default EFI boot files on the allowed drives.
+3. The first usable Android-format boot image.
 
 | Method | Where it looks |
 |---|---|
-| Boot Loader Specification Type #1 entries | `\loader\entries\*.conf` |
-| Unified kernel images (Type #2 entries) | `\EFI\Linux\*.efi` |
-| extlinux.conf | `\extlinux\extlinux.conf`, `\boot\extlinux\extlinux.conf` |
-| The default boot file (GRUB, systemd-boot or any EFI loader) | `\EFI\BOOT\BOOTAA64.EFI` |
-| Android boot images | `\KERNEL`, `\boot\Image`, `\kernel.img`, `\boot.img` |
+| Boot Loader Specification Type #1 | `\loader\entries\*.conf` |
+| Unified kernel images (Type #2) | `\EFI\Linux\*.efi` |
+| extlinux | `\extlinux\extlinux.conf`, then `\boot\extlinux\extlinux.conf` |
+| Default EFI loader | `\EFI\BOOT\BOOTAA64.EFI`, then `\EFI\BOOT\BOOTARM.EFI` |
+| Android-format Linux boot image | `\KERNEL`, `\boot\Image`, `\kernel.img`, `\boot.img` |
 
-- Kernels are started through their EFI stub (gzip-compressed kernels are
-  decompressed first), with their initrds and either the entry's devicetree
-  or the selected device model's.
-- Boot counting (`name+3.conf`) follows
-  [Automatic Boot Assessment](https://systemd.io/AUTOMATIC_BOOT_ASSESSMENT/),
-  and the [Boot Loader Interface](https://systemd.io/BOOT_LOADER_INTERFACE/)
-  variables are set. Linux reaches the UEFI variables only through its
-  QSEECOM driver (`qcom_qseecom_uefisecapp`), which needs the SoC on
-  `qcom_scm`'s allowlist; the kernel patch in `Linux/` adds OpenABL's
-  chipsets.
-- Linux finds the ABL's version in the ESRT:
-  `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor).
-- An `EFI_RT_PROPERTIES_TABLE` tells Linux which runtime services XBL
-  lacks: `SetVirtualAddressMap` on SDM845, all of them on SM6115.
-- Boot sources are internal storage (UFS or eMMC) and the SD card. USB is
-  only for fastboot; it isn't a boot source.
-- A boot image found on a GPT partition gets
-  `portare.bootpart=PARTUUID=<guid>` added to its command line, naming that
-  partition in lower case as Linux's PARTUUID does. A card written from an
-  image and an install copied from it carry the same labels, so this is how
-  the initramfs mounts the installation the kernel came from.
-- A disk image written to `userdata` boots too: its ESP is found
-  automatically. Linux doesn't read a partition table inside a partition,
-  so the initramfs must map the image's root itself (for example
-  `losetup -P`, with `--sector-size 4096` for a 4096-byte image on UFS).
+BLS and extlinux kernels need an EFI stub. Gzip-compressed kernels are
+decompressed before loading, and entry initrds are supplied through the
+Linux EFI initrd protocol. BLS boot counters and Boot Loader Interface
+variables are supported.
 
-**Android** boots from the device's own boot partitions, the same way as
-with Qualcomm's ABL, including verified boot and recovery.
+**Devicetrees:** an entry's valid `devicetree` or extlinux `FDT` takes
+precedence. Otherwise, the selected model's tree is sought on that drive
+in `\boot\grub`, `\dtbs`, `\dtbs\qcom`, `\dtb` or `\dtb\qcom`, then among
+the boot image's appended trees. extlinux `FDTDIR` can also supply a
+matching tree. With no selected model or entry tree, EFI boot retains the
+firmware's tree. Devicetree overlays are not applied.
+
+The Android-format Linux boot-image path supports headers v0 to v2 and
+requires a saved model matching a devicetree appended to the kernel.
+Headers v3 and later are not supported by this path. If the model is
+unset, press a key on the error screen, select the device model, then retry.
+
+For Linux boot images:
+
+- `cmdline.txt` replaces the embedded command line. If no override is
+  found, `cmdline-append.txt` adds to it. The first nonempty readable file
+  of the chosen kind across mounted filesystems wins.
+- When the source has a GPT partition GUID,
+  `portare.bootpart=PARTUUID=<guid>` is appended after any file override,
+  using a lowercase GUID. This lets the initramfs identify the installation
+  the kernel came from when internal storage and SD have identical labels.
+- A disk image written to `userdata` can expose its nested ESP for boot.
+  The initramfs must map the nested root partition itself, for example
+  with `losetup -P`, using `--sector-size 4096` for a 4096-byte-sector image.
+
+Firmware handover publishes the ABL version through ESRT as
+`major << 16 | minor`, and reports unavailable runtime services through
+`EFI_RT_PROPERTIES_TABLE`. Linux UEFI-variable access uses
+`qcom_qseecom_uefisecapp`; `Linux/` contains a `qcom_scm` allowlist patch
+for several supported SoCs.
+
+**Android** uses the device's own boot partitions and Qualcomm's boot
+path, including verified boot and recovery.
 
 ## Building
 
-Requires git and Docker, or Apple's `container` on a Mac. The build runs in
-an amd64 container, so on Apple Silicon use Docker Desktop, OrbStack or
-`container`; `build.sh` uses Docker when it is running.
+Requires git, zip, and a running Docker engine or Apple's `container` on
+a Mac. The build uses a `linux/amd64` container, including on Apple Silicon.
+`build.sh` prefers Docker when it is running.
 
 ```bash
 ./build.sh sm8550
 ```
 
-Give one or more chipsets, or `all`. Images are written to
-`build/out/abl_signed-<CHIPSET>.elf` with a `.sha256` file next to each. The
-build also writes `build/out/openabl-recovery-flashable-<chipset>.zip`: a
-recovery-flashable Android addon that writes ABL to both slots and sets up a
-persistence addon.d script to re-flash the opposite slot after an OTA update.
+Give one or more chipsets, or `all`. Output names retain OpenABL naming:
 
-The full log is in `build/abl-build.log`. The version, MAJOR.MINOR, is in
-`VERSION`; the menu, fastboot's `version-bootloader` and Linux's ESRT report
-it.
-
-| Option | |
+| Output | Contents |
 |---|---|
-| `--no-standard-boot` | Leave out standard boot (Linux then boots only from boot images) |
-| `--debug` | Debug build, with a Debug section in the menu |
-| `--clean` | Build each chipset from scratch |
+| `build/out/abl_signed-<CHIPSET>.elf` | Signed ABL image, with a neighbouring `.sha256` file |
+| `build/out/openabl-recovery-flashable-<chipset>.zip` | Android recovery addon that flashes both ABL slots and installs an `addon.d` script to restore the opposite slot after compatible OTA updates |
+| `build/abl-build.log` | Full build log |
 
-The first build downloads Qualcomm's ABL source (tianocore edk2 from
-CodeLinaro, tag `KERNEL.PLATFORM.3.0.r23-02400-kernel.0`), applies
-`Abl/openabl.patch` and adds the files under `Abl/QcomModulePkg`, and
-downloads microui and qtestsign, all into `build/`. The first build of a
-chipset takes about ten minutes; later builds only recompile what changed.
+`VERSION` holds `MAJOR.MINOR`, reported by the menu, fastboot's
+`version-bootloader` and the Linux handover's ESRT.
 
-To build only the menu program (`build/menu/openabl-menu.efi`) with your own
-clang and lld-link, fetch the sources with `Scripts/fetch.sh` and run make.
-`FEATURES` selects the options (see the Makefile):
+| Option | Effect |
+|---|---|
+| `--no-standard-boot` | Omits the UEFI boot manager, BLS/UKI/extlinux discovery and Boot list population. Default EFI files and boot images remain available to automatic Linux boot. |
+| `--debug` | Adds the Debug menu section and diagnostics |
+| `--clean` | Builds each chipset from scratch |
+
+`Scripts/fetch.sh` fetches pinned microui, qtestsign and Qualcomm edk2
+sources into `build/`. The edk2 tag is
+`KERNEL.PLATFORM.3.0.r23-02400-kernel.0`; the script applies
+`Abl/openabl.patch` and copies `Abl/QcomModulePkg` into it. Later builds
+reuse sources and per-chipset build output.
+
+To build only `build/menu/openabl-menu.efi` with local clang, lld-link,
+make and Python 3:
 
 ```bash
+Scripts/fetch.sh
 make FEATURES=standard-boot,card-logo
 ```
 
-GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
-`v*` tag is pushed and uploads the images to that tag's release, with
-`openabl-<TAG>-source.tar.xz`: this repository and the sources it fetches,
-which `./build.sh` builds without fetching them again. Run it by hand to
-pick a tag and a release or debug build; a debug build goes to its own
-`debug-<TAG>` pre-release, and its images end in `-debug.elf`. Each build
-also uploads `openabl-<TAG>.tar.gz` (or `-debug.tar.gz`) with a folder per
-chipset holding its image and `.sha256`; the Package workflow makes that
-archive for an existing release. CI keeps the sources it fetches in the
-`sources` pre-release and fetches them again only after a pin in
-`Scripts/fetch.sh` changes.
+`FEATURES` selects optional components; the Makefile documents them.
+`build.sh` supplies the appropriate chipset features automatically.
+
+The host simulator needs a C compiler and zlib:
+
+```bash
+Scripts/fetch.sh microui
+make sim
+build/sim/openabl-menu-sim
+```
+
+It writes PNGs to `build/screens`. Use `--out DIR` or `--filter TEXT` to
+control output, or `--check` to check redraw consistency.
+
+GitHub Actions builds every chipset on `v*` tags and uploads images,
+checksums, recovery addons and `openabl-<TAG>-source.tar.xz` to the release.
+The source archive includes this repository and the fetched sources, so
+`./build.sh` can reuse them without downloading again.
+
+Manual builds select a tag and release or debug mode. CI debug images end
+in `-debug.elf` and go to a separate `debug-<TAG>` pre-release. The Package
+workflow creates `openabl-<TAG>.tar.gz` or `openabl-<TAG>-debug.tar.gz`,
+with an image and checksum per chipset. CI caches fetched sources in the
+`sources` pre-release, keyed by the pins in `Scripts/fetch.sh`. Pull
+requests to `main` build every chipset in debug mode.
 
 ## Future direction
 
-**Firmware updates.** XBL starts the ABL in the active slot and never falls
-back to the other slot, so an update must never write an image XBL would
-reject. The plan:
+**Firmware updates** remain planned, not implemented. The proposed flow is:
 
-1. Linux puts `abl_signed-<CHIPSET>.elf` and its `.sha256` in
-   `\openabl\update\` on the boot drive. No UEFI variables are needed, which
-   Linux can't write persistently on every chip.
-2. At the next boot, before the menu, OpenABL checks the file: its SHA-256,
-   the ELF and its segment hashes (what XBL checks), its size, the chip it
-   was built for, a newer version unless forced, and enough battery or a
-   charger.
-3. It writes the inactive slot's `abl` and reads it back, then the active
-   slot's. A failed write of the active slot is redone from the checked
-   copy. The file is then removed and the device restarts.
-4. The result goes in a UEFI variable, which the ESRT reports as
-   `last_attempt_version` and `last_attempt_status`.
-5. fwupd's UEFI capsule path needs `UpdateCapsule` or a persistent
-   `OsIndications`, which XBL doesn't offer, so fwupd needs a small plugin
-   for steps 1 and 4.
+1. Linux stages an ABL image and checksum in `\openabl\update\` on the boot
+   drive, avoiding dependence on persistent UEFI-variable writes.
+2. Before booting, BIOS validates the checksum, ELF and segment hashes,
+   image size, target chipset, version and available power.
+3. It writes and reads back the inactive ABL slot, then the active slot,
+   retaining the checked image until the operation finishes.
+4. Update results are recorded for ESRT's last-attempt fields.
 
-A safer step can come later: start the new ABL in memory first and write it
-only once its menu comes up. A bad ABL can always be restored through EDL
-(9008) with the device's flat build.
+A later in-memory trial boot could validate the new menu before writing.
+fwupd integration would need a way to stage the files and read the result.
 
 ## Licence
 
-GPL-3.0-or-later (`LICENSE`), Copyright (C) 2026-present Open Handheld
-Collective. `Abl/` adds a permission to link with Qualcomm's ABL and the
-kernel patch in `Linux/` is GPL-2.0-only; `LICENSES.md` says why and lists
-the third-party components, whose licence texts are in `LICENSES/`.
+GPL-3.0-or-later (`LICENSE`), with upstream OpenABL copyright
+(C) 2026-present Open Handheld Collective.
+
+`Abl/` adds permission to link with Qualcomm's ABL. The kernel patch in
+`Linux/` is GPL-2.0-only. `LICENSES.md` explains the exceptions and lists
+third-party components; licence texts are in `LICENSES/` and the font
+licences are in `Assets/`.

@@ -165,6 +165,16 @@ STATIC CONST GPT_CFW_PART mCfwParts[] = {
   {"PORTAREOS_STOR", 98ULL << 30},
 };
 
+// The boot list on a Nova with PortareOS inside and a PortareOS card.
+STATIC CONST ENTRY_VIEW mEntries[] = {
+  {.Title = "PortareOS", .Drive = "PORTAREOS", .Kind = ENTRY_KIND_BOOT_IMAGE},
+  {.Title     = "PortareOS",
+   .Drive     = "PORTAREOS",
+   .Kind      = ENTRY_KIND_BOOT_IMAGE,
+   .Removable = TRUE},
+  {.Title = "Android", .Kind = ENTRY_KIND_ANDROID},
+};
+
 // Screens
 
 STATIC SETTINGS_CAPS
@@ -187,6 +197,7 @@ MakeApp (
   Language.Language = LANG_EN;
   AppInit (A, &Language, &Caps, &Info, SCHEME_HANDHELD, MENU_VERSION);
   AppSetCfwParts (A, mCfwParts, sizeof (mCfwParts) / sizeof (mCfwParts[0]));
+  AppSetEntries (A, mEntries, sizeof (mEntries) / sizeof (mEntries[0]));
 }
 
 // Takes A, started at Now, to one of the screens.
@@ -241,7 +252,6 @@ SBootOrder (
 {
   (VOID)Now;
   AppInput (A, INPUT_DOWN);
-  AppInput (A, INPUT_DOWN);
 }
 
 // A debug build's menu doesn't fit, so it scrolls to the last item.
@@ -281,7 +291,7 @@ SConfirmUninstall (
 )
 {
   (VOID)Now;
-  for (INT32 Index = 0; Index < 3; Index++) {
+  for (INT32 Index = 0; Index < 2; Index++) {
     AppInput (A, INPUT_DOWN);
   }
   AppInput (A, INPUT_SELECT);
@@ -295,10 +305,32 @@ SConfirmEdl (
 )
 {
   (VOID)Now;
-  for (INT32 Index = 0; Index < 4; Index++) {
+  for (INT32 Index = 0; Index < 3; Index++) {
     AppInput (A, INPUT_DOWN);
   }
   AppInput (A, INPUT_SELECT);
+  AppInput (A, INPUT_DOWN);
+}
+
+// Boot opens the boot list.
+STATIC VOID
+SBootList (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppInput (A, INPUT_SELECT);
+}
+
+// The boot list on PortareOS from the SD card.
+STATIC VOID
+SBootListSd (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SBootList (A, Now);
   AppInput (A, INPUT_DOWN);
 }
 
@@ -308,7 +340,17 @@ SBooting (
   IN UINT64   Now
 )
 {
-  (VOID)Now;
+  SBootList (A, Now);
+  AppInput (A, INPUT_SELECT);
+}
+
+STATIC VOID
+SBootingSd (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SBootListSd (A, Now);
   AppInput (A, INPUT_SELECT);
 }
 
@@ -318,7 +360,8 @@ SBootingAndroid (
   IN UINT64   Now
 )
 {
-  (VOID)Now;
+  SBootList (A, Now);
+  AppInput (A, INPUT_DOWN);
   AppInput (A, INPUT_DOWN);
   AppInput (A, INPUT_SELECT);
 }
@@ -402,6 +445,28 @@ SToast (
   AppNotify (A, "Settings saved");
 }
 
+// The SD card was taken out while its PortareOS was picked.
+STATIC VOID
+SErrorPickGone (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppOnPickFailed (A, TRUE, "PortareOS", TRUE);
+}
+
+// PortareOS on the SD card was there but didn't start.
+STATIC VOID
+SErrorPickFailed (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  AppOnPickFailed (A, FALSE, "PortareOS", TRUE);
+}
+
 STATIC CONST struct {
   CONST CHAR8  *Name;
   SESSION_SETUP Setup;
@@ -411,12 +476,17 @@ STATIC CONST struct {
   {"menu-no-android", SNoAndroid},
   {"menu-boot-order", SBootOrder},
   {"menu-scrolled", SScrolled},
+  {"boot-list", SBootList},
+  {"boot-list-sd", SBootListSd},
   {"models", SModels},
   {"confirm-uninstall", SConfirmUninstall},
   {"confirm-edl", SConfirmEdl},
   {"booting", SBooting},
+  {"booting-sd", SBootingSd},
   {"booting-android", SBootingAndroid},
   {"error-no-image", SErrorNoImage},
+  {"error-pick-gone", SErrorPickGone},
+  {"error-pick-failed", SErrorPickFailed},
   {"error-model", SErrorModel},
   {"uninstalling", SUninstalling},
   {"restarting", SRestarting},
@@ -543,7 +613,7 @@ STATIC CONST STEP mSessionLines[]   = {{STEP_LINES, 0, 1},
                                        PRESS (DOWN, 2)};
 // Uninstall PortareOS and back, then Emergency download mode and back.
 STATIC CONST STEP mSessionConfirm[] = {
-  PRESS (DOWN, 3),   PRESS (SELECT, 1), PRESS (DOWN, 1),
+  PRESS (DOWN, 2),   PRESS (SELECT, 1), PRESS (DOWN, 1),
   PRESS (UP, 1),     PRESS (BACK, 1),   PRESS (DOWN, 1),
   PRESS (SELECT, 1), PRESS (DOWN, 1),   PRESS (BACK, 1)};
 STATIC CONST STEP mSessionToast[] = {{STEP_NOTIFY, 0, 1}, {STEP_WAIT, 0, 3500},

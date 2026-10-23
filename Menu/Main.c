@@ -314,25 +314,21 @@ StandardBoot (
 }
 #endif
 
-// Finds the first boot image on the allowed drives and hands it to the ABL
-// to start. Returns FALSE if there is none or the ABL refused it.
+// Finds the first boot image on Volumes and hands it to the ABL to start.
+// Returns FALSE if there is none or the ABL refused it.
 STATIC BOOLEAN
-HandOverBootImage (
+HandOverBootImageFrom (
   IN CONST MENU_HOST         *Host,
   IN CONST MENU_BOOT_CONTEXT *Ctx,
+  IN CONST EFI_HANDLE        *Volumes,
+  IN UINTN                    Count,
   OUT BOOT_IMAGE_FOUND       *Image
 )
 {
   DEFAULT_FILES_HOST Files = FilesHost (Ctx);
-  EFI_HANDLE        *Volumes;
-  UINTN              Count;
   EFI_STATUS         Status;
-  BOOLEAN            Found;
 
-  MenuBootVolumes (Ctx, &Volumes, &Count);
-  Found = BootImageFind (Volumes, Count, &Files, Image);
-  FreePool (Volumes);
-  if (!Found) {
+  if (!BootImageFind (Volumes, Count, &Files, Image)) {
     MenuLog ("no boot image");
     return FALSE;
   }
@@ -346,69 +342,101 @@ HandOverBootImage (
   return TRUE;
 }
 
-#ifdef OABL_STANDARD_BOOT
-// Starts what Boot entries picked (an entry, a drive's default file or the
-// boot image) and clears the pick. Returns TRUE if it started, or the boot
-// image went to the ABL (*HasImage).
+// HandOverBootImageFrom the drives the boot source allows.
 STATIC BOOLEAN
+HandOverBootImage (
+  IN CONST MENU_HOST         *Host,
+  IN CONST MENU_BOOT_CONTEXT *Ctx,
+  OUT BOOT_IMAGE_FOUND       *Image
+)
+{
+  EFI_HANDLE *Volumes;
+  UINTN       Count;
+  BOOLEAN     Handed;
+
+  MenuBootVolumes (Ctx, &Volumes, &Count);
+  Handed = HandOverBootImageFrom (Host, Ctx, Volumes, Count, Image);
+  FreePool (Volumes);
+  return Handed;
+}
+
+#ifdef OABL_STANDARD_BOOT
+typedef enum {
+  PICK_NONE,    // nothing was picked
+  PICK_STARTED, // it started, or its boot image went to the ABL
+  PICK_GONE,    // its drive is gone; nothing else may start instead
+  PICK_FAILED,  // it didn't start; nothing else may start instead
+} PICK_OUTCOME;
+
+// Starts what the boot list picked (an entry, a drive's default file or its
+// boot image) from the drive the pick names, and clears the pick. Internal
+// storage and the SD card are searched whatever the boot source, which only
+// decides what power-on starts.
+STATIC PICK_OUTCOME
 BootPick (
   IN CONST MENU_HOST         *Host,
   IN CONST MENU_BOOT_CONTEXT *Ctx,
-  IN CONST EFI_HANDLE        *Volumes,
-  IN UINTN                    Count,
   OUT BOOLEAN                *HasImage,
   OUT BOOT_IMAGE_FOUND       *Image
 )
 {
-  OABL_BUFFER Pick    = {0};
-  OABL_BUFFER Path    = {0};
-  EFI_HANDLE  Drive   = NULL;
-  CHAR8       Id[256] = {0};
-  UINT16      Len;
+  VOLUMES_HANDLE_LIST Volumes = {0};
+  OABL_BUFFER         Pick    = {0};
+  OABL_BUFFER         Path    = {0};
+  EFI_HANDLE          Drive   = NULL;
+  CHAR8               Id[256] = {0};
+  UINT16              Len;
+  BOOLEAN             Started;
 
   if (!MenuVarGet (MENU_PICK_VAR, &Pick)) {
-    return FALSE;
+    return PICK_NONE;
   }
   MenuVarPut (MENU_PICK_VAR, NULL, 0);
   MenuFlush ();
+  VolumesAllowed (BOOT_SOURCE_AUTO, Ctx->CfwOnInternal, FALSE, &Volumes);
   // A damaged pick matches nothing.
   if (GetLe16 (Pick.Data, Pick.Len, 0, &Len) && Pick.Len > 2u + Len &&
       Pick.Len - 2 - Len < sizeof (Id)) {
     CopyMem (Id, Pick.Data + 2 + Len, Pick.Len - 2 - Len);
-    for (UINTN Index = 0; Index < Count && !Drive; Index++) {
-      if (PathsHandlePath (Volumes[Index], &Path) && Path.Len == Len &&
+    for (UINTN Index = 0; Index < Volumes.Count && !Drive; Index++) {
+      if (PathsHandlePath (Volumes.Items[Index], &Path) && Path.Len == Len &&
           CompareMem (Path.Data, Pick.Data + 2, Len) == 0) {
-        Drive = Volumes[Index];
+        Drive = Volumes.Items[Index];
       }
       BufferFree (&Path);
     }
   }
   BufferFree (&Pick);
-  MenuLog ("Boot entries pick: %s", Id);
-  // The list only offers the first boot image, the one Start would take.
-  if (AsciiStrEq (Id, MENU_PICK_BOOT_IMAGE)) {
-    return *HasImage = HandOverBootImage (Host, Ctx, Image);
-  }
+  MenuLog ("Boot entries pick: %s on %s", Id, Drive ? "its drive" : "no drive");
   if (!Drive) {
-    return FALSE;
+    VecFree (&Volumes);
+    return PICK_GONE;
   }
-  if (AsciiStrEq (Id, MENU_PICK_DEFAULT_FILE)) {
+  if (AsciiStrEq (Id, MENU_PICK_BOOT_IMAGE)) {
+    Started = *HasImage = HandOverBootImageFrom (Host, Ctx, &Drive, 1, Image);
+  } else if (AsciiStrEq (Id, MENU_PICK_DEFAULT_FILE)) {
     DEFAULT_FILES_HOST Files = FilesHost (Ctx);
 
-    return DefaultFilesBoot (&Drive, 1, &Files, NULL) ==
-           DEFAULT_FILES_OUTCOME_RETURNED;
+    Started = DefaultFilesBoot (&Drive, 1, &Files, NULL) ==
+              DEFAULT_FILES_OUTCOME_RETURNED;
+  } else {
+    BliSet ("LoaderEntryOneShot", Id);
+    Started = StandardBoot (Host, &Drive, 1, Ctx) == EFI_SUCCESS;
   }
-  BliSet ("LoaderEntryOneShot", Id);
-  return StandardBoot (Host, &Drive, 1, Ctx) == EFI_SUCCESS;
+  VecFree (&Volumes);
+  return Started ? PICK_STARTED : PICK_FAILED;
 }
 #endif
 
 // Runs the Linux boot. If a boot image was handed to the ABL, returns it in
-// *Image with *HasImage set, and the selected model in Model.
+// *Image with *HasImage set, and the selected model in Model. *Pick is
+// MENU_START_RESULT_PICK_GONE or _PICK_FAILED when the boot list's pick
+// didn't start, and nothing else was tried; else MENU_START_RESULT_NONE.
 STATIC EFI_STATUS
 BootWithImage (
   IN CONST MENU_HOST   *Host,
   OUT BOOLEAN          *HasImage,
+  OUT UINT8            *Pick,
   OUT BOOT_IMAGE_FOUND *Image,
   OUT CHAR8            *Model,
   IN UINTN              ModelSize
@@ -420,8 +448,12 @@ BootWithImage (
   UINTN              Count;
   EFI_STATUS         Status;
   EFI_STATUS         Returned;
+#ifdef OABL_STANDARD_BOOT
+  PICK_OUTCOME Outcome;
+#endif
 
   *HasImage = FALSE;
+  *Pick     = MENU_START_RESULT_NONE;
   if (!BootContextOf (Host, &Ctx)) {
     return EFI_NOT_READY;
   }
@@ -433,19 +465,30 @@ BootWithImage (
   } else {
     MenuLog ("splash: the manufacturer's logo kept (Custom boot logo is off)");
   }
+#ifdef OABL_STANDARD_BOOT
+  Outcome = BootPick (Host, &Ctx, HasImage, Image);
+  switch (Outcome) {
+  case PICK_STARTED:
+    Status = EFI_SUCCESS;
+    goto Picked;
+  case PICK_GONE:
+  case PICK_FAILED:
+    // After an explicit choice, never another system.
+    MenuLog ("the pick didn't start, and nothing else is tried");
+    *Pick  = Outcome == PICK_GONE ? MENU_START_RESULT_PICK_GONE
+                                  : MENU_START_RESULT_PICK_FAILED;
+    Status = EFI_NOT_FOUND;
+    goto Picked;
+  case PICK_NONE:
+    break;
+  }
+#endif
   MenuBootVolumes (&Ctx, &Volumes, &Count);
   if (!Count) {
     FreePool (Volumes);
     MenuLog ("no drive the boot source allows");
     return EFI_NOT_FOUND;
   }
-#ifdef OABL_STANDARD_BOOT
-  if (BootPick (Host, &Ctx, Volumes, Count, HasImage, Image)) {
-    FreePool (Volumes);
-    Status = EFI_SUCCESS;
-    goto Picked;
-  }
-#endif
   Status = StandardBoot (Host, Volumes, Count, &Ctx);
   FreePool (Volumes);
   MenuBootVolumes (&Ctx, &Volumes, &Count);
@@ -632,14 +675,17 @@ LinuxBoot (
   EFI_STATUS       Refused;
   UINT8            Result;
   BOOLEAN          HasImage;
+  UINT8            Pick;
 
   DisplayHandoverArm (MenuHostLogFn);
   MenuHostAction (Host, OPENABL_MENU_ACTION_BOOT_PREP);
   *UsbUp = Usb && UsbHostOn ();
-  Status = BootWithImage (Host, &HasImage, &Image, Model, sizeof (Model));
+  Status =
+    BootWithImage (Host, &HasImage, &Pick, &Image, Model, sizeof (Model));
   if (!HasImage) {
-    Result = Status == EFI_SUCCESS ? MENU_START_RESULT_RETURNED
-                                   : MENU_START_RESULT_NOTHING;
+    Result = Pick != MENU_START_RESULT_NONE ? Pick
+             : Status == EFI_SUCCESS        ? MENU_START_RESULT_RETURNED
+                                            : MENU_START_RESULT_NOTHING;
   } else {
     Result = BootImageStart (Host, &Image, Model, gMenuEfiLog, &Refused) ==
                  BOOT_IMAGE_NOT_STARTED_NO_MODEL
