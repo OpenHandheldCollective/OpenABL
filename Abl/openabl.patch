@@ -543,7 +543,7 @@ index 07eac0d..ec4aec1 100644
  [FixedPcd]
  	gArmTokenSpaceGuid.PcdSystemMemoryBase
 diff --git a/QcomModulePkg/Library/BootLib/BootLinux.c b/QcomModulePkg/Library/BootLib/BootLinux.c
-index ea7930e..e991c51 100644
+index ea7930e..c65c218 100644
 --- a/QcomModulePkg/Library/BootLib/BootLinux.c
 +++ b/QcomModulePkg/Library/BootLib/BootLinux.c
 @@ -1059,6 +1059,43 @@ RmRegisterPvmFwRegion (BootInfo *Info, BootParamlist *BootParamlistPtr)
@@ -623,7 +623,13 @@ index ea7930e..e991c51 100644
    /* Free the boot logo blt buffer before starting kernel */
    FreeBootLogoBltBuffer ();
    if (BootParamlistPtr.BootingWith32BitKernel &&
-@@ -1947,8 +1996,24 @@ BootLinux (BootInfo *Info)
+@@ -1944,17 +1993,35 @@ BootLinux (BootInfo *Info)
+     goto Exit;
+   }
+ 
++  /* OpenABL: with the MMU still on. */
++  BootStatsSetTimeStamp (BS_BL_END);
++
  #ifdef DISABLE_KERNEL_PROTOCOL
    PreparePlatformHardware ();
  #else
@@ -649,7 +655,13 @@ index ea7930e..e991c51 100644
                    (VOID *)BootParamlistPtr.RamdiskLoadAddr,
                    (UINTN)RamdiskSizeActual,
                    (VOID *)BootParamlistPtr.DeviceTreeLoadAddr, DT_SIZE_2MB,
-@@ -1990,6 +2055,15 @@ Exit:
+                   (VOID *)StackCurrent, (UINTN)StackBase);
+ #endif
+-  BootStatsSetTimeStamp (BS_BL_END);
+ 
+   //
+   // Start the Linux Kernel
+@@ -1990,6 +2057,15 @@ Exit:
    return EFI_NOT_STARTED;
  }
  
@@ -745,7 +757,7 @@ index 4684c88..73ac1e5 100644
  }
  
 diff --git a/QcomModulePkg/Library/BootLib/ShutdownServices.c b/QcomModulePkg/Library/BootLib/ShutdownServices.c
-index 4064b49..9c877d9 100644
+index 4064b49..00119ab 100644
 --- a/QcomModulePkg/Library/BootLib/ShutdownServices.c
 +++ b/QcomModulePkg/Library/BootLib/ShutdownServices.c
 @@ -57,6 +57,7 @@
@@ -756,7 +768,25 @@ index 4064b49..9c877d9 100644
  #include <Library/DxeServicesTableLib.h>
  #include <Library/HobLib.h>
  #include <Library/LinuxLoaderLib.h>
-@@ -134,6 +135,15 @@ EFI_STATUS PreparePlatformHardware (VOID)
+@@ -64,6 +65,7 @@
+ #include <Library/SerialPortLib.h>
+ #include <Library/TimerLib.h>
+ #include <Library/UefiRuntimeServicesTableLib.h>
++#include <Library/StackCanary.h>
+ 
+ EFI_STATUS ShutdownUefiBootServices (VOID)
+ {
+@@ -123,6 +125,9 @@ EFI_STATUS PreparePlatformHardware (VOID)
+   ArmDisableInterrupts ();
+   ArmDisableAsynchronousAbort ();
+ 
++  /* OpenABL: the canary is read with the MMU off; set/way may miss it. */
++  WriteBackInvalidateDataCacheRange ((VOID *)&__stack_chk_guard,
++                                     sizeof (__stack_chk_guard));
+   ArmCleanInvalidateDataCache ();
+   ArmCleanDataCache ();
+   ArmInvalidateInstructionCache ();
+@@ -134,6 +139,15 @@ EFI_STATUS PreparePlatformHardware (VOID)
    return EFI_SUCCESS;
  }
  #else
@@ -772,7 +802,7 @@ index 4064b49..9c877d9 100644
  EFI_STATUS PreparePlatformHardware (EFI_KERNEL_PROTOCOL *KernIntf,
      VOID *KernelLoadAddr, UINTN KernelSizeActual, VOID *RamdiskLoadAddr,
      UINTN RamdiskSizeActual, VOID *DeviceTreeLoadAddr,
-@@ -149,6 +159,7 @@ EFI_STATUS PreparePlatformHardware (EFI_KERNEL_PROTOCOL *KernIntf,
+@@ -149,6 +163,7 @@ EFI_STATUS PreparePlatformHardware (EFI_KERNEL_PROTOCOL *KernIntf,
      StackBase = KernIntf->Thread->ThreadGetUnsafeSPBase (ThreadNum);
    }
  
@@ -780,6 +810,16 @@ index 4064b49..9c877d9 100644
    ArmDisableBranchPrediction ();
  
    /* ArmDisableAllExceptions */
+@@ -166,6 +181,9 @@ EFI_STATUS PreparePlatformHardware (EFI_KERNEL_PROTOCOL *KernIntf,
+                   CallerStackBase - (UINTN)CallerStackCurrent);
+   }
+ 
++  /* OpenABL: the canary is read with the MMU off; set/way may miss it. */
++  WriteBackInvalidateDataCacheRange ((VOID *)&__stack_chk_guard,
++                                     sizeof (__stack_chk_guard));
+   ArmCleanDataCache ();
+   ArmInvalidateInstructionCache ();
+ 
 diff --git a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
 index 88e0117..b3c8b82 100644
 --- a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
