@@ -2007,34 +2007,64 @@ HasFooter (IN CONST APP *A)
          A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_LINES;
 }
 
-// The toast sits above the footer, or above the body's end on a screen
-// without one.
+// Width of the narrowest box, at most Max wide, that holds String in Lines
+// lines, so wrapped lines come out about as long as each other.
+STATIC float
+BalancedWidth (
+  IN CONST CHAR8 *String,
+  IN float        Max,
+  IN INT32        Lines
+)
+{
+  float Lo = Max / (float)Lines;
+  float Hi = Max;
+
+  while (Hi - Lo > 1) {
+    float Mid = (Lo + Hi) / 2;
+
+    if (WrapCount (String, 13.5f, FONT_WEIGHT_REGULAR, Mid) > Lines) {
+      Lo = Mid;
+    } else {
+      Hi = Mid;
+    }
+  }
+  return Hi;
+}
+
+// The toast, centred above the footer, or above the body's end on a screen
+// without one. Text too long for one line on a narrow screen goes on two
+// lines of about equal length, centred.
 STATIC VOID
 ToastDraw (IN CONST APP *A)
 {
-  float H     = ToPx (32);
-  float Top   = (float)(HasFooter (A) ? mView.Footer.Y : Bottom (mView.Body)) -
-                H - ToPx (8);
+  float LineH = ToPx (13.5f * 1.35f);
+  float TextX = ToPx (14 + 14 + 8);
+  float Right = ToPx (14);
   float TextW = Measure (A->Toast, 13.5f, FONT_WEIGHT_REGULAR) + 1;
   float MaxW  = (float)mView.W - ToPx (28);
-  float W     = TextW + ToPx (14 * 2 + 14 + 8);
+  INT32 Lines = 1;
 
-  if (W > MaxW) {
-    W = MaxW;
+  if (TextW + TextX + Right > MaxW) {
+    float Avail = MaxW - TextX - Right;
+
+    Lines = WrapCount (A->Toast, 13.5f, FONT_WEIGHT_REGULAR, Avail);
+    Lines = Lines < 1 ? 1 : Lines > 2 ? 2 : Lines;
+    TextW = Lines > 1 ? BalancedWidth (A->Toast, Avail, Lines) : Avail;
   }
-  RECT Area = Rectf ((float)mView.W / 2 - W / 2, Top, W, H);
+  float W   = TextW + TextX + Right;
+  float H   = ToPx (32) + (float)(Lines - 1) * LineH;
+  float Top = (float)(HasFooter (A) ? mView.Footer.Y : Bottom (mView.Body)) -
+              H - ToPx (8);
+  RECT  Area = Rectf ((float)mView.W / 2 - W / 2, Top, W, H);
   RoundRect (Area, 16, THEME_TOAST);
   Icon (
     ICON_INFO, (float)Area.X + ToPx (14 + 7), (float)Area.Y + (float)Area.H / 2,
     ToPx (14), THEME_ACCENT
   );
-  float TextX = ToPx (14 + 14 + 8);
-  TextIn (
-    Rectf (
-      (float)Area.X + TextX, (float)Area.Y, (float)Area.W - TextX - ToPx (14),
-      (float)Area.H
-    ),
-    A->Toast, 13.5f, FONT_WEIGHT_REGULAR, THEME_TEXT, ALIGN_LEFT
+  Wrapped (
+    (float)Area.X + TextX,
+    (float)Area.Y + ((float)Area.H - (float)Lines * LineH) / 2, TextW,
+    A->Toast, 13.5f, FONT_WEIGHT_REGULAR, LineH, 2, THEME_TEXT, ALIGN_CENTER
   );
 }
 
