@@ -1134,11 +1134,14 @@ KeysPress (
   OUT INPUT   *Out
 )
 {
-  if (Keys->Held && Keys->Key == Key && Now - Keys->Last < KEY_GAP_MS) {
+  // A muted key stays held until an idle poll finds it released, however
+  // late its next report comes.
+  if (Keys->Held && Keys->Key == Key &&
+      (Keys->Muted || Now - Keys->Last < KEY_GAP_MS)) {
     // A repeat. Only Up and Down act on it, to scroll. Repeating Select or
     // Back would trigger the action again.
     Keys->Last = Now;
-    if ((Key == INPUT_UP || Key == INPUT_DOWN) &&
+    if (!Keys->Muted && (Key == INPUT_UP || Key == INPUT_DOWN) &&
         Now - Keys->Start >= KEY_REPEAT_DELAY_MS &&
         Now - Keys->LastEmit >= KEY_REPEAT_EVERY_MS) {
       Keys->LastEmit = Now;
@@ -1148,10 +1151,24 @@ KeysPress (
     return FALSE;
   }
   Keys->Held  = TRUE;
+  Keys->Muted = FALSE;
   Keys->Key   = Key;
   Keys->Start = Keys->Last = Keys->LastEmit = Now;
   *Out                                      = Key;
   return TRUE;
+}
+
+VOID
+KeysMute (
+  IN OUT KEYS *Keys,
+  IN INPUT     Key,
+  IN UINT64    Now
+)
+{
+  Keys->Held  = TRUE;
+  Keys->Muted = TRUE;
+  Keys->Key   = Key;
+  Keys->Start = Keys->Last = Keys->LastEmit = Now;
 }
 
 VOID

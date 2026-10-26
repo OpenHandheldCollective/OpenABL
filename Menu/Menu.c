@@ -1632,7 +1632,7 @@ MenuRun (
   gST->ConOut->ClearScreen (gST->ConOut);
   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
   // Ignore a key still held from opening the menu.
-  InputKeysHeldAtStart (&Keys);
+  InputKeysHeldAtStart (&Keys, ClockNowMs ());
   ViewRotate (Rotation);
   mApp.Dirty = TRUE;
 
