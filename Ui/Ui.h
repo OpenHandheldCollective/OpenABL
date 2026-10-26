@@ -522,10 +522,12 @@ AppSettingsSize (VOID);
 // Keys
 //
 // Firmware key protocols report presses but not releases. USB keyboards
-// repeat a held key and handheld keypads don't (the Mangmi Pocket Max sends
-// one event per press). So every action is a single press, and holding a
-// key only scrolls where the firmware repeats it. A key counts as held
-// while its reports arrive less than KEY_GAP_MS apart.
+// repeat a held key. Qualcomm's keypad reports a press once, but reports a
+// key that is still down again after a reset of the input (Efi/Input.c
+// resets it after each read, as Qualcomm's own menu does). So a held key
+// arrives as a stream of reports, and counts as held while they arrive less
+// than KEY_GAP_MS apart. Every action is a single press; only Up and Down
+// repeat while held, to scroll.
 
 // Reports closer together than this are one key held.
 #define KEY_GAP_MS 200
@@ -534,8 +536,10 @@ AppSettingsSize (VOID);
 #define KEY_REPEAT_EVERY_MS 120
 
 // The held key, if any, with the times (ms) of its reports and last input.
+// A muted key makes no input until it is released.
 typedef struct _KEYS {
   BOOLEAN Held;
+  BOOLEAN Muted;
   INPUT   Key;
   UINT64  Start, Last, LastEmit;
 } KEYS;
@@ -547,6 +551,15 @@ KeysPress (
   IN INPUT     Key,
   IN UINT64    Now,
   OUT INPUT   *Out
+);
+
+// Takes a report of a key that was already down, as one held to open the
+// menu: it is held but makes no input until released.
+VOID
+KeysMute (
+  IN OUT KEYS *Keys,
+  IN INPUT     Key,
+  IN UINT64    Now
 );
 
 // Call on a poll with no key report, so a released key stops being held.

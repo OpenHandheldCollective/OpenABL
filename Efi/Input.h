@@ -8,8 +8,9 @@
 
   Up and volume up are Up, down and volume down are Down, Esc and Backspace
   are Back, and Enter, Space and SCAN_SUSPEND (the power key on Qualcomm
-  keypads) are Select. Other keys are ignored. Repeat and hold timing is
-  left to the UI's key decoder (Ui/Ui.h).
+  keypads) are Select. Other keys are ignored. The input is reset after
+  each read, so Qualcomm's keypad reports a held key again. Repeat and hold
+  timing is left to the UI's key decoder (Ui/Ui.h).
 */
 
 #ifndef __EFI_INPUT_H__
@@ -33,9 +34,13 @@ InputKeysNew (VOID)
 }
 
 // Returns TRUE if a key was already down at startup, as when volume down is
-// held for the menu. Reads one mapped key.
+// held for the menu. Reads one mapped key at time Now (ms), which makes no
+// input until it is released.
 BOOLEAN
-InputKeysHeldAtStart (IN INPUT_KEYS *Keys);
+InputKeysHeldAtStart (
+  IN OUT INPUT_KEYS *Keys,
+  IN UINT64          Now
+);
 
 // Feeds every waiting key through the decoder at time Now (ms) and appends
 // the resulting inputs to Out. Caller frees Out with VecFree.
@@ -44,6 +49,13 @@ InputKeysPoll (
   IN OUT INPUT_KEYS   *Keys,
   IN UINT64            Now,
   IN OUT INPUT_EVENTS *Out
+);
+
+// Mutes a key still held after the menu was busy, until it is released.
+VOID
+InputKeysAfterBusy (
+  IN OUT INPUT_KEYS *Keys,
+  IN UINT64          Now
 );
 
 #endif

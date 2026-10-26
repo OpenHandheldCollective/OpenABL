@@ -1632,7 +1632,7 @@ MenuRun (
   gST->ConOut->ClearScreen (gST->ConOut);
   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
   // Ignore a key still held from opening the menu.
-  InputKeysHeldAtStart (&Keys);
+  InputKeysHeldAtStart (&Keys, ClockNowMs ());
   ViewRotate (Rotation);
   mApp.Dirty = TRUE;
 
@@ -1680,6 +1680,8 @@ MenuRun (
         ViewDone ();
         return (MENU_END){MENU_END_START_HERE, EFI_ABORTED};
       }
+      // The key that started a slow command can still be reported.
+      InputKeysAfterBusy (&Keys, ClockNowMs ());
       continue;
     }
     // Give idle time to fastboot. The ABL serves one USB event per poll,
