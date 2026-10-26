@@ -8,9 +8,7 @@
 
   A drive's models come from the .dtb files in \boot\grub (GRUB-based
   images), \dtbs, \dtbs\qcom, \dtb and \dtb\qcom (dtbloader,
-  distributions, U-Boot), or else from the devicetrees appended to its
-  first boot image file. When XBL's file system
-  driver fails, boot images are read straight off FAT32.
+  distributions, U-Boot).
 */
 
 #ifndef __EFI_MODELS_H__
@@ -22,16 +20,6 @@
 
 #include "Base/Buffer.h"
 #include "Efi/Serial.h"
-
-// The boot image files, in the order the ABL tries them.
-extern CONST CHAR8 *CONST gModelsBootImages[4];
-
-// Returns TRUE if Path on Fs starts with the Android boot image magic.
-BOOLEAN
-ModelsIsBootImage (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path
-);
 
 // A model name and its panel rotation in degrees, if the devicetree has one.
 typedef struct _SCANNED_MODEL {
@@ -46,8 +34,7 @@ VOID
 ModelsFree (IN OUT SCANNED_MODELS *Models);
 
 // Reads the devicetree for Model on Fs: the first matching .dtb file in
-// those folders, else the matching blob in the boot image.
-// FALSE if there is none. Caller frees Out with BufferFree.
+// those folders. FALSE if there is none. Caller frees Out with BufferFree.
 BOOLEAN
 ModelsDevicetreeFor (
   IN EFI_HANDLE    Fs,
@@ -57,7 +44,7 @@ ModelsDevicetreeFor (
 
 // Adds the models found on Drives to Out, which starts empty, and sorts them
 // by name. When drives share a model, the first drive's devicetree wins.
-// Logs one line per folder or boot image that had any. Free Out with
+// Logs one line per folder that had any. Free Out with
 // ModelsFree.
 VOID
 ModelsScan (

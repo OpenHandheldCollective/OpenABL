@@ -22,9 +22,9 @@
 #include "Base/Memory.h"
 #include "Base/Print.h"
 #include "Base/Text.h"
+#include "Core/KernelCmdLine.h"
 #include "Core/Settings.h"
 #include "Efi/Abl.h"
-#include "Efi/BootImage.h"
 #include "Efi/Dxe.h"
 #include "Efi/MenuHost.h"
 #include "Efi/NestedDisk.h"
@@ -1589,6 +1589,39 @@ Give (
   return EFI_SUCCESS;
 }
 
+// Appends the OEM androidboot ids as "key\0value\0" pairs.
+STATIC VOID
+AndroidParams (
+  IN LOG_SINK         Log,
+  IN OUT OABL_BUFFER *Out
+)
+{
+  KERNEL_CMDLINE_PARAM                Params[KERNEL_CMDLINE_ANDROID_PARAMS];
+  CHAR8                              *Panel = QcomDisplayPanelConfig ();
+  EFI_PLATFORMINFO_PLATFORM_INFO_TYPE Platform;
+  QCOM_CHIP                           Chip;
+  BOOLEAN                             Sm8750;
+  UINTN                               Count;
+
+  (VOID)QcomPlatform (&Platform);
+  // Only the SM8750 stock ABL passes the display id.
+  Sm8750 = QcomChip (&Chip) && TextStartsWith (TextOf (Chip.Name), "SM8750");
+  Count  = KernelCmdLineAndroidParams (
+    Panel ? Panel : "", Platform.subtype, (UINT8)Platform.fusion, Sm8750, Params
+  );
+
+  for (UINTN Index = 0; Index < Count; Index++) {
+    LogPrint (
+      Log, "android parameter:%s%s", Params[Index].Key, Params[Index].Value
+    );
+    BufferAppend (Out, Params[Index].Key, AsciiStrLen (Params[Index].Key));
+    BufferAppendU8 (Out, 0);
+    BufferAppend (Out, Params[Index].Value, AsciiStrLen (Params[Index].Value));
+    BufferAppendU8 (Out, 0);
+  }
+  FreePool (Panel);
+}
+
 STATIC EFI_STATUS EFIAPI
 PAndroidParams (
   IN OPENABL_STORAGE_PROTOCOL *This,
@@ -1604,70 +1637,13 @@ PAndroidParams (
   if (!Size) {
     return EFI_INVALID_PARAMETER;
   }
-  CmdLineAndroidParams (QuirksAblLog (Log), &Buffer);
+  AndroidParams (QuirksAblLog (Log), &Buffer);
   if (Buffer.Len == 0) {
     BufferFree (&Buffer);
     return EFI_NOT_FOUND;
   }
   Status = Give (Buffer.Data, Buffer.Len, Out, Size);
   BufferFree (&Buffer);
-  return Status;
-}
-
-VOID
-QuirksFixupDeviceTree (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Cap,
-  IN BOOLEAN    Usb,
-  IN LOG_SINK   Log
-)
-{
-  if (Usb) {
-    UINT32 Chip = mInstalledChip ? mInstalledChip : QuirksChipId ();
-
-    UsbBootFixDeviceTree (Fdt, Cap, Chip, Log);
-  }
-}
-
-STATIC EFI_STATUS EFIAPI
-PStartBootImage (
-  IN OPENABL_STORAGE_PROTOCOL *This,
-  IN VOID                     *Buffer,
-  IN UINTN                     Size,
-  IN OPENABL_STORAGE_LOG       Log
-)
-{
-  MENU_HOST        Host;
-  MENU_HOST_STATE  State;
-  BOOT_IMAGE_FOUND Found;
-  CONST CHAR8     *Model      = "";
-  CHAR8           *ModelOwned = NULL;
-  OABL_BUFFER      ModelBuf;
-  EFI_STATUS       Status;
-
-  (VOID)This;
-  if (!Buffer) {
-    return EFI_INVALID_PARAMETER;
-  }
-  // Fastboot runs inside the menu's boot, so the host is installed.
-  if (!MenuHostLocate (&Host)) {
-    return EFI_UNSUPPORTED;
-  }
-  // Linux boot mode only; in Android mode Qualcomm's BootLinux starts it.
-  if (MenuHostState (&Host, &State) == EFI_SUCCESS && State.BootMode != 0) {
-    QuirksToAbl (Log, "boot image: the Android boot mode: Qualcomm's boot");
-    return EFI_UNSUPPORTED;
-  }
-  if (VariablesGet (SETTINGS_KEY_MODEL, &ModelBuf)) {
-    ModelOwned = Utf8Lossy (ModelBuf.Data, ModelBuf.Len);
-    if (ModelOwned) {
-      Model = ModelOwned;
-    }
-    BufferFree (&ModelBuf);
-  }
-  Found  = (BOOT_IMAGE_FOUND){.Buffer = Buffer, .Size = Size, .Usb = FALSE};
-  Status = BootImageStartVerified (&Host, &Found, Model, QuirksAblLog (Log));
-  FreePool (ModelOwned);
   return Status;
 }
 
@@ -1757,11 +1733,10 @@ QuirksInstallProtocol (IN UINT32 Chip)
   if (!Protocol) {
     return EFI_OUT_OF_RESOURCES;
   }
-  Protocol->AndroidParams  = PAndroidParams;
-  Protocol->BootPrep       = PBootPrep;
-  Protocol->Run            = mRunFn;
-  Protocol->StartBootImage = PStartBootImage;
-  Protocol->LogSink        = AblConsoleSink;
+  Protocol->AndroidParams = PAndroidParams;
+  Protocol->BootPrep      = PBootPrep;
+  Protocol->Run           = mRunFn;
+  Protocol->LogSink       = AblConsoleSink;
   // Never freed: the interface lives as long as the menu.
   return gBS->InstallProtocolInterface (
     &Handle, &mStorageGuid, EFI_NATIVE_INTERFACE, Protocol

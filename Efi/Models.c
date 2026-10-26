@@ -12,7 +12,6 @@
 #include "Base/Memory.h"
 #include "Base/Print.h"
 #include "Base/Text.h"
-#include "Core/AndroidImage.h"
 #include "Core/DeviceTree.h"
 #include "Base/Buffer.h"
 #include "Efi/Files.h"
@@ -29,35 +28,8 @@ STATIC CONST CHAR8 *CONST mDtbDirs[] = {
 
 // Limit on .dtb files read per folder.
 #define DTB_FILES_MAX 256
-
-CONST CHAR8 *CONST gModelsBootImages[4] = {"\\KERNEL", "\\boot\\Image",
-                                           "\\kernel.img", "\\boot.img"};
-
-// Read first to tell whether a file is a boot image.
-#define HEAD_SIZE 4096
-// Limit for a file that isn't a boot image; the ABL searches it whole.
-#define WHOLE_MAX ((UINTN)128 << 20)
-#define DTB_MAX   ((UINTN)4 << 20)
-
-#define N_BOOT_IMAGES (sizeof (gModelsBootImages) / sizeof (*gModelsBootImages))
-
-BOOLEAN
-ModelsIsBootImage (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path
-)
-{
-  OABL_BUFFER Head = {0};
-  BOOLEAN     Ok;
-
-  Ok = FilesReadPart (Fs, Path, 0, sizeof (ANDROID_BOOT_MAGIC) - 1, &Head) &&
-       Head.Len >= sizeof (ANDROID_BOOT_MAGIC) - 1 &&
-       CompareMem (
-         Head.Data, ANDROID_BOOT_MAGIC, sizeof (ANDROID_BOOT_MAGIC) - 1
-       ) == 0;
-  BufferFree (&Head);
-  return Ok;
-}
+// Limit on the size of a .dtb file.
+#define DTB_MAX ((UINTN)4 << 20)
 
 VOID
 ModelsFree (IN OUT SCANNED_MODELS *Models)
@@ -66,36 +38,6 @@ ModelsFree (IN OUT SCANNED_MODELS *Models)
     FreePool (Models->Items[Index].Name);
   }
   VecFree (Models);
-}
-
-// Finds the first devicetree blob in Region whose model is Model.
-STATIC BOOLEAN
-BlobFor (
-  IN CONST UINT8  *Region,
-  IN UINTN         Size,
-  IN CONST CHAR8  *Model,
-  OUT ANDROID_DTB *Out
-)
-{
-  ANDROID_DTBS Dtbs;
-  BOOLEAN      Found = FALSE;
-
-  AndroidFindDtbs (Region, Size, &Dtbs);
-  for (UINTN Index = 0; Index < Dtbs.Count && !Found; Index++) {
-    CONST UINT8 *Blob = Region + Dtbs.Items[Index].Offset;
-    DT_INFO      Info;
-
-    if (!DtInspect (Blob, Dtbs.Items[Index].Size, &Info)) {
-      continue;
-    }
-    if (AsciiStrEq (Info.Model, Model)) {
-      *Out  = Dtbs.Items[Index];
-      Found = TRUE;
-    }
-    DtInfoFree (&Info);
-  }
-  VecFree (&Dtbs);
-  return Found;
 }
 
 // Adds Region's models that aren't in Found yet. Returns how many; *Trees
@@ -108,10 +50,10 @@ AddModels (
   IN OUT UINTN          *Trees
 )
 {
-  ANDROID_DTBS Dtbs;
-  UINTN        Added = 0;
+  DT_BLOBS Dtbs;
+  UINTN    Added = 0;
 
-  AndroidFindDtbs (Region, Size, &Dtbs);
+  DtFindAll (Region, Size, &Dtbs);
   for (UINTN Index = 0; Index < Dtbs.Count; Index++) {
     CONST UINT8 *Blob = Region + Dtbs.Items[Index].Offset;
     DT_INFO      Info;
@@ -228,129 +170,6 @@ FindVisit (
   return Found;
 }
 
-// With Raw, reads straight off FAT32 instead of through the file system.
-STATIC BOOLEAN
-ReadRange (
-  IN EFI_HANDLE    Fs,
-  IN CONST CHAR8  *Path,
-  IN UINT64        Offset,
-  IN UINTN         Length,
-  IN BOOLEAN       Raw,
-  OUT OABL_BUFFER *Out
-)
-{
-  if (Raw) {
-    return RawFatReadRange (Fs, Path, Offset, Length, Out);
-  }
-  return FilesReadPart (Fs, Path, Offset, Length, Out);
-}
-
-// Reads the part of the boot image at Path that holds its devicetrees: the
-// DTB section, or the last 4 MiB of the kernel. If the appended
-// devicetrees may start before that window, the whole kernel is read. Head
-// holds the image's first bytes.
-STATIC BOOLEAN
-BootImage (
-  IN EFI_HANDLE         Fs,
-  IN CONST CHAR8       *Path,
-  IN CONST OABL_BUFFER *Head,
-  IN BOOLEAN            Raw,
-  OUT OABL_BUFFER      *Out
-)
-{
-  ANDROID_BOOT_IMAGE Image;
-  UINT64             At;
-  UINT64             Len;
-  BOOLEAN            Ok = FALSE;
-
-  if (!AndroidBootImageParse (Head->Data, Head->Len, &Image)) {
-    return FALSE;
-  }
-  if (AndroidDtbWindow (&Image, &At, &Len) &&
-      ReadRange (Fs, Path, At, (UINTN)Len, Raw, Out)) {
-    Ok = TRUE;
-    if (AndroidWindowTooShort (&Image, At, Len, Out->Data, Out->Len)) {
-      BufferFree (Out);
-      Ok =
-        ReadRange (Fs, Path, Image.Kernel.Offset, Image.Kernel.Size, Raw, Out);
-    }
-  }
-  AndroidBootImageFree (&Image);
-  if (!Ok) {
-    BufferFree (Out);
-  }
-  return Ok;
-}
-
-// Reads the devicetree region of the drive's first boot image file, or the
-// whole file if it isn't a boot image.
-STATIC BOOLEAN
-BootImageRegion (
-  IN EFI_HANDLE    Fs,
-  OUT OABL_BUFFER *Out
-)
-{
-  for (UINTN Index = 0; Index < N_BOOT_IMAGES; Index++) {
-    CONST CHAR8       *Path = gModelsBootImages[Index];
-    ANDROID_BOOT_IMAGE Image;
-    OABL_BUFFER        Head = {0};
-    BOOLEAN            Ok;
-
-    if (!ReadRange (Fs, Path, 0, HEAD_SIZE, FALSE, &Head)) {
-      BufferFree (&Head);
-      continue;
-    }
-    if (AndroidBootImageParse (Head.Data, Head.Len, &Image)) {
-      AndroidBootImageFree (&Image);
-      Ok = BootImage (Fs, Path, &Head, FALSE, Out);
-    } else {
-      Ok = FilesRead (Fs, Path, WHOLE_MAX, Out);
-      if (!Ok) {
-        BufferFree (Out);
-      }
-    }
-    BufferFree (&Head);
-    return Ok;
-  }
-  // XBL's FAT driver failed on every file. Read straight off FAT32, boot
-  // images only.
-  for (UINTN Index = 0; Index < N_BOOT_IMAGES; Index++) {
-    CONST CHAR8 *Path = gModelsBootImages[Index];
-    OABL_BUFFER  Head = {0};
-    BOOLEAN      Ok;
-
-    if (!ReadRange (Fs, Path, 0, HEAD_SIZE, TRUE, &Head)) {
-      BufferFree (&Head);
-      continue;
-    }
-    Ok = BootImage (Fs, Path, &Head, TRUE, Out);
-    BufferFree (&Head);
-    if (Ok) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-// Adds the models in the drive's boot image. FALSE if it has none.
-STATIC BOOLEAN
-BootImageDtbs (
-  IN EFI_HANDLE          Fs,
-  IN OUT SCANNED_MODELS *Found,
-  OUT UINTN             *Added
-)
-{
-  OABL_BUFFER Region = {0};
-  UINTN       Trees  = 0;
-
-  if (!BootImageRegion (Fs, &Region)) {
-    return FALSE;
-  }
-  *Added = AddModels (Found, Region.Data, Region.Len, &Trees);
-  BufferFree (&Region);
-  return TRUE;
-}
-
 BOOLEAN
 ModelsDevicetreeFor (
   IN EFI_HANDLE    Fs,
@@ -358,10 +177,6 @@ ModelsDevicetreeFor (
   OUT OABL_BUFFER *Out
 )
 {
-  OABL_BUFFER Blob = {0};
-  ANDROID_DTB Dtb;
-  BOOLEAN     Found;
-
   *Out = (OABL_BUFFER){0};
   for (UINTN Dir = 0; Dir < N_DTB_DIRS; Dir++) {
     FIND_VISIT Find = {Model, Out};
@@ -370,13 +185,7 @@ ModelsDevicetreeFor (
       return TRUE;
     }
   }
-  if (!BootImageRegion (Fs, &Blob)) {
-    return FALSE;
-  }
-  Found = BlobFor (Blob.Data, Blob.Len, Model, &Dtb) &&
-          BufferFrom (Out, Blob.Data + Dtb.Offset, Dtb.Size);
-  BufferFree (&Blob);
-  return Found;
+  return FALSE;
 }
 
 STATIC BOOLEAN
@@ -406,29 +215,17 @@ ModelsScan (
 )
 {
   for (UINTN Drive = 0; Drive < Count; Drive++) {
-    BOOLEAN FromFiles = FALSE;
-    UINTN   Before    = Out->Count;
-    UINTN   Added;
-
     for (UINTN Dir = 0; Dir < N_DTB_DIRS; Dir++) {
       SCAN_VISIT Scan  = {Out, 0};
       UINTN      First = Out->Count;
 
       ReadDtbs (Drives[Drive], mDtbDirs[Dir], ScanVisit, &Scan);
       if (Scan.Trees) {
-        FromFiles = TRUE;
         LogPrint (
           Log, "scan: drive %llu: %llu new model(s) from %s", (UINT64)Drive,
           (UINT64)(Out->Count - First), mDtbDirs[Dir]
         );
       }
-    }
-    // The boot image is searched only if no devicetree files were found.
-    if (!FromFiles && BootImageDtbs (Drives[Drive], Out, &Added)) {
-      LogPrint (
-        Log, "scan: drive %llu: %llu new model(s) from its boot image",
-        (UINT64)Drive, (UINT64)(Out->Count - Before)
-      );
     }
   }
   SortBy (Out->Items, Out->Count, sizeof (*Out->Items), ByName, NULL);

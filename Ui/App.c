@@ -437,7 +437,7 @@ AppEntryDetail (
   IN UINTN             Cap
 )
 {
-  CONST CHAR8 *Kind = gStrings->BootImage;
+  CONST CHAR8 *Kind = "";
 
   switch (Entry->Kind) {
   case ENTRY_KIND_BLS:
@@ -451,8 +451,6 @@ AppEntryDetail (
     break;
   case ENTRY_KIND_DEFAULT_FILE:
     Kind = gStrings->DefaultFile;
-    break;
-  case ENTRY_KIND_BOOT_IMAGE:
     break;
   }
   Out[0] = 0;
@@ -1107,10 +1105,6 @@ AppInput (
   case SCREEN_CONFIRM:
     return ConfirmInput (A, Input);
   case SCREEN_ERROR:
-    if (A->Error == BOOT_ERROR_MODEL_NOT_SET) {
-      A->Screen = SCREEN_SCANNING;
-      return Command (COMMAND_SCAN_MODELS, 0);
-    }
     A->Screen = SCREEN_MENU;
     return None ();
   case SCREEN_LINES:

@@ -64,24 +64,6 @@ FilesReadPart (
   OUT OABL_BUFFER *Out
 );
 
-BOOLEAN
-FilesSize (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  OUT UINT64     *Out
-);
-
-// Reads Path from the start into Buffer, as much as fits. Got gets the
-// number of bytes read.
-BOOLEAN
-FilesReadTo (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  OUT UINT8      *Buffer,
-  IN UINTN        Size,
-  OUT UINTN      *Got
-);
-
 // Returns TRUE if Path opens and is a file.
 BOOLEAN
 FilesExists (

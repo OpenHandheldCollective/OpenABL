@@ -44,8 +44,6 @@
 /* Fastboot's USB gadget off and on, for USB host. */
 #define OPENABL_MENU_ACTION_GADGET_PAUSE          13
 #define OPENABL_MENU_ACTION_GADGET_RESUME         14
-/* Verifies the image from SetBootImage for StartKernel. */
-#define OPENABL_MENU_ACTION_BOOT_IMAGE_VERIFY     15
 /* EFI_SUCCESS if the device powered on to charge. */
 #define OPENABL_MENU_ACTION_CHARGER_BOOT          16
 #define OPENABL_MENU_ACTION_CHARGER_SCREEN_ON     17
@@ -59,17 +57,6 @@ typedef struct {
   UINT16 Key;             /* the key held at the start, a SCAN_* code */
   CHAR8  Version[32];     /* the ABL's version */
 } OPENABL_MENU_STATE;
-
-/* Laid out where BootLinux would put it; the devicetree may grow to 2 MiB.
- * KernelSize is how much of the Image to clean to the point of coherency. */
-typedef struct {
-  UINT64       KernelAddr;
-  UINT64       KernelSize;
-  UINT64       RamdiskAddr;
-  UINT64       RamdiskSize;
-  UINT64       DtbAddr;
-  CONST CHAR8 *CmdLine;
-} OPENABL_KERNEL;
 
 typedef struct _OPENABL_MENU_HOST_PROTOCOL OPENABL_MENU_HOST_PROTOCOL;
 
@@ -86,22 +73,12 @@ typedef EFI_STATUS (EFIAPI *OPENABL_MENU_POLL) (
 typedef VOID (EFIAPI *OPENABL_MENU_LOG) (
     IN OPENABL_MENU_HOST_PROTOCOL *This, IN CONST CHAR8 *Line);
 
-/* Buffer is pool memory, the ABL's from then on. */
-typedef EFI_STATUS (EFIAPI *OPENABL_MENU_SET_BOOT_IMAGE) (
-    IN OPENABL_MENU_HOST_PROTOCOL *This, IN VOID *Buffer, IN UINTN Size);
-
-/* Updates the devicetree and jumps to the kernel. Returns only on failure. */
-typedef EFI_STATUS (EFIAPI *OPENABL_MENU_START_KERNEL) (
-    IN OPENABL_MENU_HOST_PROTOCOL *This, IN CONST OPENABL_KERNEL *Kernel);
-
 struct _OPENABL_MENU_HOST_PROTOCOL {
-  UINT32                      Flags; /* OPENABL_MENU_FLAG_* */
-  OPENABL_MENU_GET_STATE      GetState;
-  OPENABL_MENU_DO_ACTION      DoAction;
-  OPENABL_MENU_POLL           Poll;
-  OPENABL_MENU_LOG            Log;
-  OPENABL_MENU_SET_BOOT_IMAGE SetBootImage;
-  OPENABL_MENU_START_KERNEL   StartKernel;
+  UINT32                 Flags; /* OPENABL_MENU_FLAG_* */
+  OPENABL_MENU_GET_STATE GetState;
+  OPENABL_MENU_DO_ACTION DoAction;
+  OPENABL_MENU_POLL      Poll;
+  OPENABL_MENU_LOG       Log;
 };
 
 extern EFI_GUID gOpenAblMenuHostProtocolGuid;
@@ -130,19 +107,14 @@ typedef VOID (EFIAPI *OPENABL_STORAGE_BOOT_PREP) (
 typedef EFI_STATUS (EFIAPI *OPENABL_STORAGE_RUN) (
     IN OPENABL_STORAGE_PROTOCOL *This);
 
-typedef EFI_STATUS (EFIAPI *OPENABL_STORAGE_START_BOOT_IMAGE) (
-    IN OPENABL_STORAGE_PROTOCOL *This, IN VOID *Buffer, IN UINTN Size,
-    IN OPENABL_STORAGE_LOG Log);
-
 typedef VOID (EFIAPI *OPENABL_STORAGE_LOG_SINK) (
     IN CONST UINT8 *Buffer, IN UINTN Size);
 
 struct _OPENABL_STORAGE_PROTOCOL {
-  OPENABL_STORAGE_ANDROID_PARAMS   AndroidParams;
-  OPENABL_STORAGE_BOOT_PREP        BootPrep;
-  OPENABL_STORAGE_RUN              Run;
-  OPENABL_STORAGE_START_BOOT_IMAGE StartBootImage;
-  OPENABL_STORAGE_LOG_SINK         LogSink;
+  OPENABL_STORAGE_ANDROID_PARAMS AndroidParams;
+  OPENABL_STORAGE_BOOT_PREP      BootPrep;
+  OPENABL_STORAGE_RUN            Run;
+  OPENABL_STORAGE_LOG_SINK       LogSink;
 };
 
 #endif /* __OPENABL_MENU_HOST_H__ */

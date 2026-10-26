@@ -28,7 +28,6 @@
 #include <Library/UpdateDeviceTree.h>
 #include <Library/VerifiedBoot.h>
 #include <FastbootLib/FastbootMain.h>
-#include <Protocol/EFIRmVm.h>
 #include <Protocol/FirmwareVolume2.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/OpenAblAblLib.h>
@@ -51,8 +50,6 @@ STATIC BootInfo mInfo;
 STATIC UINT8    mEntry;
 STATIC UINT16   mKey;
 STATIC BOOLEAN  mSetRot;
-STATIC BootInfo mVerified;
-STATIC BOOLEAN  mHaveVerified;
 /* Qualcomm's code reads these later, for the A/B retry count. */
 STATIC BOOLEAN  *mFastboot;
 STATIC BOOLEAN  *mRecovery;
@@ -63,7 +60,6 @@ VOID BootIntoHibernationImage (BootInfo *Info,
 #endif
 
 STATIC OPENABL_STORAGE_PROTOCOL *LoadedProgram (VOID);
-STATIC EFI_STATUS VerifyBootImage (VOID);
 
 /* OpenAblSerialPortLib's. */
 extern OPENABL_STORAGE_LOG_SINK gOpenAblLogSink;
@@ -188,8 +184,6 @@ HostDoAction (IN OPENABL_MENU_HOST_PROTOCOL *This, IN UINT32 Action)
     ExitMenuKeysDetection ();
     OpenAblBootPrep (OPENABL_PREP_BOOT);
     return EFI_SUCCESS;
-  case OPENABL_MENU_ACTION_BOOT_IMAGE_VERIFY:
-    return VerifyBootImage ();
   case OPENABL_MENU_ACTION_BOOT_ANDROID:
   case OPENABL_MENU_ACTION_BOOT_ANDROID_RECOVERY:
     return BootAndroid (Action ==
@@ -228,67 +222,6 @@ HostLog (IN OPENABL_MENU_HOST_PROTOCOL *This, IN CONST CHAR8 *Line)
   }
 }
 
-STATIC VOID    *mBootImage;
-STATIC UINTN    mBootImageSize;
-
-STATIC EFI_STATUS EFIAPI
-HostSetBootImage (IN OPENABL_MENU_HOST_PROTOCOL *This, IN VOID *Buffer,
-                  IN UINTN Size)
-{
-  if ((Buffer == NULL) || (Size == 0)) {
-    return EFI_INVALID_PARAMETER;
-  }
-  if ((mBootImage != NULL) && (mBootImage != Buffer)) {
-    FreePool (mBootImage);
-  }
-  mBootImage     = Buffer;
-  mBootImageSize = Size;
-  DEBUG ((EFI_D_ERROR, "OpenAblMenu: boot image, %u bytes\n", (UINT32)Size));
-  return EFI_SUCCESS;
-}
-
-/* On success the program keeps the buffer and starts it. */
-STATIC EFI_STATUS
-VerifyBootImage (VOID)
-{
-  BootInfo   Info = {0};
-  EFI_STATUS Status;
-  VOID       *Image;
-
-  if (mBootImage == NULL) {
-    return EFI_NOT_FOUND;
-  }
-  if (mBootImageSize > MAX_UINT32) {
-    return EFI_INVALID_PARAMETER;
-  }
-  Image = mBootImage;
-  mBootImage = NULL;
-  SetBootDevImage ();
-  Info.Images[0].ImageBuffer = Image;
-  Info.Images[0].ImageSize = (UINT32)mBootImageSize;
-  Info.Images[0].Name = "boot";
-  Info.NumLoadedImages = 1;
-  Info.MultiSlotBoot = PartitionHasMultiSlot (L"boot");
-  /* Keymaster's root of trust is set once per boot. */
-  Status = LoadImageAndAuth (&Info, FALSE, mSetRot
-#ifndef USE_DUMMY_BCC
-                            , NULL
-#endif
-                            );
-  /* So a failed start can't leave it set for later boots. */
-  ResetBootDevImage ();
-  if (Status != EFI_SUCCESS) {
-    DEBUG ((EFI_D_ERROR, "OpenAblMenu: the boot image didn't verify: %r\n",
-            Status));
-    FreePool (Image);
-    return Status;
-  }
-  mSetRot = TRUE;
-  mVerified = Info;
-  mHaveVerified = TRUE;
-  return Status;
-}
-
 STATIC EFI_STATUS EFIAPI
 LibInflate (IN CONST OPENABL_ABL_LIB_PROTOCOL *This, IN CONST VOID *In,
             IN UINTN InSize, OUT VOID *Out, IN UINTN OutSize,
@@ -310,72 +243,13 @@ LibInflate (IN CONST OPENABL_ABL_LIB_PROTOCOL *This, IN CONST VOID *In,
   return EFI_SUCCESS;
 }
 
-#ifdef PVMFW_BCC
-STATIC VOID
-FirmwareDone (VOID)
-{
-  RmVmProtocol *Rm = NULL;
-  EFI_STATUS    Status = EFI_NOT_FOUND;
-
-  if (mHaveVerified) {
-    BootInfo Info = mVerified;
-
-    mHaveVerified = FALSE;
-    Status = OpenAblPvmFwRegister (&Info);
-  }
-  DEBUG ((EFI_D_ERROR, "OpenAblMenu: pvmfw: %r\n", Status));
-  Status = gBS->LocateProtocol (&gEfiRmVmProtocolGuid, NULL, (VOID **)&Rm);
-  if (Status == EFI_SUCCESS) {
-    Status = Rm->SetFwMilestone (Rm);
-  }
-  DEBUG ((EFI_D_ERROR, "OpenAblMenu: firmware milestone: %r\n", Status));
-}
-#endif
-
-STATIC EFI_STATUS EFIAPI
-HostStartKernel (IN OPENABL_MENU_HOST_PROTOCOL *This,
-                 IN CONST OPENABL_KERNEL *Kernel)
-{
-  BootParamlist Params = {0};
-  EFI_STATUS    Status;
-
-  if ((Kernel == NULL) || (Kernel->RamdiskSize > MAX_UINT32)) {
-    return EFI_INVALID_PARAMETER;
-  }
-  /* The program edited the tree. */
-  FdtResetNodeList ();
-  /* Tell the hypervisor the kernel's base, as BootLinux does. */
-  Params.KernelLoadAddr = Kernel->KernelAddr;
-  Params.RamdiskLoadAddr = Kernel->RamdiskAddr;
-  SetandGetLoadAddr (&Params, LOAD_ADDR_NONE);
-  GetQrksKernelStartAddress ();
-#ifdef PVMFW_BCC
-  FirmwareDone ();
-#endif
-  Status = UpdateDeviceTree ((VOID *)Kernel->DtbAddr, Kernel->CmdLine,
-                             (VOID *)Kernel->RamdiskAddr,
-                             (UINT32)Kernel->RamdiskSize, FALSE);
-  if (Status != EFI_SUCCESS) {
-    DEBUG ((EFI_D_ERROR, "Device Tree update failed Status:%r\n", Status));
-    return Status;
-  }
-  Params.KernelLoadAddr = Kernel->KernelAddr;
-  Params.KernelSizeActual = Kernel->KernelSize;
-  Params.RamdiskLoadAddr = Kernel->RamdiskAddr;
-  Params.DeviceTreeLoadAddr = Kernel->DtbAddr;
-  Params.PageSize = EFI_PAGE_SIZE;
-  return LaunchLinux (&Params,
-                      (UINT32)ALIGN_VALUE (Kernel->RamdiskSize, EFI_PAGE_SIZE));
-}
-
 STATIC OPENABL_ABL_LIB_PROTOCOL mAblLib = {
     LibInflate, fdt_path_offset, fdt_get_name, fdt_getprop, fdt_next_node,
     fdt_first_subnode, fdt_next_subnode, fdt_node_offset_by_compatible,
     fdt_setprop, fdt_add_subnode};
 
 STATIC OPENABL_MENU_HOST_PROTOCOL mHost = {
-    0, HostGetState, HostDoAction, HostPoll, HostLog, HostSetBootImage,
-    HostStartKernel};
+    0, HostGetState, HostDoAction, HostPoll, HostLog};
 
 /* EFI_NOT_FOUND if this build doesn't include the program. */
 STATIC EFI_STATUS
@@ -560,16 +434,4 @@ OpenAblAndroidParam (IN UINTN Index, OUT CONST CHAR8 **Key,
     }
   }
   return FALSE;
-}
-
-EFI_STATUS
-OpenAblStartBootImage (IN VOID *Buffer, IN UINTN Size)
-{
-  OPENABL_STORAGE_PROTOCOL *Storage;
-
-  Storage = LoadedProgram ();
-  if (Storage == NULL) {
-    return EFI_UNSUPPORTED;
-  }
-  return Storage->StartBootImage (Storage, Buffer, Size, StorageLog);
 }

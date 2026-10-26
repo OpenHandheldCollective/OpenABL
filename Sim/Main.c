@@ -161,14 +161,15 @@ SampleModels (OUT CONST MODEL **Models)
   return sizeof (mModels) / sizeof (mModels[0]);
 }
 
-// The entries of a card with a Linux image, a UKI and a fallback kernel.
+// The entries of a card with a Linux image and a UKI, and an ESP's default
+// file.
 STATIC CONST ENTRY_VIEW mEntries[] = {
   {"Linux", "20261003", "Linux", ENTRY_KIND_BLS, TRUE, FALSE},
   {"Linux (previous)", "20260901", "Linux", ENTRY_KIND_BLS, TRUE, FALSE},
   {"Debian GNU/Linux 13", "6.12", "ESP", ENTRY_KIND_UKI, FALSE, FALSE},
   {"Linux nightly", "20261004", "Linux", ENTRY_KIND_BLS, TRUE, TRUE},
   {"Recovery shell", "", "Linux", ENTRY_KIND_EXTLINUX, TRUE, FALSE},
-  {"KERNEL", "", "Linux", ENTRY_KIND_BOOT_IMAGE, TRUE, FALSE},
+  {"BOOTAA64.EFI", "", "ESP", ENTRY_KIND_DEFAULT_FILE, FALSE, FALSE},
 };
 
 STATIC UINTN
@@ -391,16 +392,6 @@ SErrorWipeByHand (
 }
 
 STATIC VOID
-SErrorModel (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  (VOID)Now;
-  AppOnBootResult (A, FALSE, BOOT_ERROR_MODEL_NOT_SET, NULL);
-}
-
-STATIC VOID
 SToast (
   IN OUT APP *A,
   IN UINT64   Now
@@ -448,7 +439,6 @@ STATIC CONST struct {
   {"confirm-edl", SConfirmEdl},
   {"booting", SBooting},
   {"error-no-image", SErrorNoImage},
-  {"error-model", SErrorModel},
   {"uninstalling", SUninstalling},
   {"restarting", SRestarting},
   {"error-uninstall", SErrorUninstall},

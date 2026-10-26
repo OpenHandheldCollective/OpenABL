@@ -196,6 +196,43 @@ DtInfoFree (IN OUT DT_INFO *Info)
   *Info = (DT_INFO){0};
 }
 
+BOOLEAN
+DtFindAll (
+  IN CONST UINT8 *Region,
+  IN UINTN        Size,
+  OUT DT_BLOBS   *Found
+)
+{
+  STATIC CONST UINT8 Magic[4] = {0xd0, 0x0d, 0xfe, 0xed};
+  UINTN              From     = 0;
+
+  *Found = (DT_BLOBS){0};
+  while (From + 8 <= Size) {
+    UINTN At    = From;
+    UINTN Total = 0;
+
+    while (At + 4 <= Size && CompareMem (Region + At, Magic, 4) != 0) {
+      At++;
+    }
+    if (At + 4 > Size) {
+      break;
+    }
+    if (At + 8 <= Size) {
+      Total = ReadBe32 (Region + At + 4);
+    }
+    if (Total >= 64 && Total <= 16 << 20 && Total <= Size - At &&
+        DtInspect (Region + At, Total, NULL)) {
+      if (!VecPush (Found, (DT_BLOB){At, Total})) {
+        return FALSE;
+      }
+      From = At + Total;
+    } else {
+      From = At + 4;
+    }
+  }
+  return TRUE;
+}
+
 // Validation and libfdt wrappers
 
 // For WalkOk: no node to check.
@@ -391,35 +428,6 @@ NameOf (
   CONST CHAR8 *Name = fdt_get_name (Fdt, Node, &Length);
 
   return Name ? (OABL_TEXT){Name, (UINTN)Length} : (OABL_TEXT){"", 0};
-}
-
-DT_ERROR
-DtSetPropByCompatible (
-  IN OUT UINT8          *Fdt,
-  IN UINTN               Capacity,
-  IN CONST CHAR8 *CONST *Compatibles,
-  IN UINTN               Count,
-  IN CONST CHAR8        *Name,
-  IN CONST VOID         *Value,
-  IN UINTN               Length
-)
-{
-  INT32 Node;
-
-  // An unreadable header gives DT_NOT_FOUND, not DT_BAD_BLOB.
-  if (!HeaderOk (Fdt, Capacity)) {
-    return DT_NOT_FOUND;
-  }
-  if (!WalkOk (Fdt, NO_NODE)) {
-    return DT_BAD_BLOB;
-  }
-  for (UINTN Index = 0; Index < Count; Index++) {
-    if ((Node = fdt_node_offset_by_compatible (Fdt, -1, Compatibles[Index])) >=
-        0) {
-      return Set (Fdt, (UINTN)Node, Name, Value, Length);
-    }
-  }
-  return DT_NOT_FOUND;
 }
 
 // Lookups and subnodes

@@ -79,7 +79,6 @@ typedef enum {
   BOOT_ERROR_NO_IMAGE,       // nothing bootable on the source
   BOOT_ERROR_LOAD_FAILED,    // an image failed to load or start
   BOOT_ERROR_ANDROID,        // Android boot isn't available
-  BOOT_ERROR_MODEL_NOT_SET,  // a model is needed for the devicetree
   BOOT_ERROR_ANDROID_FAILED, // booting Android (boot_a/b) returned
   BOOT_ERROR_WIPE_BY_HAND,   // Linux removed, but Android isn't the boot mode
   BOOT_ERROR_UNINSTALL,      // removing Linux failed; ErrorDetail says why
@@ -216,7 +215,6 @@ typedef enum {
   ENTRY_KIND_UKI,
   ENTRY_KIND_EXTLINUX,
   ENTRY_KIND_DEFAULT_FILE,
-  ENTRY_KIND_BOOT_IMAGE,
 } ENTRY_KIND;
 
 // A boot entry the platform found. Start boots the first.

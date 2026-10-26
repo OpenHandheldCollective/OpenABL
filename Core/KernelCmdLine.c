@@ -18,52 +18,6 @@ STATIC CONST CHAR8 *CONST mOemPanels[] = {
   "mdss_dsi_kr04_",       "mdss_dsi_wt0630_",
 };
 
-BOOLEAN
-KernelCmdLineFileText (
-  IN CONST UINT8     *Raw,
-  IN UINTN            Size,
-  IN OUT OABL_BUFFER *Out
-)
-{
-  if (!BufferReserve (Out, Size)) {
-    return FALSE;
-  }
-  for (UINTN Index = 0; Index < Size; Index++) {
-    Out->Data[Out->Len++] =
-      Raw[Index] == '\n' || Raw[Index] == '\r' ? ' ' : Raw[Index];
-  }
-  while (Out->Len && Out->Data[Out->Len - 1] == ' ') {
-    Out->Len--;
-  }
-  for (UINTN Index = 0; Index < Out->Len; Index++) {
-    if (!Out->Data[Index]) {
-      Out->Len = Index;
-      break;
-    }
-  }
-  return TRUE;
-}
-
-BOOLEAN
-KernelCmdLineCombine (
-  IN OABL_BYTES          Base,
-  IN KERNEL_CMDLINE_KIND Kind,
-  IN OABL_BYTES          Text,
-  IN OUT OABL_BUFFER    *Out
-)
-{
-  if (Kind == KERNEL_CMDLINE_KIND_APPEND) {
-    if (!BufferAppend (Out, Base.Ptr, Base.Len)) {
-      return FALSE;
-    }
-    if (Base.Len && Base.Ptr[Base.Len - 1] != ' ' &&
-        !BufferAppendU8 (Out, ' ')) {
-      return FALSE;
-    }
-  }
-  return BufferAppend (Out, Text.Ptr, Text.Len);
-}
-
 STATIC VOID
 Param (
   OUT KERNEL_CMDLINE_PARAM *Out,
