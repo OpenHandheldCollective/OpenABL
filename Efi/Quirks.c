@@ -643,7 +643,7 @@ SdccImage (IN CONST SDCC_BUILD *Build)
   return Found;
 }
 
-STATIC VOID
+STATIC UINT64
 SdccBuild (
   IN CONST SDCC_BUILD *Build,
   IN LOG_SINK          Log
@@ -655,7 +655,7 @@ SdccBuild (
 
   if (!Base) {
     LogPrint (Log, "sdcc %s: SdccDxe image not found", Build->Name);
-    return;
+    return 0;
   }
   if (Build->HasSlots) {
     for (UINTN Index = 0; Index < Build->NSlots; Index++) {
@@ -663,7 +663,7 @@ SdccBuild (
         LogPrint (
           Log, "sdcc %s: slot layout unexpected, skipping", Build->Name
         );
-        return;
+        return 0;
       }
     }
   }
@@ -691,8 +691,176 @@ SdccBuild (
     Log, "sdcc %s: img=0x%llx patched=0x%llx (0x%llx = all)", Build->Name,
     (UINT64)Base, (UINT64)Done, (UINT64)All
   );
+  return Base;
 }
 #endif // SDCC builds
+
+// SM4450: a card stuck from power-on
+
+#ifdef OABL_SDCC_SM4450
+
+#define SD_HOST       0x08804000ull
+#define SDHCI_PRESENT 0x24u
+#define PRESENT_DAT   20u
+#define PRESENT_CMD   24u
+
+// TLMM: SDC2's pad control, and its CMD and DATA pull-ups.
+#define TLMM_SDC2_PAD 0x0f18f000ull
+#define PAD_PULLS     0x1e00u
+
+#define CYCLE_FALL_US 20000u
+#define CYCLE_OFF_US  250000u
+#define CYCLE_RISE_US 20000u
+
+#define VOLT_RVA      0x527cu
+#define VOLT_VOTES    0x1400002du
+#define VOLT_NO_VOTES 0x1400003bu
+
+STATIC EFI_GUID mCmdDbGuid = {0x1c34f691,
+                              0xd33d,
+                              0x4e14,
+                              {0xb8, 0xf8, 0x32, 0xc6, 0xc0, 0x29, 0xe9, 0x5b}};
+typedef struct _CMD_DB_PROTOCOL CMD_DB_PROTOCOL;
+struct _CMD_DB_PROTOCOL {
+  UINT64 Revision;
+  UINTN  Query;
+  EFI_STATUS (EFIAPI *QueryAddr) (
+    IN CMD_DB_PROTOCOL *This,
+    IN CONST CHAR8     *Name,
+    OUT UINT32         *Address
+  );
+};
+
+STATIC EFI_GUID mRpmhGuid = {0xe1d0b573,
+                             0xf29f,
+                             0x495d,
+                             {0x93, 0x52, 0xca, 0x0d, 0xd4, 0x2a, 0x0a, 0x74}};
+#define RPMH_REVISION   0x10001ull
+#define RPMH_DRV_HLOS   2u
+#define RPMH_SET_ACTIVE 0u
+typedef struct _RPMH_PROTOCOL {
+  UINT64 Revision;
+  UINTN  Init, IsDrvIdValid, TcsNumCmds, CreateHandleInternal,
+    CreateHandleExplicit;
+  EFI_STATUS (EFIAPI *CreateHandle) (
+    IN UINT32       Drv,
+    IN CONST CHAR8 *Name,
+    OUT VOID      **Handle
+  );
+  UINTN InvalidateExplicit, RegisterCallback, DeleteHandle, FindResource,
+    ChurnAll, ChurnSingle, FinishAmc, FinishSleepWakeAmc, IssueCommandSet,
+    InvalidateSleep, InvalidateWake, IssueReadCommand;
+  EFI_STATUS (EFIAPI *IssueCommand) (
+    IN VOID    *Handle,
+    IN UINT32   Set,
+    IN BOOLEAN  Completion,
+    IN UINT32   Address,
+    IN UINT32   Data,
+    OUT UINT32 *ReqId
+  );
+} RPMH_PROTOCOL;
+_Static_assert (
+  offsetof (
+    RPMH_PROTOCOL,
+    IssueCommand
+  ) == 0x98,
+  "EFI_RPMH_PROTOCOL's layout"
+);
+
+
+STATIC CONST CHAR8 *CONST mSdPbs[] = {"vrm.sd", "vrm.px2"};
+#define SD_PBS (sizeof (mSdPbs) / sizeof (*mSdPbs))
+
+// TRUE if the SD lines read CMD high, DAT low.
+STATIC BOOLEAN
+SdStuck (VOID)
+{
+  UINT32 Present = *(volatile UINT32 *)(UINTN)(SD_HOST + SDHCI_PRESENT);
+
+  return (Present >> PRESENT_CMD & 1) == 1 &&
+         (Present >> PRESENT_DAT & 0xf) == 0;
+}
+
+STATIC BOOLEAN
+SdPbsVote (
+  IN RPMH_PROTOCOL *Rpmh,
+  IN VOID          *Handle,
+  IN CONST UINT32  *Address,
+  IN BOOLEAN        On,
+  IN LOG_SINK       Log
+)
+{
+  for (UINTN Index = 0; Index < SD_PBS; Index++) {
+    UINTN      Pbs    = On ? Index : SD_PBS - 1 - Index;
+    UINT32     ReqId  = 0;
+    EFI_STATUS Status = Rpmh->IssueCommand (
+      Handle, RPMH_SET_ACTIVE, TRUE, Address[Pbs], On ? 1 : 0, &ReqId
+    );
+
+    if (EFI_ERROR (Status)) {
+      LogPrint (
+        Log, "sdcc sm4450: %s %s: %s", mSdPbs[Pbs], On ? "on" : "off",
+        StatusText (Status, (CHAR8[STATUS_TEXT_SIZE]){0})
+      );
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+// Power cycle a stuck card
+STATIC VOID
+SdUnstick (
+  IN UINT64   Base,
+  IN LOG_SINK Log
+)
+{
+  CMD_DB_PROTOCOL *CmdDb  = LocateProtocol (&mCmdDbGuid);
+  RPMH_PROTOCOL   *Rpmh   = LocateProtocol (&mRpmhGuid);
+  volatile UINT32 *Pad    = (volatile UINT32 *)(UINTN)TLMM_SDC2_PAD;
+  UINT32           Pulled = *Pad;
+  VOID            *Handle = NULL;
+  UINT32           Address[SD_PBS];
+  BOOLEAN          Off;
+
+  LogPrint (Log, "sdcc sm4450: the card holds DAT low, power-cycling it");
+  if (!CmdDb || !Rpmh || Rpmh->Revision != RPMH_REVISION ||
+      EFI_ERROR (Rpmh->CreateHandle (RPMH_DRV_HLOS, "openabl_sd", &Handle)) ||
+      !Handle) {
+    LogPrint (Log, "sdcc sm4450: no RPMh client");
+    return;
+  }
+  for (UINTN Pbs = 0; Pbs < SD_PBS; Pbs++) {
+    if (EFI_ERROR (CmdDb->QueryAddr (CmdDb, mSdPbs[Pbs], &Address[Pbs])) ||
+        !Address[Pbs]) {
+      LogPrint (
+        Log, "sdcc sm4450: %s not in the command database", mSdPbs[Pbs]
+      );
+      return;
+    }
+  }
+  Off = SdPbsVote (Rpmh, Handle, Address, FALSE, Log);
+  if (Off) {
+    gBS->Stall (CYCLE_FALL_US);
+    *Pad = Pulled & ~PAD_PULLS;
+    gBS->Stall (CYCLE_OFF_US);
+  }
+  // On whatever went off.
+  SdPbsVote (Rpmh, Handle, Address, TRUE, Log);
+  gBS->Stall (CYCLE_RISE_US);
+  *Pad = Pulled;
+  if (!Off) {
+    return;
+  }
+  WriteWord (Base + VOLT_RVA, TRUE, VOLT_VOTES, VOLT_NO_VOTES);
+  QuirksSignalSdDetect ();
+  WriteWord (Base + VOLT_RVA, TRUE, VOLT_NO_VOTES, VOLT_VOTES);
+  LogPrint (
+    Log, "sdcc sm4450: after the power cycle the card %s",
+    SdStuck () ? "still holds DAT low" : "lets DAT go"
+  );
+}
+#endif
 
 // RP G2: the SD command line pull-up
 
@@ -1108,6 +1276,11 @@ QuirksSdccUhs (
   UINT32      Patched = 0;
   UINTN       Longer  = 0;
   BOOLEAN     Pulled  = FALSE;
+  BOOLEAN     Detected;
+#if defined(OABL_SDCC_SM4450) || defined(OABL_SDCC_SM6450) ||                  \
+  defined(OABL_SDCC_SM7675)
+  UINT64 Base = 0;
+#endif
 
   if (Sites.Count > MAX_SITES) {
     Sites.Count = MAX_SITES;
@@ -1182,10 +1355,12 @@ QuirksSdccUhs (
       }
     }
     if (Match) {
-      SdccBuild (&mSdccBuilds[Build], Log);
+      Base = SdccBuild (&mSdccBuilds[Build], Log);
       break;
     }
   }
+  // Only the SM4450 build uses the image's base.
+  (VOID)Base;
 #endif
 #ifdef OABL_SD_DIAGNOSTICS
   if (Sites.Count > 0) {
@@ -1195,7 +1370,8 @@ QuirksSdccUhs (
 #ifdef OABL_SDCC_SM7675
   Pulled = Chip == SM7675_G2 && SdCmdPullup (Log);
 #endif
-  if (Patched > 0 || Longer > 0 || Pulled) {
+  Detected = Patched > 0 || Longer > 0 || Pulled;
+  if (Detected) {
     // Detection runs inside SignalEvent, as its notify TPL is above ours.
     QuirksSignalSdDetect ();
   }
@@ -1212,6 +1388,11 @@ QuirksSdccUhs (
       Ok ? "done" : "REFUSED"
     );
   }
+#ifdef OABL_SDCC_SM4450
+  if (Detected && Base && Chip == SM4450 && SdStuck ()) {
+    SdUnstick (Base, Log);
+  }
+#endif
 #ifdef OABL_SD_DIAGNOSTICS
   if (Sites.Count > 0) {
     SdSlotReport (Sites.Items[0], "after", Log);
