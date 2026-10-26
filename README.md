@@ -15,8 +15,8 @@ in its firmware volume and starts it instead of its own fastboot menu.
 
 The main menu and the boot entries, rendered by the simulator (`make sim`).
 
-Supported chipsets: SDM845, SM4450, SM6115, SM6450, SM7675, SM8250, SM8550,
-SM8650 and SM8750.
+Supported chipsets: SDM845, SM4450, SM6115, SM6450, SM7675, SM8250, SM8475,
+SM8550, SM8650 and SM8750.
 
 ## Using it
 

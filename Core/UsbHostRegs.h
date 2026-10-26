@@ -27,7 +27,8 @@ typedef enum {
   USB_HOST_BOARD_SM6115,
   // SM8250 (Kona). XBL's own host stack, VBUS from the SCHG of PMIC 1.
   USB_HOST_BOARD_SM8250,
-  // SM4450, SM6450, G2 Gen 2, SM8550, SM8650, SM8750. XBL's own host stack.
+  // SM4450, SM6450, G2 Gen 2, SM8475, SM8550, SM8650, SM8750. XBL's own host
+  // stack.
   // The charger is behind qcom,pmic_glink, so VBUS goes through the ADSP:
   // load it (PIL FULL_ADSP) and check its PMIC glink channel.
   USB_HOST_BOARD_GLINK,

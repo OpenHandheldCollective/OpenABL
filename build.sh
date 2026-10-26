@@ -21,7 +21,7 @@ VERSION=$(cat VERSION)
 IMAGE=ghcr.io/tianocore/containers/fedora-40-dev:latest
 # The ABL tree's path in the container; its build cache stores this path.
 WORKSPACE=/workspaces/LinuxLoader
-CHIPSETS="sdm845 sm4450 sm6115 sm6450 sm7675 sm8250 sm8550 sm8650 sm8750"
+CHIPSETS="sdm845 sm4450 sm6115 sm6450 sm7675 sm8250 sm8475 sm8550 sm8650 sm8750"
 
 usage() {
   echo "usage: ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]" >&2
@@ -41,6 +41,7 @@ chipset() {
     sm6115) SIGN=-v6 PVMFW=false BUNDLED_USB=1 ABL_EXTRA=TARGET_SOC_SM6115=1 OWN=loader-quirks ;;
     sm6450) OWN=sdcc-sm6450 ;;
     sm7675) OWN=sdcc-sm7675 ;;
+    sm8475) PVMFW=false ;;
     sm8550) ;;
     sm8650) OWN=park-display ;;
     sm8750) OWN=park-display OWN_FULL=sysfont ;;

@@ -19,8 +19,8 @@ UsbHostBoardOf (
   OUT USB_HOST_BOARD *Out
 )
 {
-  STATIC CONST CHAR8 *CONST Glink[] = {"SM4450", "SM6450", "SM8550", "SM8650",
-                                       "SM8750"};
+  STATIC CONST CHAR8 *CONST Glink[] = {"SM4450", "SM6450", "SM8475", "SM8550",
+                                       "SM8650", "SM8750"};
   OABL_TEXT                 Trimmed;
 
   switch (ChipId) {
@@ -33,11 +33,12 @@ UsbHostBoardOf (
     *Out = USB_HOST_BOARD_SM6115;
     return TRUE;
   // G1 Gen 2 (SM4450), G2 Gen 1 (SM6450), G2 Gen 2 (Cliffs XBL, with
-  // PmicGlinkDxe and the ADSP, DWC3 at 0xa600000), QCS8550 and G3x Gen 2,
-  // G3 Gen 3 (SM8650), 8 Elite and Q8750.
+  // PmicGlinkDxe and the ADSP, DWC3 at 0xa600000), 8+ Gen 1 (SM8475),
+  // QCS8550 and G3x Gen 2, G3 Gen 3 (SM8650), 8 Elite and Q8750.
   case 654:
   case 634:
   case 700:
+  case 531:
   case 601:
   case 603:
   case 682:
@@ -99,7 +100,7 @@ UsbHostBoardName (IN USB_HOST_BOARD Board)
     return "SM8250";
   case USB_HOST_BOARD_GLINK:
   default:
-    return "SM4450/SM6450/SM8550+ (ADSP)";
+    return "SM4450/SM6450/SM8475/SM8550+ (ADSP)";
   }
 }
 

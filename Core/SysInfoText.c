@@ -96,6 +96,8 @@ SysInfoSocName (IN UINT32 ChipId)
     return "Snapdragon 662";
   case 467:
     return "Dragonwing QCS6125";
+  case 531:
+    return "Snapdragon 8+ Gen 1";
   case 601:
     return "Snapdragon G3x Gen 2";
   case 603:
