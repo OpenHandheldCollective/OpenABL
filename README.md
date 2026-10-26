@@ -44,7 +44,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Item | What it does |
 |---|---|
 | Start | Boots the current boot mode (*Start Linux* or *Start Android*). |
-| Boot entries | Lists everything *Start* would try, in order: boot entries, each drive's `\EFI\BOOT\BOOTAA64.EFI`, then the boot image. Picking one boots only that entry. Shown only when there is more than one. |
+| Boot entries | Lists everything *Start* would try, in order: boot entries, then each drive's `\EFI\BOOT\BOOTAA64.EFI`. Picking one boots only that entry. Shown only when there is more than one. |
 | Restart bootloader | Restarts into the menu. |
 | Recovery mode | Restarts into Android recovery. |
 | Emergency download mode | Restarts into Qualcomm EDL mode, after a confirmation. |
@@ -56,7 +56,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Off-mode charging | Shows the charger screen when plugged in while powered off. |
 | Display rotation | Auto (from the device model) or fixed at 0, 90, 180 or 270 degrees. |
 | Custom boot logo | Replaces the manufacturer's logo at boot with the pictures in a `\logo` folder (see below), or the OpenABL wordmark if there are none. Off by default. |
-| Device model | Selects the devicetree Linux boots with, from the `.dtb` files in `\boot\grub`, `\dtbs`, `\dtbs\qcom`, `\dtb` or `\dtb\qcom` on the boot source's drives, or else the devicetrees appended to a drive's boot image. A boot entry's own devicetree takes precedence. *Firmware default* uses the firmware's own. |
+| Device model | Selects the devicetree Linux boots with, from the `.dtb` files in `\boot\grub`, `\dtbs`, `\dtbs\qcom`, `\dtb` or `\dtb\qcom` on the boot source's drives. A boot entry's own devicetree takes precedence. *Firmware default* uses the firmware's own. |
 | Log | Shows the ABL's and the menu's log. |
 | Device info | Shows the chip, platform, PMICs, memory, storage, panel and firmware versions. |
 | Uninstall CFW | Removes a Linux install from internal storage, after a confirmation. Shown only when one is installed. |
@@ -79,8 +79,6 @@ order:
 1. `Boot####` options: `BootNext`, then `BootOrder`.
 2. On each drive: Boot Loader Specification entries and unified kernel
    images, then extlinux.conf labels, then the default boot file.
-3. If none of those boot, an Android boot image from a drive, started by
-   the ABL.
 
 | Method | Where it looks |
 |---|---|
@@ -88,7 +86,6 @@ order:
 | Unified kernel images (Type #2 entries) | `\EFI\Linux\*.efi` |
 | extlinux.conf | `\extlinux\extlinux.conf`, `\boot\extlinux\extlinux.conf` |
 | The default boot file (GRUB, systemd-boot or any EFI loader) | `\EFI\BOOT\BOOTAA64.EFI` |
-| Android boot images | `\KERNEL`, `\boot\Image`, `\kernel.img`, `\boot.img` |
 
 - Kernels are started through their EFI stub (gzip-compressed kernels are
   decompressed first), with their initrds and either the entry's devicetree
@@ -146,7 +143,7 @@ it.
 | Option | |
 |---|---|
 | `--lang zh-hans` | Simplified Chinese menu |
-| `--no-standard-boot` | Leave out standard boot (Linux then boots only from boot images) |
+| `--no-standard-boot` | Leave out standard boot (Linux then boots only from the default boot file) |
 | `--debug` | Debug build, with a Debug section in the menu |
 | `--clean` | Build each chipset from scratch |
 

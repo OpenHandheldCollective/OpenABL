@@ -50,6 +50,22 @@ DtInspect (
 VOID
 DtInfoFree (IN OUT DT_INFO *Info);
 
+// Where a devicetree is in a region.
+typedef struct _DT_BLOB {
+  UINTN Offset, Size;
+} DT_BLOB;
+
+typedef struct _DT_BLOBS OABL_VEC (DT_BLOB) DT_BLOBS;
+
+// Finds every devicetree with a model in Region, such as a .dtb file with
+// several concatenated. On failure, Found keeps the blobs found so far.
+BOOLEAN
+DtFindAll (
+  IN CONST UINT8 *Region,
+  IN UINTN        Size,
+  OUT DT_BLOBS   *Found
+);
+
 // libfdt's -FDT_ERR_NOSPACE becomes DT_NO_SPACE, other errors DT_BAD_BLOB.
 typedef enum {
   DT_OK,
@@ -59,19 +75,6 @@ typedef enum {
   // The property doesn't fit within the blob's totalsize, or out of memory.
   DT_NO_SPACE,
 } DT_ERROR;
-
-// Sets property Name on the first node compatible with one of Compatibles,
-// tried in order. Also returns DT_NOT_FOUND if the header can't be read.
-DT_ERROR
-DtSetPropByCompatible (
-  IN OUT UINT8          *Fdt,
-  IN UINTN               Capacity,
-  IN CONST CHAR8 *CONST *Compatibles,
-  IN UINTN               Count,
-  IN CONST CHAR8        *Name,
-  IN CONST VOID         *Value,
-  IN UINTN               Length
-);
 
 // Finds the node at Path with fdt_path_offset. A component without a unit
 // address matches a node with one: /reserved-memory/cont_splash_region finds

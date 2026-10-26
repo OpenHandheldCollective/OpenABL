@@ -29,12 +29,8 @@
 #define MENU_START_RESULT_NONE 0u
 // Nothing to boot.
 #define MENU_START_RESULT_NOTHING 1u
-// An image ran and returned, with no boot image after it.
+// An image ran and returned.
 #define MENU_START_RESULT_RETURNED 2u
-// The boot image needs a device model.
-#define MENU_START_RESULT_NO_MODEL 3u
-// The boot image didn't verify or didn't start.
-#define MENU_START_RESULT_FAILED 4u
 // USB host didn't come up (no drive, or XBL kept the core).
 #define MENU_START_RESULT_NO_USB 5u
 // Android's start came back.
@@ -119,22 +115,6 @@ MenuHostLog (
 // the host on each call; invalid UTF-8 is replaced.
 VOID EFIAPI
 MenuHostLogFn (IN CONST CHAR8 *Line OPTIONAL);
-
-// Updates the devicetree and starts the kernel with Qualcomm's code. Returns
-// only if the kernel didn't start.
-EFI_STATUS
-MenuHostStartKernel (
-  IN CONST MENU_HOST      *Host,
-  IN CONST OPENABL_KERNEL *Kernel
-);
-
-// Hands the host a boot image in pool memory; the host owns it from then on.
-EFI_STATUS
-MenuHostSetBootImage (
-  IN CONST MENU_HOST *Host,
-  IN VOID            *Buffer,
-  IN UINTN            Size
-);
 
 // Returns a NUL-padded state field of Size bytes as UTF-8, up to its first
 // NUL, with invalid bytes replaced. Caller frees it; NULL only when out of

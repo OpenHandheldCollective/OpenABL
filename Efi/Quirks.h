@@ -83,16 +83,6 @@ QuirksPrepareStorage (
 UINT32
 QuirksChipId (VOID);
 
-// Applies the devicetree fix-ups for a kernel; Fdt may grow up to Cap bytes.
-// After a USB boot the USB controller is put in host mode.
-VOID
-QuirksFixupDeviceTree (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Cap,
-  IN BOOLEAN    Usb,
-  IN LOG_SINK   Log
-);
-
 // The settings Qualcomm's code in the ABL reads, one byte each, 0 when
 // unset.
 typedef struct _QUIRKS_ABL_SETTINGS {

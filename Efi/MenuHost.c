@@ -49,8 +49,6 @@ MenuHostActionName (IN UINT32 Action)
     return "GADGET_PAUSE";
   case OPENABL_MENU_ACTION_GADGET_RESUME:
     return "GADGET_RESUME";
-  case OPENABL_MENU_ACTION_BOOT_IMAGE_VERIFY:
-    return "BOOT_IMAGE_VERIFY";
   case OPENABL_MENU_ACTION_CHARGER_BOOT:
     return "CHARGER_BOOT";
   case OPENABL_MENU_ACTION_CHARGER_SCREEN_ON:
@@ -196,25 +194,6 @@ MenuHostLogFn (IN CONST CHAR8 *Line OPTIONAL)
   }
   MenuHostLog (&Host, Lossy);
   FreePool (Lossy);
-}
-
-EFI_STATUS
-MenuHostStartKernel (
-  IN CONST MENU_HOST      *Host,
-  IN CONST OPENABL_KERNEL *Kernel
-)
-{
-  return Host->Protocol->StartKernel (Host->Protocol, Kernel);
-}
-
-EFI_STATUS
-MenuHostSetBootImage (
-  IN CONST MENU_HOST *Host,
-  IN VOID            *Buffer,
-  IN UINTN            Size
-)
-{
-  return Host->Protocol->SetBootImage (Host->Protocol, Buffer, Size);
 }
 
 CHAR8 *

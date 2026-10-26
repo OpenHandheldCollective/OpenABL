@@ -23,7 +23,6 @@
 
 #include "Base/Buffer.h"
 #include "Base/Memory.h"
-#include "Core/DeviceTree.h"
 #include "Core/EfiData.h"
 #include "Core/UsbHostRegs.h"
 #include "Efi/Files.h"
@@ -1464,38 +1463,4 @@ UsbHostInstallProtocol (VOID)
   return gBS->InstallProtocolInterface (
     &Handle, &Guid, EFI_NATIVE_INTERFACE, Protocol
   );
-}
-
-// USB boot devicetree fix-up
-
-VOID
-UsbBootFixDeviceTree (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Capacity,
-  IN UINT32     Chip,
-  IN LOG_SINK   Log
-)
-{
-  STATIC CONST CHAR8 *CONST Dwc3[] = {"snps,dwc3", "qcom,snps-dwc3"};
-  USB_HOST_BOARD            Board;
-
-  if (UsbHostBoardOf (Chip, "", &Board) && Board == USB_HOST_BOARD_SM6115) {
-    return;
-  }
-  // "host" and its NUL.
-  switch (
-    DtSetPropByCompatible (Fdt, Capacity, Dwc3, 2, "dr_mode", "host", 5)) {
-  case DT_OK:
-    LogLine (Log, "devicetree: dwc3 dr_mode=host, for the USB boot");
-    break;
-  case DT_NOT_FOUND:
-    LogLine (Log, "devicetree: no dwc3 node - host-mode patch skipped");
-    break;
-  case DT_NO_SPACE:
-    LogLine (Log, "devicetree: no room for dwc3 dr_mode=host");
-    break;
-  case DT_BAD_BLOB:
-    LogLine (Log, "devicetree: not one to fix up");
-    break;
-  }
 }

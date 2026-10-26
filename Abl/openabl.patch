@@ -483,20 +483,6 @@ index 9b243a5..a824120 100644
    if (BootIntoFastboot) {
        goto fastboot;
    }
-diff --git a/QcomModulePkg/Include/Library/BootLinux.h b/QcomModulePkg/Include/Library/BootLinux.h
-index b511571..907805b 100644
---- a/QcomModulePkg/Include/Library/BootLinux.h
-+++ b/QcomModulePkg/Include/Library/BootLinux.h
-@@ -283,6 +283,9 @@ extern UINT32 NumUpdPartitions;
- extern BOOLEAN UpdRamPartitionsAvail;
- EFI_STATUS
- BootLinux (BootInfo *Info);
-+/* OpenABL: BootLinux's last step, for kernels the menu program loads. */
-+EFI_STATUS
-+LaunchLinux (IN CONST BootParamlist *Params, IN UINT32 RamdiskSizeActual);
- EFI_STATUS
- CheckImageHeader (VOID *ImageHdrBuffer,
-                   UINT32 ImageHdrSize,
 diff --git a/QcomModulePkg/Include/Library/DrawUI.h b/QcomModulePkg/Include/Library/DrawUI.h
 index b18a5b8..45fadf3 100644
 --- a/QcomModulePkg/Include/Library/DrawUI.h
@@ -543,87 +529,10 @@ index 07eac0d..ec4aec1 100644
  [FixedPcd]
  	gArmTokenSpaceGuid.PcdSystemMemoryBase
 diff --git a/QcomModulePkg/Library/BootLib/BootLinux.c b/QcomModulePkg/Library/BootLib/BootLinux.c
-index ea7930e..c65c218 100644
+index ea7930e..98c93d1 100644
 --- a/QcomModulePkg/Library/BootLib/BootLinux.c
 +++ b/QcomModulePkg/Library/BootLib/BootLinux.c
-@@ -1059,6 +1059,43 @@ RmRegisterPvmFwRegion (BootInfo *Info, BootParamlist *BootParamlistPtr)
-   return EFI_SUCCESS;
- }
- 
-+STATIC EFI_STATUS
-+AppendPvmFwConfig (BootInfo *Info, BootParamlist *BootParamlistPtr);
-+
-+/* OpenABL: BootLinux's pvmfw steps, for boot images the menu lays out:
-+ * pvmfw goes into its golden region and is registered with the resource
-+ * manager. */
-+EFI_STATUS
-+OpenAblPvmFwRegister (BootInfo *Info)
-+{
-+  BootParamlist Params = {0};
-+  EFI_STATUS    Status;
-+
-+  if (!Info->HasPvmFw) {
-+    return EFI_NOT_FOUND;
-+  }
-+  if (!QueryPvmFwParams (&Params.PvmFwLoadAddr, &Params.PvmFwSizeReserved) ||
-+      (Params.PvmFwLoadAddr == 0)) {
-+    return EFI_NOT_FOUND;
-+  }
-+  Status = GetImage (Info, &Params.PvmFwBuffer,
-+                     (UINTN *)&Params.PvmFwBufferSize, "pvmfw");
-+  if (Status || (Params.PvmFwBufferSize <= 0)) {
-+    return EFI_LOAD_ERROR;
-+  }
-+  if (Info->PvmFwSizeActual > Params.PvmFwSizeReserved) {
-+    return EFI_BUFFER_TOO_SMALL;
-+  }
-+  gBS->CopyMem ((CHAR8 *)Params.PvmFwLoadAddr,
-+                Params.PvmFwBuffer + BOOT_IMG_MAX_PAGE_SIZE,
-+                Info->PvmFwSizeActual);
-+  Status = AppendPvmFwConfig (Info, &Params);
-+  if (Status == EFI_SUCCESS) {
-+    Status = RmRegisterPvmFwRegion (Info, &Params);
-+  }
-+  return Status;
-+}
-+
- STATIC EFI_STATUS
- SetFWMilestone (VOID) {
-   RmVmProtocol *RmVmProtocol = NULL;
-@@ -1552,6 +1589,10 @@ UpdateBootParamsSizeAndCmdLine (BootInfo *Info, BootParamlist *BootParamlistPtr)
-   return EFI_SUCCESS;
- }
- 
-+/* OpenABL */
-+STATIC CONST BootParamlist *mLaunch;
-+STATIC UINT32 mLaunchRamdiskSize;
-+
- EFI_STATUS
- BootLinux (BootInfo *Info)
- {
-@@ -1591,6 +1632,13 @@ BootLinux (BootInfo *Info)
-   INT32 Fragment = 0;
-   INT32 Node = 0;
- 
-+  if (mLaunch != NULL) {
-+    BootParamlistPtr = *mLaunch;
-+    RamdiskSizeActual = mLaunchRamdiskSize;
-+    mLaunch = NULL;
-+    goto Launch;
-+  }
-+
-   if (Info == NULL) {
-     DEBUG ((EFI_D_ERROR, "BootLinux: invalid parameter Info\n"));
-     return EFI_INVALID_PARAMETER;
-@@ -1892,6 +1940,7 @@ BootLinux (BootInfo *Info)
-   FreeVerifiedBootResource (Info);
- #endif
- 
-+Launch:
-   /* Free the boot logo blt buffer before starting kernel */
-   FreeBootLogoBltBuffer ();
-   if (BootParamlistPtr.BootingWith32BitKernel &&
-@@ -1944,17 +1993,35 @@ BootLinux (BootInfo *Info)
+@@ -1944,17 +1944,35 @@ BootLinux (BootInfo *Info)
      goto Exit;
    }
  
@@ -661,22 +570,6 @@ index ea7930e..c65c218 100644
  
    //
    // Start the Linux Kernel
-@@ -1990,6 +2057,15 @@ Exit:
-   return EFI_NOT_STARTED;
- }
- 
-+/* OpenABL */
-+EFI_STATUS
-+LaunchLinux (IN CONST BootParamlist *Params, IN UINT32 RamdiskSizeActual)
-+{
-+  mLaunch = Params;
-+  mLaunchRamdiskSize = RamdiskSizeActual;
-+  return BootLinux (NULL);
-+}
-+
- /**
-   Check image header
-   @param[in]  ImageHdrBuffer  Supplies the address where a pointer to the image
 diff --git a/QcomModulePkg/Library/BootLib/DeviceInfo.c b/QcomModulePkg/Library/BootLib/DeviceInfo.c
 index 2e29bce..c76cc6a 100644
 --- a/QcomModulePkg/Library/BootLib/DeviceInfo.c
@@ -948,18 +841,10 @@ index 975e656..51ffe92 100644
                          "powering down the display and controller\n"));
  
 diff --git a/QcomModulePkg/Library/FastbootLib/FastbootCmds.c b/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
-index 1ca6796..e5dfc12 100644
+index 1ca6796..80870a9 100644
 --- a/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
 +++ b/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
-@@ -88,6 +88,7 @@ found at
- #include <Library/DebugLib.h>
- #include <Library/Debug.h>
- #include <Library/DeviceInfo.h>
-+#include <Library/OpenAblMenu.h>
- #include <Library/DevicePathLib.h>
- #include <Library/MemoryAllocationLib.h>
- #include <Library/MenuKeysDetection.h>
-@@ -153,6 +154,7 @@ STATIC FASTBOOT_VAR *Varlist;
+@@ -153,6 +153,7 @@ STATIC FASTBOOT_VAR *Varlist;
  STATIC BOOLEAN Finished = FALSE;
  STATIC CHAR8 StrSerialNum[MAX_RSP_SIZE];
  STATIC CHAR8 FullProduct[MAX_RSP_SIZE];
@@ -967,16 +852,7 @@ index 1ca6796..e5dfc12 100644
  STATIC CHAR8 StrVariant[MAX_RSP_SIZE];
  STATIC CHAR8 StrBatteryVoltage[MAX_RSP_SIZE];
  STATIC CHAR8 StrBatterySocOk[MAX_RSP_SIZE];
-@@ -3005,6 +3007,8 @@ CmdBoot (CONST CHAR8 *Arg, VOID *Data, UINT32 Size)
-   FastbootOkay ("");
-   FastbootUsbDeviceStop ();
-   ResetBootDevImage ();
-+  /* OpenABL: the menu program boots it in Linux boot mode. */
-+  OpenAblStartBootImage (Data, ImageSizeActual);
-   BootLinux (&Info);
- 
- out:
-@@ -4048,7 +4052,8 @@ FastbootCommandSetup (IN VOID *Base, IN UINT64 Size)
+@@ -4048,7 +4049,8 @@ FastbootCommandSetup (IN VOID *Base, IN UINT64 Size)
    AsciiSPrint (EraseBlkSizeStr, sizeof (EraseBlkSizeStr), " 0x%x", BlkSize);
    FastbootPublishVar ("erase-block-size", EraseBlkSizeStr);
    GetDevInfo (&DevInfoPtr);

@@ -119,16 +119,4 @@ UsbHostBeforeReset (VOID);
 EFI_STATUS
 UsbHostInstallProtocol (VOID);
 
-// Puts the DWC3 controller in host mode after a USB boot, so the kernel
-// keeps the drive it runs from: sets dr_mode = "host" on the first node
-// compatible with "snps,dwc3" or "qcom,snps-dwc3". Skipped on SM6115, whose
-// USB host is the ABL's own XHCI stack. Logs one line.
-VOID
-UsbBootFixDeviceTree (
-  IN OUT UINT8 *Fdt,
-  IN UINTN      Capacity,
-  IN UINT32     Chip,
-  IN LOG_SINK   Log
-);
-
 #endif

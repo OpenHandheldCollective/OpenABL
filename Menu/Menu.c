@@ -186,7 +186,7 @@ CarriedResult (VOID)
   MenuFlush ();
   MenuLog ("the boot before the restart: %u", Result);
   return Result >= MENU_START_RESULT_NOTHING &&
-             Result <= MENU_START_RESULT_FAILED
+             Result <= MENU_START_RESULT_RETURNED
            ? Result
            : MENU_START_RESULT_NONE;
 }
@@ -802,9 +802,8 @@ AddRow (
 }
 
 // Lists what Start would try on the allowed drives, in its order: each
-// drive's entries, then each drive's default file, then the first boot
-// image. Only in Linux boot mode. USB drives are skipped unless USB
-// host is up, since fastboot owns the controller.
+// drive's entries, then each drive's default file. Only in Linux boot mode. USB
+// drives are skipped unless USB host is up, since fastboot owns the controller.
 STATIC VOID
 FillEntries (
   IN MENU_STATE *M,
@@ -814,7 +813,6 @@ FillEntries (
   STATIC ENTRY_VIEW   Views[MAX_ENTRIES];
   VOLUMES_HANDLE_LIST Drives = {0};
   UINTN               Count  = 0;
-  BOOLEAN             Image  = FALSE;
 
   BootEntriesVolumesFree (&mVolumes);
   if (M->Stored.BootMode == BOOT_MODE_LINUX &&
@@ -856,26 +854,6 @@ FillEntries (
       }
     }
   }
-  // Start reaches a boot image only after every drive's entries and
-  // default files.
-  for (UINTN Index = 0; Index < mVolumes.Count && !Image; Index++) {
-    for (UINTN Index2 = 0;
-         Index2 < sizeof (gModelsBootImages) / sizeof (*gModelsBootImages) &&
-         !Image;
-         Index2++) {
-      // A file that isn't a valid Android boot image is skipped.
-      if (ModelsIsBootImage (
-            mVolumes.Items[Index].Fs, gModelsBootImages[Index2]
-          )) {
-        // The path without its backslash, such as KERNEL.
-        AddRow (
-          Views, &Count, Index, gModelsBootImages[Index2] + 1,
-          ENTRY_KIND_BOOT_IMAGE, NULL, FALSE, MENU_PICK_BOOT_IMAGE
-        );
-        Image = TRUE;
-      }
-    }
-  }
   MenuLog ("Boot entries: %llu", (UINT64)Count);
   AppSetEntries (A, Views, Count);
   VecFree (&Drives);
@@ -914,14 +892,12 @@ STATIC BOOLEAN
 CameBackShown (
   IN CONST MENU_STATE *M,
   OUT BOOLEAN         *Ok,
-  OUT BOOT_ERROR      *Error,
-  OUT CONST CHAR8    **Detail
+  OUT BOOT_ERROR      *Error
 )
 {
   CONST CHAR8 *What;
 
-  *Ok     = FALSE;
-  *Detail = "";
+  *Ok = FALSE;
   switch (M->CameBack) {
   case MENU_START_RESULT_NOTHING:
     What   = "nothing to boot";
@@ -930,15 +906,6 @@ CameBackShown (
   case MENU_START_RESULT_RETURNED:
     What = "the booted image returned";
     *Ok  = TRUE;
-    break;
-  case MENU_START_RESULT_NO_MODEL:
-    What   = "the boot image needs a device model";
-    *Error = BOOT_ERROR_MODEL_NOT_SET;
-    break;
-  case MENU_START_RESULT_FAILED:
-    What    = "the boot image failed";
-    *Error  = BOOT_ERROR_LOAD_FAILED;
-    *Detail = gStrings->ErrBootImageFailed;
     break;
   case MENU_START_RESULT_NO_USB:
     // Only shown if the restart for it didn't happen.
@@ -1614,11 +1581,10 @@ MenuRun (
 #endif
   AppStart (&mApp, ClockNowMs (), TRUE);
   {
-    BOOLEAN      Ok;
-    BOOT_ERROR   Error;
-    CONST CHAR8 *Detail;
-    if (CameBackShown (&M, &Ok, &Error, &Detail)) {
-      AppOnBootResult (&mApp, Ok, Error, Detail);
+    BOOLEAN    Ok;
+    BOOT_ERROR Error;
+    if (CameBackShown (&M, &Ok, &Error)) {
+      AppOnBootResult (&mApp, Ok, Error, NULL);
     }
   }
   if (StartModels) {

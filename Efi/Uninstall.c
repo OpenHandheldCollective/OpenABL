@@ -10,7 +10,7 @@
 #include "Efi/Uninstall.h"
 #include "Base/Memory.h"
 
-#include "Core/AndroidImage.h"
+#include "Core/AndroidBcb.h"
 #include "Efi/NestedDisk.h"
 #include "Efi/Quirks.h"
 

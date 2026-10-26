@@ -346,49 +346,6 @@ FilesReadPart (
 }
 
 BOOLEAN
-FilesSize (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  OUT UINT64     *Out
-)
-{
-  EFI_FILE_PROTOCOL *File = OpenPath (Fs, Path);
-  EFI_FILE_INFO     *Info;
-  BOOLEAN            Ok = FALSE;
-
-  if (!File) {
-    return FALSE;
-  }
-  if (FileInfo (File, &Info) == EFI_SUCCESS) {
-    *Out = Info->FileSize;
-    FreePool (Info);
-    Ok = TRUE;
-  }
-  File->Close (File);
-  return Ok;
-}
-
-BOOLEAN
-FilesReadTo (
-  IN EFI_HANDLE   Fs,
-  IN CONST CHAR8 *Path,
-  OUT UINT8      *Buffer,
-  IN UINTN        Size,
-  OUT UINTN      *Got
-)
-{
-  EFI_FILE_PROTOCOL *File = OpenPath (Fs, Path);
-  BOOLEAN            Ok;
-
-  if (!File) {
-    return FALSE;
-  }
-  Ok = ReadAll (File, Buffer, Size, Got);
-  File->Close (File);
-  return Ok;
-}
-
-BOOLEAN
 FilesExists (
   IN EFI_HANDLE   Fs,
   IN CONST CHAR8 *Path

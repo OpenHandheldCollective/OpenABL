@@ -19,7 +19,6 @@
 #include "Core/DeviceTree.h"
 #include "Core/UsbHostRegs.h"
 #include "Efi/Abl.h"
-#include "Efi/BootImage.h"
 #include "Efi/Efi.h"
 #include "Efi/DefaultFiles.h"
 #include "Efi/DisplayHandover.h"
@@ -314,50 +313,15 @@ StandardBoot (
 }
 #endif
 
-// Finds the first boot image on the allowed drives and hands it to the ABL
-// to start. Returns FALSE if there is none or the ABL refused it.
-STATIC BOOLEAN
-HandOverBootImage (
-  IN CONST MENU_HOST         *Host,
-  IN CONST MENU_BOOT_CONTEXT *Ctx,
-  OUT BOOT_IMAGE_FOUND       *Image
-)
-{
-  DEFAULT_FILES_HOST Files = FilesHost (Ctx);
-  EFI_HANDLE        *Volumes;
-  UINTN              Count;
-  EFI_STATUS         Status;
-  BOOLEAN            Found;
-
-  MenuBootVolumes (Ctx, &Volumes, &Count);
-  Found = BootImageFind (Volumes, Count, &Files, Image);
-  FreePool (Volumes);
-  if (!Found) {
-    MenuLog ("no boot image");
-    return FALSE;
-  }
-  Status = MenuHostSetBootImage (Host, Image->Buffer, Image->Size);
-  if (Status != EFI_SUCCESS) {
-    MenuLog ("handing the ABL the boot image: %s", MENU_STATUS (Status));
-    // The ABL didn't take BootImageFind's buffer, so free it here.
-    gBS->FreePool (Image->Buffer);
-    return FALSE;
-  }
-  return TRUE;
-}
-
 #ifdef OABL_STANDARD_BOOT
-// Starts what Boot entries picked (an entry, a drive's default file or the
-// boot image) and clears the pick. Returns TRUE if it started, or the boot
-// image went to the ABL (*HasImage).
+// Starts what Boot entries picked (an entry or a drive's default file) and
+// clears the pick. Returns TRUE if it started.
 STATIC BOOLEAN
 BootPick (
   IN CONST MENU_HOST         *Host,
   IN CONST MENU_BOOT_CONTEXT *Ctx,
   IN CONST EFI_HANDLE        *Volumes,
-  IN UINTN                    Count,
-  OUT BOOLEAN                *HasImage,
-  OUT BOOT_IMAGE_FOUND       *Image
+  IN UINTN                    Count
 )
 {
   OABL_BUFFER Pick    = {0};
@@ -385,10 +349,6 @@ BootPick (
   }
   BufferFree (&Pick);
   MenuLog ("Boot entries pick: %s", Id);
-  // The list only offers the first boot image, the one Start would take.
-  if (AsciiStrEq (Id, MENU_PICK_BOOT_IMAGE)) {
-    return *HasImage = HandOverBootImage (Host, Ctx, Image);
-  }
   if (!Drive) {
     return FALSE;
   }
@@ -403,16 +363,10 @@ BootPick (
 }
 #endif
 
-// Runs the Linux boot. If a boot image was handed to the ABL, returns it in
-// *Image with *HasImage set, and the selected model in Model.
+// Runs the Linux boot on the drives the boot source allows. Returns
+// EFI_SUCCESS if an image ran and returned.
 STATIC EFI_STATUS
-BootWithImage (
-  IN CONST MENU_HOST   *Host,
-  OUT BOOLEAN          *HasImage,
-  OUT BOOT_IMAGE_FOUND *Image,
-  OUT CHAR8            *Model,
-  IN UINTN              ModelSize
-)
+BootDrives (IN CONST MENU_HOST *Host)
 {
   MENU_BOOT_CONTEXT  Ctx;
   DEFAULT_FILES_HOST Files;
@@ -421,7 +375,6 @@ BootWithImage (
   EFI_STATUS         Status;
   EFI_STATUS         Returned;
 
-  *HasImage = FALSE;
   if (!BootContextOf (Host, &Ctx)) {
     return EFI_NOT_READY;
   }
@@ -440,10 +393,10 @@ BootWithImage (
     return EFI_NOT_FOUND;
   }
 #ifdef OABL_STANDARD_BOOT
-  if (BootPick (Host, &Ctx, Volumes, Count, HasImage, Image)) {
+  if (BootPick (Host, &Ctx, Volumes, Count)) {
     FreePool (Volumes);
     Status = EFI_SUCCESS;
-    goto Picked;
+    goto Done;
   }
 #endif
   Status = StandardBoot (Host, Volumes, Count, &Ctx);
@@ -457,16 +410,12 @@ BootWithImage (
     Status = EFI_NOT_FOUND;
   }
   FreePool (Volumes);
-  *HasImage = HandOverBootImage (Host, &Ctx, Image);
 #ifdef OABL_STANDARD_BOOT
-Picked:
+Done:
 #endif
-  if (*HasImage) {
-    AsciiStrCopy (Model, ModelSize, Ctx.Model);
-  }
 #ifdef OABL_CARD_LOGO
   // End the animation on its last frame, which the panel keeps through the
-  // boot image's start and the hand-over.
+  // hand-over.
   MenuAnimFinish ();
 #endif
   return Status;
@@ -616,9 +565,9 @@ HoldLogUntilKey (IN CONST MENU_HOST_STATE *State)
   }
 }
 
-// Boots Linux: standard entries, default files, then the boot image through
-// Qualcomm's code for verification. Returns only if nothing booted, with a
-// MENU_START_RESULT_* reason. *UsbUp says whether USB host came up.
+// Boots Linux: standard entries, then default files. Returns only if nothing
+// booted, with a MENU_START_RESULT_* reason. *UsbUp says whether USB host
+// came up.
 STATIC UINT8
 LinuxBoot (
   IN CONST MENU_HOST *Host,
@@ -626,26 +575,13 @@ LinuxBoot (
   OUT BOOLEAN        *UsbUp
 )
 {
-  BOOT_IMAGE_FOUND Image;
-  CHAR8            Model[MODEL_LEN + 1];
-  EFI_STATUS       Status;
-  EFI_STATUS       Refused;
-  UINT8            Result;
-  BOOLEAN          HasImage;
+  UINT8 Result;
 
   DisplayHandoverArm (MenuHostLogFn);
   MenuHostAction (Host, OPENABL_MENU_ACTION_BOOT_PREP);
   *UsbUp = Usb && UsbHostOn ();
-  Status = BootWithImage (Host, &HasImage, &Image, Model, sizeof (Model));
-  if (!HasImage) {
-    Result = Status == EFI_SUCCESS ? MENU_START_RESULT_RETURNED
-                                   : MENU_START_RESULT_NOTHING;
-  } else {
-    Result = BootImageStart (Host, &Image, Model, gMenuEfiLog, &Refused) ==
-                 BOOT_IMAGE_NOT_STARTED_NO_MODEL
-               ? MENU_START_RESULT_NO_MODEL
-               : MENU_START_RESULT_FAILED;
-  }
+  Result = BootDrives (Host) == EFI_SUCCESS ? MENU_START_RESULT_RETURNED
+                                            : MENU_START_RESULT_NOTHING;
   if (Usb) {
     UsbHostTeardown ();
   }

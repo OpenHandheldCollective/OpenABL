@@ -1736,6 +1736,7 @@ ErrorDraw (IN CONST APP *A)
 
   switch (A->Error) {
   case BOOT_ERROR_NO_IMAGE:
+  default:
     Title = gStrings->ErrNoImageTitle, Message = gStrings->ErrNoImageMsg,
     Hint   = gStrings->ErrNoImageHint;
     Action = gStrings->PressAnyKeyMenu;
@@ -1763,10 +1764,6 @@ ErrorDraw (IN CONST APP *A)
   case BOOT_ERROR_UNINSTALL:
     Title = gStrings->UninstallFailed, Message = A->ErrorDetail, Hint = "";
     Action = gStrings->PressAnyKeyMenu;
-    break;
-  default:
-    Title = gStrings->ErrModelTitle, Message = gStrings->ErrModelMsg, Hint = "";
-    Action = gStrings->PressAnyKeyModel;
     break;
   }
   float MaxW =

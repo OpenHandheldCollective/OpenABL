@@ -25,7 +25,6 @@ STATIC CONST LANG_STRINGS mEn = {
   .StartLinux        = "Start Linux",
   .StartAndroid      = "Start Android",
   .BootEntries       = "Boot entries",
-  .BootImage         = "Boot image",
   .DefaultFile       = "EFI loader",
   .RestartBootloader = "Restart bootloader",
   .RecoveryMode      = "Recovery mode",
@@ -111,8 +110,6 @@ STATIC CONST LANG_STRINGS mEn = {
   .ErrLoadTitle    = "Couldn't start Linux",
   .ErrLoadHint =
     "Check the boot files on the drive, or change Boot source in the menu.",
-  .ErrBootImageFailed =
-    "The boot image didn't pass verification, or didn't start.",
   .ErrAndroidTitle       = "Android boot isn't available",
   .ErrAndroidMsg         = "This build can't start Android on this device yet.",
   .ErrAndroidHint        = "Set Boot mode to Linux in the menu.",
@@ -120,11 +117,7 @@ STATIC CONST LANG_STRINGS mEn = {
   .ErrAndroidFailedMsg   = "Android's boot images didn't start.",
   .ErrAndroidFailedHint  = "The Log screen says why. Check the Android "
                           "partitions, or set Boot mode to Linux.",
-  .ErrModelTitle = "Device model isn't set",
-  .ErrModelMsg =
-    "Linux needs your device model to choose the right device tree.",
   .PressAnyKeyMenu       = "Press any key to return to the menu",
-  .PressAnyKeyModel      = "Press any key to choose your model",
   .ConfirmUninstallTitle = "Uninstall CFW?",
   .ConfirmUninstallMsg   = "Erases these partitions, and all of Android's "
                            "data with them:",
@@ -182,7 +175,6 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .StartLinux            = "启动 Linux",
   .StartAndroid          = "启动 Android",
   .BootEntries           = "启动项",
-  .BootImage             = "启动镜像",
   .DefaultFile           = "EFI 引导程序",
   .RestartBootloader     = "重启到引导程序",
   .RecoveryMode          = "进入 Recovery 模式",
@@ -265,7 +257,6 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .ErrNoImageHint        = "请检查驱动器，或在菜单中更改启动来源。",
   .ErrLoadTitle          = "无法运行 Linux",
   .ErrLoadHint           = "请检查驱动器上的启动文件，或在菜单中更改启动来源。",
-  .ErrBootImageFailed    = "启动镜像未通过验证，或未能启动。",
   .ErrAndroidTitle       = "无法启动 Android",
   .ErrAndroidMsg         = "此版本暂不支持在本设备上启动 Android。",
   .ErrAndroidHint        = "请在菜单中将启动模式设为 Linux。",
@@ -273,10 +264,7 @@ STATIC CONST LANG_STRINGS mZhHans = {
   .ErrAndroidFailedMsg   = "Android 启动镜像未能启动。",
   .ErrAndroidFailedHint =
     "原因见日志页面。请检查 Android 分区，或将启动模式设为 Linux。",
-  .ErrModelTitle         = "未设置设备型号",
-  .ErrModelMsg           = "Linux 需要知道设备型号才能选择正确的设备树。",
   .PressAnyKeyMenu       = "按任意键返回菜单",
-  .PressAnyKeyModel      = "按任意键选择型号",
   .ConfirmUninstallTitle = "确认卸载 Linux？",
   .ConfirmUninstallMsg = "将清除以下分区，以及 Android 的全部数据：",
   .ConfirmUninstall = "卸载",
