@@ -4,46 +4,204 @@
  */
 
 /**
-  Variables - OpenABL's settings as UEFI non-volatile variables.
+  Variables - OpenABL's settings, kept in the misc partition.
 */
 
 #include "Efi/Variables.h"
 
 #include "Base/Memory.h"
 #include "Base/Text.h"
-#include "Core/DevInfo.h"
 #include "Core/Settings.h"
 #include "Core/SettingsStore.h"
-#include "Efi/Efi.h"
-#include "Efi/Qcom.h"
-
-STATIC EFI_GUID mVendor = SETTINGS_VENDOR_GUID;
+#include "Efi/MigrateModel.h"
+#include "Efi/Uninstall.h"
 
 #define STATUS_TEXT(Status) StatusText ((Status), (CHAR8[STATUS_TEXT_SIZE]){0})
 
-// Converts Name to NUL-terminated UCS-2; FreePool the result.
-// EFI_INVALID_PARAMETER for a character outside the BMP,
-// EFI_OUT_OF_RESOURCES when out of memory.
-STATIC EFI_STATUS
-Ucs2 (
-  IN CONST CHAR8 *Name,
-  OUT CHAR16    **Out
+// The store as read from misc, and where it is. Static, so a peek at
+// ExitBootServices needs no allocation.
+STATIC struct {
+  // misc was read, and Store is its copy.
+  BOOLEAN                Loaded;
+  // Store is a valid store: misc's, or an empty one while misc can't be
+  // read.
+  BOOLEAN                Ready;
+  // A put changed Store since the last flush.
+  BOOLEAN                Dirty;
+  // Store is a new store, not yet set up and written.
+  BOOLEAN                Fresh;
+  // A load failed, and was logged.
+  BOOLEAN                Missed;
+  EFI_BLOCK_IO_PROTOCOL *BlockIo;
+  // The first block of misc's last 4 KiB.
+  UINT64                 Lba;
+  UINT8                  Store[SETTINGS_STORE_SIZE];
+} mStore;
+
+STATIC LOG_SINK mLog;
+
+// The device model of another version's store that was replaced, kept for
+// VariablesSetUp.
+STATIC UINT8 mKeptModel[SETTINGS_MAX_MODEL_LEN];
+STATIC UINTN mKeptModelLength;
+
+// Finds misc's last 4 KiB. FALSE, logging why the first time, if there is
+// no single misc or its blocks don't fit the store.
+STATIC BOOLEAN
+Locate (VOID)
+{
+  EFI_BLOCK_IO_PROTOCOL *BlockIo;
+  UINT64                 First;
+  UINT64                 Last;
+  UINTN                  BlockSize;
+
+  if (!UninstallFindMisc (&BlockIo, &First, &Last, mLog)) {
+    if (!mStore.Missed) {
+      LogLine (mLog, "settings: no single misc partition");
+    }
+    return FALSE;
+  }
+  BlockSize = BlockIo->Media->BlockSize;
+  if (BlockSize == 0 || BlockSize > SETTINGS_STORE_SIZE ||
+      SETTINGS_STORE_SIZE % BlockSize != 0 || Last < First ||
+      Last - First + 1 < SETTINGS_STORE_SIZE / BlockSize) {
+    if (!mStore.Missed) {
+      LogPrint (
+        mLog, "settings: misc is %llu blocks of %llu bytes: no room",
+        Last < First ? 0 : Last - First + 1, (UINT64)BlockSize
+      );
+    }
+    return FALSE;
+  }
+  mStore.BlockIo = BlockIo;
+  mStore.Lba     = Last + 1 - SETTINGS_STORE_SIZE / BlockSize;
+  return TRUE;
+}
+
+// Finds the model to start a new store with: the one kept from another
+// version's store, else the one an older loader stored (MigrateModel).
+STATIC BOOLEAN
+CarriedModel (
+  OUT UINT8         Out[SETTINGS_MAX_MODEL_LEN],
+  OUT UINTN        *Length,
+  OUT CONST CHAR8 **From
 )
 {
-  UINT16 *Units = Utf16FromStr (Name);
+  if (mKeptModelLength) {
+    CopyMem (Out, mKeptModel, mKeptModelLength);
+    *Length = mKeptModelLength;
+    *From   = "the other version's settings in misc";
+    return TRUE;
+  }
+  return MigrateModel (Out, Length, From);
+}
 
-  *Out = NULL;
-  if (!Units) {
-    return EFI_OUT_OF_RESOURCES;
+// Logs the model CarriedModel found.
+STATIC VOID
+LogMigrated (
+  IN CONST UINT8 *Model,
+  IN UINTN        Length,
+  IN CONST CHAR8 *From
+)
+{
+  CHAR8 Text[SETTINGS_MAX_MODEL_LEN + 1];
+
+  for (UINTN Index = 0; Index < Length; Index++) {
+    Text[Index] = Model[Index] ? (CHAR8)Model[Index] : '?';
   }
-  for (UINTN Index = 0; Units[Index]; Index++) {
-    if (Units[Index] >= 0xD800 && Units[Index] <= 0xDFFF) {
-      FreePool (Units);
-      return EFI_INVALID_PARAMETER;
+  Text[Length] = '\0';
+  LogPrint (
+    mLog, "settings: device model \"%s\" migrated from %s", Text, From
+  );
+}
+
+// Without misc, an empty store holding any carried model, so the settings
+// can still be changed for this boot. Flushes don't write it.
+STATIC VOID
+Fallback (VOID)
+{
+  UINT8        Model[SETTINGS_MAX_MODEL_LEN];
+  UINTN        Length;
+  CONST CHAR8 *From;
+
+  if (mStore.Ready) {
+    return;
+  }
+  SettingsStoreFormat (mStore.Store);
+  if (CarriedModel (Model, &Length, &From) &&
+      SettingsStoreSet (mStore.Store, SETTINGS_KEY_MODEL, Model, Length)) {
+    LogMigrated (Model, Length, From);
+  }
+  mStore.Ready = TRUE;
+}
+
+BOOLEAN
+VariablesLoad (IN LOG_SINK Log)
+{
+  OABL_BUFFER          Raw = {0};
+  OABL_BYTES           Model;
+  SETTINGS_STORE_STATE State;
+
+  if (Log.Fn) {
+    mLog = Log;
+  }
+  if (mStore.Loaded) {
+    return TRUE;
+  }
+  // Only an explicit load looks for misc again after a miss, so the gets
+  // that follow don't each scan the disks. Reading misc now would lose
+  // what was put since.
+  if ((mStore.Missed && !Log.Fn) || mStore.Dirty) {
+    Fallback ();
+    return FALSE;
+  }
+  if (!Locate ()) {
+    mStore.Missed = TRUE;
+    Fallback ();
+    return FALSE;
+  }
+  if (!UninstallRead (mStore.BlockIo, mStore.Lba, SETTINGS_STORE_SIZE, &Raw) ||
+      Raw.Len != SETTINGS_STORE_SIZE) {
+    if (!mStore.Missed) {
+      LogLine (mLog, "settings: reading misc failed");
     }
+    mStore.Missed = TRUE;
+    BufferFree (&Raw);
+    Fallback ();
+    return FALSE;
   }
-  *Out = (CHAR16 *)Units;
-  return EFI_SUCCESS;
+  CopyMem (mStore.Store, Raw.Data, SETTINGS_STORE_SIZE);
+  BufferFree (&Raw);
+  // Keep the model from the fixed header, which every version keeps,
+  // before another version's store is replaced. A model too long to be one
+  // is ignored.
+  if (!SettingsStoreValid (mStore.Store) &&
+      SettingsStoreModel (mStore.Store, &Model) &&
+      Model.Len <= SETTINGS_MAX_MODEL_LEN) {
+    CopyMem (mKeptModel, Model.Ptr, Model.Len);
+    mKeptModelLength = Model.Len;
+  }
+  State         = SettingsStoreOpen (mStore.Store);
+  mStore.Loaded = TRUE;
+  mStore.Ready  = TRUE;
+  mStore.Fresh  = State != SETTINGS_STORE_FOUND;
+  switch (State) {
+  case SETTINGS_STORE_FOUND:
+    break;
+  case SETTINGS_STORE_BLANK:
+    LogLine (mLog, "settings: none in misc yet");
+    break;
+  case SETTINGS_STORE_OTHER_VERSION:
+    LogLine (mLog, "settings: misc has another version's settings: replaced");
+    break;
+  case SETTINGS_STORE_DAMAGED:
+    LogLine (mLog, "settings: misc's store is damaged: replaced");
+    break;
+  default:
+    LogLine (mLog, "settings: the end of misc held other data: replaced");
+    break;
+  }
+  return TRUE;
 }
 
 BOOLEAN
@@ -52,32 +210,32 @@ VariablesGet (
   OUT OABL_BUFFER *Out
 )
 {
-  CHAR16    *VariableName;
-  UINT8      Probe;
-  UINTN      Size       = 0;
-  UINT32     Attributes = 0;
-  EFI_STATUS Status;
+  OABL_BYTES Value;
 
   *Out = (OABL_BUFFER){0};
-  if (Ucs2 (Name, &VariableName) != EFI_SUCCESS) {
+  VariablesLoad (LOG_QUIET);
+  if (!SettingsStoreGet (mStore.Store, Name, &Value)) {
     return FALSE;
   }
-  // Ask for the size first; it must answer EFI_BUFFER_TOO_SMALL.
-  Status =
-    gRT->GetVariable (VariableName, &mVendor, &Attributes, &Size, &Probe);
-  if (Status != EFI_BUFFER_TOO_SMALL || Size == 0 ||
-      !BufferAppendZeros (Out, Size)) {
-    FreePool (VariableName);
+  return BufferFrom (Out, Value.Ptr, Value.Len);
+}
+
+BOOLEAN
+VariablesPeek (
+  IN CONST CHAR8 *Name,
+  OUT UINT8      *Buffer,
+  IN UINTN        Capacity,
+  OUT UINTN      *Length
+)
+{
+  OABL_BYTES Value;
+
+  if (!mStore.Ready || !SettingsStoreGet (mStore.Store, Name, &Value) ||
+      Value.Len > Capacity) {
     return FALSE;
   }
-  Status =
-    gRT->GetVariable (VariableName, &mVendor, &Attributes, &Size, Out->Data);
-  FreePool (VariableName);
-  if (Status != EFI_SUCCESS) {
-    BufferFree (Out);
-    return FALSE;
-  }
-  BufferTruncate (Out, Size);
+  CopyMem (Buffer, Value.Ptr, Value.Len);
+  *Length = Value.Len;
   return TRUE;
 }
 
@@ -88,337 +246,83 @@ VariablesPut (
   IN UINTN        Length
 )
 {
-  UINT8      None = 0;
-  CHAR16    *VariableName;
-  EFI_STATUS Status = Ucs2 (Name, &VariableName);
+  OABL_BYTES Old;
+  BOOLEAN    Found;
 
-  if (Status != EFI_SUCCESS) {
-    return Status;
+  VariablesLoad (LOG_QUIET);
+  if (!SettingsStoreNameValid (Name)) {
+    return EFI_INVALID_PARAMETER;
   }
-  if (Length == 0) {
-    Status = gRT->SetVariable (VariableName, &mVendor, 0, 0, &None);
-  } else {
-    Status = gRT->SetVariable (
-      VariableName, &mVendor,
-      EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS |
-        EFI_VARIABLE_RUNTIME_ACCESS,
-      Length, (VOID *)Data
-    );
-  }
-  FreePool (VariableName);
-  // Deleting a missing variable counts as success.
-  if (Status == EFI_SUCCESS || (Length == 0 && Status == EFI_NOT_FOUND)) {
+  Found = SettingsStoreGet (mStore.Store, Name, &Old);
+  // Nothing to change, so nothing to write.
+  if (Length == 0 ? !Found
+                  : Found && Old.Len == Length &&
+                      CompareMem (Old.Ptr, Data, Length) == 0) {
     return EFI_SUCCESS;
   }
-  return Status;
-}
-
-// Whether the setting is the single byte Value.
-STATIC BOOLEAN
-HoldsByte (
-  IN CONST CHAR8 *Name,
-  IN UINT8        Value
-)
-{
-  OABL_BUFFER Stored;
-  BOOLEAN     Holds;
-
-  if (!VariablesGet (Name, &Stored)) {
-    return FALSE;
+  if (!SettingsStoreSet (mStore.Store, Name, Data, Length)) {
+    return EFI_OUT_OF_RESOURCES;
   }
-  Holds = Stored.Len == 1 && Stored.Data[0] == Value;
-  BufferFree (&Stored);
-  return Holds;
-}
-
-// Reads devinfo. FALSE without VerifiedBoot or on a read error.
-STATIC BOOLEAN
-ReadDevinfo (OUT OABL_BUFFER *Raw)
-{
-  UINT64     Revision;
-  EFI_STATUS Status;
-
-  *Raw = (OABL_BUFFER){0};
-  if (QcomReadDeviceState (DEVINFO_SIZE, &Revision, &Status, Raw) &&
-      Status == EFI_SUCCESS) {
-    return TRUE;
-  }
-  BufferFree (Raw);
-  return FALSE;
-}
-
-VOID
-VariablesChargerScreenToDevinfo (IN LOG_SINK Log)
-{
-  OABL_BUFFER Value;
-  OABL_BUFFER Raw;
-  BOOLEAN     On;
-  BOOLEAN     Changed;
-  EFI_STATUS  Status;
-
-  if (!VariablesGet (SETTINGS_KEY_OFFMODE_CHARGING, &Value)) {
-    return;
-  }
-  if (Value.Len != 1 || Value.Data[0] > 1) {
-    BufferFree (&Value);
-    return;
-  }
-  On = Value.Data[0] == 1;
-  BufferFree (&Value);
-  if (!ReadDevinfo (&Raw)) {
-    return;
-  }
-  if (!DevInfoSetChargerScreen (Raw.Data, Raw.Len, On, &Changed)) {
-    LogPrint (
-      Log, "settings: the charger screen stays in a variable: devinfo isn't "
-           "written yet"
-    );
-    goto Done;
-  }
-  if (Changed) {
-    if (!QcomWriteDeviceState (Raw.Data, Raw.Len, &Status)) {
-      goto Done;
-    }
-    if (Status != EFI_SUCCESS) {
-      LogPrint (
-        Log, "settings: the charger screen into devinfo: %s",
-        STATUS_TEXT (Status)
-      );
-      goto Done;
-    }
-  }
-  if (VariablesPut (SETTINGS_KEY_OFFMODE_CHARGING, NULL, 0) == EFI_SUCCESS) {
-    QcomFlushVariables (&Status);
-  }
-  LogPrint (
-    Log, "settings: the charger screen is devinfo's: %s", On ? "on" : "off"
-  );
-Done:
-  BufferFree (&Raw);
-}
-
-// Clears the settings' old devinfo values in one devinfo write.
-STATIC VOID
-ClearLegacy (
-  IN OUT OABL_BUFFER *Raw,
-  IN LOG_SINK         Log
-)
-{
-  CONST CHAR8 *Names[DEVINFO_LEGACY_SETTINGS_LEN + DEVINFO_LEGACY_ONLY_LEN];
-  UINTN        Count = 0;
-  EFI_STATUS   Status;
-
-  for (UINTN Index = 0; Index < DEVINFO_LEGACY_SETTINGS_LEN; Index++) {
-    Names[Count++] = gDevInfoLegacySettings[Index].Name;
-  }
-  for (UINTN Index = 0; Index < DEVINFO_LEGACY_ONLY_LEN; Index++) {
-    Names[Count++] = gDevInfoLegacyOnly[Index];
-  }
-  if (DevInfoClearValues (Raw->Data, Raw->Len, Names, Count) &&
-      QcomWriteDeviceState (Raw->Data, Raw->Len, &Status) &&
-      EFI_ERROR (Status)) {
-    LogPrint (
-      Log, "settings: clearing devinfo's old values: %s", STATUS_TEXT (Status)
-    );
-  }
-}
-
-// Whether Key is one of the settings that were devinfo's persistent values.
-STATIC BOOLEAN
-LegacyKey (IN CONST CHAR8 *Key)
-{
-  for (UINTN Index = 0; Index < DEVINFO_LEGACY_SETTINGS_LEN; Index++) {
-    if (AsciiStrEq (gDevInfoLegacySettings[Index].Key, Key)) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-VOID
-VariablesMoveOutOfDevinfo (IN LOG_SINK Log)
-{
-  SETTINGS_VAR Vars[DEVINFO_SETTINGS_MOVE_LEN];
-  OABL_BUFFER  Raw = {0};
-  DEVINFO      Parsed;
-  BOOLEAN      HaveRaw = FALSE;
-  BOOLEAN      HaveParsed;
-  UINT64       Revision;
-  UINT64       Moved = 0;
-  UINTN        Count;
-  EFI_STATUS   Status;
-
-  // An unreadable record isn't a missing one: leave its values for the next
-  // boot.
-  if (QcomReadDeviceState (DEVINFO_SIZE, &Revision, &Status, &Raw)) {
-    if (Status != EFI_SUCCESS) {
-      LogPrint (
-        Log,
-        "settings: devinfo unreadable (%s): the settings stay there for now",
-        STATUS_TEXT (Status)
-      );
-      goto Done;
-    }
-    HaveRaw = TRUE;
-  }
-  if (HoldsByte (SETTINGS_KEY_SCHEMA, SETTINGS_SCHEMA)) {
-    if (HaveRaw) {
-      ClearLegacy (&Raw, Log);
-    }
-    goto Done;
-  }
-  HaveParsed = HaveRaw && DevInfoParse (Raw.Data, Raw.Len, &Parsed);
-  Count      = DevInfoSettingsMove (HaveParsed ? &Parsed : NULL, Vars);
-  for (UINTN Index = 0; Index < Count; Index++) {
-    // An empty value means unset; DevInfoLegacySetting never returns one.
-    if (Vars[Index].Len && LegacyKey (Vars[Index].Name)) {
-      Moved++;
-    }
-    Status =
-      VariablesPut (Vars[Index].Name, Vars[Index].Value, Vars[Index].Len);
-    if (Status != EFI_SUCCESS) {
-      LogPrint (
-        Log, "settings: UEFI variables unavailable (%s); kept in devinfo",
-        STATUS_TEXT (Status)
-      );
-      goto Done;
-    }
-  }
-  QcomFlushVariables (&Status);
-  if (!HoldsByte (SETTINGS_KEY_SCHEMA, SETTINGS_SCHEMA)) {
-    LogPrint (
-      Log,
-      "settings: UEFI variables unavailable (read back wrong); kept in devinfo"
-    );
-    goto Done;
-  }
-  // Read devinfo again, as the flush may have written the settings' copy.
-  if (HaveRaw) {
-    BufferFree (&Raw);
-    if (ReadDevinfo (&Raw)) {
-      ClearLegacy (&Raw, Log);
-    }
-  }
-#ifdef OABL_DEVINFO_SETTINGS
-  // Where devinfo stores the settings, write the copy again now that the
-  // old values made room. A record an older ABL filled (up to seven of its
-  // eight values) had no room for it at the flush above.
-  if (!QcomHasVariableServices ()) {
-    Status = VariablesPersistToDevinfo ();
-    if (EFI_ERROR (Status)) {
-      LogPrint (
-        Log, "settings: the settings into devinfo: %s", STATUS_TEXT (Status)
-      );
-    }
-  }
-#endif
-  LogPrint (
-    Log, "settings: %llu moved from devinfo to UEFI variables", (UINT64)Moved
-  );
-Done:
-  BufferFree (&Raw);
-}
-
-#ifdef OABL_DEVINFO_SETTINGS
-
-// VariablesGet as Core/Settings' SETTINGS_GET.
-STATIC BOOLEAN
-StoredGet (
-  IN VOID            *Context,
-  IN CONST CHAR8     *Name,
-  IN OUT OABL_BUFFER *Out
-)
-{
-  return VariablesGet (Name, Out);
-}
-
-// DevInfoValue of the record at Context, as SETTINGS_STORE_VALUE_OF.
-STATIC BOOLEAN
-DevinfoValueOf (
-  IN VOID        *Context,
-  IN CONST CHAR8 *Name,
-  OUT OABL_BYTES *Value
-)
-{
-  return DevInfoValue ((CONST DEVINFO *)Context, Name, Value);
+  mStore.Dirty = TRUE;
+  return EFI_SUCCESS;
 }
 
 EFI_STATUS
-VariablesPersistToDevinfo (VOID)
+VariablesFlush (VOID)
 {
-  SETTINGS_STORE_VALUE Entries[SETTINGS_STORE_ENTRIES];
-  CONST CHAR8         *Skipped[SETTINGS_STORE_SKIPPED_MAX];
-  UINTN                SkippedCount;
-  OABL_BUFFER          Raw;
-  BOOLEAN              Fits = TRUE;
-  EFI_STATUS           Status;
+  EFI_STATUS Status;
 
-  if (!ReadDevinfo (&Raw)) {
-    return EFI_UNSUPPORTED;
+  if (!mStore.Dirty) {
+    return EFI_SUCCESS;
   }
-  SettingsStorePack (StoredGet, NULL, Entries, Skipped, &SkippedCount);
-  for (UINTN Index = 0; Index < SETTINGS_STORE_ENTRIES; Index++) {
-    CONST SETTINGS_STORE_VALUE *Entry = &Entries[Index];
-
-    if (Entry->Len == 0) {
-      DevInfoClearValues (Raw.Data, Raw.Len, &Entry->Name, 1);
-    } else {
-      Fits &= DevInfoSetValue (
-        Raw.Data, Raw.Len, Entry->Name, Entry->Value, Entry->Len
-      );
-    }
+  // Never write over a misc that couldn't be read: it may hold settings.
+  if (!mStore.Loaded) {
+    return EFI_NOT_FOUND;
   }
-  if (!Fits) {
-    Status = EFI_OUT_OF_RESOURCES;
-  } else if (!QcomWriteDeviceState (Raw.Data, Raw.Len, &Status)) {
-    Status = EFI_UNSUPPORTED;
-  } else if (Status == EFI_SUCCESS && SkippedCount) {
-    Status = EFI_WARN_WRITE_FAILURE;
+  SettingsStoreSeal (mStore.Store);
+  Status = UninstallWrite (
+    mStore.BlockIo, mStore.Lba, mStore.Store, SETTINGS_STORE_SIZE
+  );
+  if (Status == EFI_SUCCESS) {
+    Status = mStore.BlockIo->FlushBlocks (mStore.BlockIo);
   }
-  BufferFree (&Raw);
-  return Status;
+  if (Status != EFI_SUCCESS) {
+    LogPrint (mLog, "settings: writing misc failed: %s", STATUS_TEXT (Status));
+    return Status;
+  }
+  mStore.Dirty = FALSE;
+  return EFI_SUCCESS;
 }
 
 VOID
-VariablesRestoreFromDevinfo (IN LOG_SINK Log)
+VariablesSetUp (IN LOG_SINK Log)
 {
-  SETTINGS_VAR Vars[SETTINGS_STORE_VARS];
-  OABL_BUFFER  Raw;
-  DEVINFO      Parsed;
-  UINT64       Set = 0;
+  UINT8        Model[SETTINGS_MAX_MODEL_LEN];
+  UINTN        Length;
+  CONST CHAR8 *From;
+  EFI_STATUS   Status = EFI_SUCCESS;
 
-  if (QcomHasVariableServices ()) {
+  if (!VariablesLoad (Log) || !mStore.Fresh) {
     return;
   }
-  if (!ReadDevinfo (&Raw)) {
-    LogPrint (
-      Log, "settings: no variable services, and devinfo unreadable: the "
-           "settings are this boot's"
-    );
-    return;
-  }
-  if (!DevInfoParse (Raw.Data, Raw.Len, &Parsed)) {
-    goto Done;
-  }
-  if (!SettingsStoreUnpack (DevinfoValueOf, &Parsed, Vars)) {
-    LogPrint (
-      Log,
-      "settings: no variable services: the settings will be kept in devinfo"
-    );
-    goto Done;
-  }
-  for (UINTN Index = 0; Index < SETTINGS_STORE_VARS; Index++) {
-    if (VariablesPut (Vars[Index].Name, Vars[Index].Value, Vars[Index].Len) ==
-          EFI_SUCCESS &&
-        Vars[Index].Len) {
-      Set++;
+  // Write the new store even if there is no model to carry over, so the
+  // next boot finds it.
+  mStore.Dirty = TRUE;
+  if (CarriedModel (Model, &Length, &From)) {
+    Status = VariablesPut (SETTINGS_KEY_MODEL, Model, Length);
+    if (Status == EFI_SUCCESS) {
+      LogMigrated (Model, Length, From);
     }
   }
-  LogPrint (
-    Log, "settings: no variable services: %llu setting(s) from devinfo", Set
-  );
-Done:
-  BufferFree (&Raw);
+  if (Status == EFI_SUCCESS) {
+    Status = VariablesFlush ();
+  }
+  if (Status != EFI_SUCCESS) {
+    LogPrint (
+      mLog, "settings: setting up misc failed: %s", STATUS_TEXT (Status)
+    );
+    return;
+  }
+  mStore.Fresh = FALSE;
+  LogLine (mLog, "settings: set up in misc");
 }
-
-#endif

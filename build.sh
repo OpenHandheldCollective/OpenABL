@@ -36,7 +36,7 @@ usage() {
 chipset() {
   SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1 BUNDLED_USB=0 ABL_EXTRA="" OWN="" OWN_FULL=""
   case $1 in
-    sdm845) SIGN=-v5 PVMFW=false KERNEL_PROTOCOL=0 OWN=devinfo-settings,loader-quirks ;;
+    sdm845) SIGN=-v5 PVMFW=false KERNEL_PROTOCOL=0 OWN=loader-quirks ;;
     sm4450) OWN=sdcc-sm4450 ;;
     sm6115) SIGN=-v6 PVMFW=false BUNDLED_USB=1 ABL_EXTRA=TARGET_SOC_SM6115=1 OWN=loader-quirks ;;
     sm6450) OWN=sdcc-sm6450 ;;

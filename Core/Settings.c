@@ -206,7 +206,6 @@ SettingsToVars (
   }
   // Codes are the enum values. ROTATION_AUTO and ROTATION_NONE are stored
   // as 0xFFFF.
-  PutU8 (&Out[Count++], SETTINGS_KEY_SCHEMA, SETTINGS_SCHEMA);
   PutU8 (&Out[Count++], SETTINGS_KEY_BOOT_MODE, (UINT8)Settings->BootMode);
   PutU8 (&Out[Count++], SETTINGS_KEY_ABL_MODE, (UINT8)Settings->AblMode);
   PutU8 (&Out[Count++], SETTINGS_KEY_ALT_VOLUME_UP, Settings->AltVolumeUp);
@@ -308,18 +307,6 @@ Word (
   return TRUE;
 }
 
-BOOLEAN
-SettingsInVars (
-  IN SETTINGS_GET *Get,
-  IN VOID         *Context OPTIONAL
-)
-{
-  UINT8 Schema;
-
-  return Byte (Get, Context, SETTINGS_KEY_SCHEMA, &Schema) &&
-         Schema == SETTINGS_SCHEMA;
-}
-
 STATIC BOOLEAN
 TimeoutChoice (IN UINT8 Timeout)
 {
@@ -344,11 +331,17 @@ SettingsFromVars (
   UINT8       Byte8;
   UINT16      Word16;
 
-  if (!Byte (Get, Context, SETTINGS_KEY_SCHEMA, &Byte8) ||
-      Byte8 != SETTINGS_SCHEMA) {
-    *Out = Settings;
-    return;
+  // A model that is too long is ignored. Invalid UTF-8 clears the model.
+  if (Get (Context, SETTINGS_KEY_MODEL, &Model) &&
+      Model.Len <= SETTINGS_MAX_MODEL_LEN) {
+    UINTN Len = Utf8Valid (Model.Data, Model.Len) ? Model.Len : 0;
+
+    for (UINTN Index = 0; Index < Len; Index++) {
+      Settings.Model[Index] = (CHAR8)Model.Data[Index];
+    }
+    Settings.Model[Len] = 0;
   }
+  BufferFree (&Model);
   if (Byte (Get, Context, SETTINGS_KEY_BOOT_MODE, &Byte8) && Byte8 <= 1) {
     Settings.BootMode = Byte8 ? BOOT_MODE_ANDROID : BOOT_MODE_LINUX;
   }
@@ -376,17 +369,6 @@ SettingsFromVars (
       TimeoutChoice (Byte8)) {
     Settings.MenuTimeoutS = Byte8;
   }
-  // A model that is too long is ignored. Invalid UTF-8 clears the model.
-  if (Get (Context, SETTINGS_KEY_MODEL, &Model) &&
-      Model.Len <= SETTINGS_MAX_MODEL_LEN) {
-    UINTN Len = Utf8Valid (Model.Data, Model.Len) ? Model.Len : 0;
-
-    for (UINTN Index = 0; Index < Len; Index++) {
-      Settings.Model[Index] = (CHAR8)Model.Data[Index];
-    }
-    Settings.Model[Len] = 0;
-  }
-  BufferFree (&Model);
   if (Word (Get, Context, SETTINGS_KEY_MODEL_ROTATION, &Word16)) {
     Settings.ModelRotation = Word16 == ROTATION_NONE || Word16 % 90 != 0
                                ? ROTATION_NONE

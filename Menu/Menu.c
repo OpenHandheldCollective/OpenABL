@@ -88,23 +88,17 @@ VarSet (
   EFI_STATUS Status = MenuVarPut (Name, Data, Size);
 
   if (EFI_ERROR (Status)) {
-    MenuLog ("SetVariable %s failed: %s", Name, MENU_STATUS (Status));
+    MenuLog ("setting %s failed: %s", Name, MENU_STATUS (Status));
   }
 }
 
 VOID
 MenuFlush (VOID)
 {
-  EFI_STATUS Status;
+  EFI_STATUS Status = VariablesFlush ();
 
-  if (QcomFlushVariables (&Status) &&
-      (EFI_ERROR (Status) || Status == EFI_WARN_WRITE_FAILURE)) {
-    MenuLog (
-      "%s%s",
-      QcomHasVariableServices () ? "FlushVariableNV: "
-                                 : "the settings into devinfo: ",
-      MENU_STATUS (Status)
-    );
+  if (EFI_ERROR (Status)) {
+    MenuLog ("saving the settings to misc: %s", MENU_STATUS (Status));
   }
 }
 
@@ -191,7 +185,7 @@ CarriedResult (VOID)
            : MENU_START_RESULT_NONE;
 }
 
-BOOLEAN
+VOID
 MenuStoredSettings (
   IN CONST MENU_HOST_STATE *State,
   IN CONST SETTINGS_CAPS   *Caps,
@@ -200,9 +194,6 @@ MenuStoredSettings (
 {
   SETTINGS Defaults;
 
-  if (!SettingsInVars (StoredSettingGet, NULL)) {
-    return FALSE;
-  }
   SettingsDefault (&Defaults);
   SettingsFromVars (&Defaults, StoredSettingGet, NULL, Out);
   // An ABL built without USB host reads the USB boot source as Auto.
@@ -211,7 +202,6 @@ MenuStoredSettings (
   }
   // The charger screen setting is Qualcomm's devinfo flag.
   Out->OffmodeCharging = State->OffmodeCharging != 0;
-  return TRUE;
 }
 
 // Reads a two-byte little-endian variable. Fails if it isn't two bytes.
@@ -326,40 +316,12 @@ InfoOf (OUT DEVICE_INFO *Info)
   Take (Info->SdCard, sizeof (Info->SdCard), SysInfoSdCard ());
 }
 
-VOID
-MenuSettingsOf (
-  IN CONST MENU_HOST_STATE *State,
-  OUT SETTINGS             *Out
-)
-{
-  SettingsDefault (Out);
-  Out->BootMode    = State->BootMode == 1 ? BOOT_MODE_ANDROID : BOOT_MODE_LINUX;
-  Out->AblMode     = State->AblMode == 1 ? ABL_MODE_VERBOSE : ABL_MODE_SILENT;
-  Out->AltVolumeUp = State->AltVolumeUp != 0;
-  switch (State->BootSource) {
-  case MENU_HOST_BOOT_SOURCE_INTERNAL:
-    Out->BootSource = BOOT_SOURCE_INTERNAL;
-    break;
-  case MENU_HOST_BOOT_SOURCE_USB:
-    Out->BootSource = BOOT_SOURCE_USB;
-    break;
-  case MENU_HOST_BOOT_SOURCE_SDCARD:
-    Out->BootSource = BOOT_SOURCE_SD;
-    break;
-  default:
-    Out->BootSource = BOOT_SOURCE_AUTO;
-  }
-  Out->OffmodeCharging = State->OffmodeCharging != 0;
-}
-
 // The menu
 
 typedef struct _MENU_STATE {
   MENU_HOST Host;
   // The settings as stored, plus the display preferences.
-  SETTINGS Stored;
-  // The settings are in variables, so the menu can change them.
-  BOOLEAN       Writable;
+  SETTINGS      Stored;
   SETTINGS_CAPS Caps;
   // Started on the model list after the restart for it. USB host is up, so
   // the USB boot source can be scanned.
@@ -396,14 +358,7 @@ MenuNew (
   }
   *M          = (MENU_STATE){.Host = *Host, .StartModels = StartModels};
   M->Caps     = MenuCapsOf (&State);
-  M->Writable = MenuStoredSettings (&State, &M->Caps, &M->Stored);
-  if (!M->Writable) {
-    MenuLog (
-      "the settings aren't in UEFI variables (they couldn't be written): "
-      "shown, not changed"
-    );
-    MenuSettingsOf (&State, &M->Stored);
-  }
+  MenuStoredSettings (&State, &M->Caps, &M->Stored);
   MenuLoadPrefs (
     M->Stored.Model, &M->Stored.Rotation, &M->Stored.ModelRotation,
     &M->Stored.Language
@@ -431,10 +386,7 @@ Refresh (IN OUT MENU_STATE *M)
     return Status;
   }
   M->Caps     = MenuCapsOf (&State);
-  M->Writable = MenuStoredSettings (&State, &M->Caps, &Base);
-  if (!M->Writable) {
-    MenuSettingsOf (&State, &Base);
-  }
+  MenuStoredSettings (&State, &M->Caps, &Base);
   Base.ModelRotation = AsciiStrEq (Base.Model, M->Stored.Model)
                          ? M->Stored.ModelRotation
                          : ROTATION_NONE;
@@ -463,12 +415,6 @@ Save (
     }
   }
   Count = Kept;
-  if (Count && !M->Writable) {
-    MenuLog (
-      "the settings aren't in UEFI variables: they can't be changed here"
-    );
-    return gStrings->AblSettingFailed;
-  }
   for (UINTN Index = 0; Index < Count; Index++) {
     CONST CHAR8 *Key   = Changes[Index].Name;
     CONST UINT8 *Value = Changes[Index].Value;
@@ -573,9 +519,6 @@ RestartToScan (IN MENU_STATE *M)
   STATIC CONST UINT8 One = 1;
   EFI_STATUS         Status;
 
-  if (!M->Writable) {
-    return EFI_UNSUPPORTED;
-  }
   Status = MenuVarPut (SETTINGS_KEY_SHOW_MODEL_MENU, &One, 1);
   if (EFI_ERROR (Status)) {
     MenuLog ("setting ShowModelMenu failed: %s", MENU_STATUS (Status));
@@ -1394,7 +1337,7 @@ RunCommand (
 #ifdef OABL_DEBUG
     EXPERIMENTS Want = Command.Experiments;
     EXPERIMENTS Now;
-    BOOLEAN     Ok = M->Writable && SaveExperiments (Want) == EFI_SUCCESS;
+    BOOLEAN     Ok = SaveExperiments (Want) == EFI_SUCCESS;
 
     Now = Experiments ();
     AppSetExperiments (&mApp, &Now);

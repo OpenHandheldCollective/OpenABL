@@ -62,7 +62,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Uninstall CFW | Removes a Linux install from internal storage, after a confirmation. Shown only when one is installed. |
 | Power off | Shuts down. |
 
-Settings are stored as UEFI variables and kept across restarts.
+Settings are stored in the last 4 KiB of the `misc` partition and kept across restarts.
 
 **Boot logo:** with *Custom boot logo* on, put uncompressed 24- or 32-bit
 BMP files in a `\logo` folder on a drive the boot source can use, such as the SD card's boot
