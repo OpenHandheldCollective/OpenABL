@@ -107,18 +107,6 @@ QcomCardsFree (IN OUT QCOM_CARDS *Cards);
 CHAR8 *
 QcomDisplayPanelConfig (VOID);
 
-// Commits NV variables to storage with FlushVariableNV. On SM8750 a
-// variable that isn't flushed is lost at the next reset; SM8250 flushes on
-// ResetSystem but not on a hard reset. SDM845's XBL has no such protocol,
-// so with OABL_DEVINFO_SETTINGS the variables are packed into devinfo
-// instead. Otherwise FALSE without the protocol.
-BOOLEAN
-QcomFlushVariables (OUT EFI_STATUS *Status);
-
-// TRUE if XBL can commit NV variables (EFI_VARIABLESERVICES_PROTOCOL).
-BOOLEAN
-QcomHasVariableServices (VOID);
-
 // DRAM banks as (base, available length).
 typedef struct _QCOM_BANKS OABL_VEC (CARVEOUTS_REGION) QCOM_BANKS;
 
@@ -138,15 +126,6 @@ QcomReadDeviceState (
   OUT UINT64      *Revision,
   OUT EFI_STATUS  *Status,
   OUT OABL_BUFFER *Out
-);
-
-// Writes the devinfo record with VBRwDeviceState (WRITE_CONFIG). FALSE
-// without the protocol.
-BOOLEAN
-QcomWriteDeviceState (
-  IN UINT8       *Record,
-  IN UINTN        Size,
-  OUT EFI_STATUS *Status
 );
 
 // Finds how XBL rotates the picture on a Width x Height framebuffer, in

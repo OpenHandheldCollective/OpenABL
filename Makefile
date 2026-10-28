@@ -14,8 +14,6 @@
 #   sysfont           scaled system font fallback (needed on SM8750)
 #   sdcc-sm4450       SD card fix for SM4450's XBL (also sdcc-sm6450,
 #                     sdcc-sm7675)
-#   devinfo-settings  keep the settings in devinfo, for XBL builds that
-#                     can't save UEFI variables (SDM845)
 #   loader-quirks     XBL workarounds needed by OS loaders (SDM845, SM6115)
 #   park-display      set the display on before the boot, and off at
 #                     ExitBootServices when no devicetree was seen, as
@@ -45,11 +43,11 @@ PYTHON   ?= python3
 MICROUI  ?= build/microui
 VERSION  := $(shell cat VERSION)
 EDK2     ?= build/edk2
-FEATURES ?= standard-boot,sysfont,card-logo,sdcc-sm4450,sdcc-sm6450,sdcc-sm7675,devinfo-settings,loader-quirks
+FEATURES ?= standard-boot,sysfont,card-logo,sdcc-sm4450,sdcc-sm6450,sdcc-sm7675,loader-quirks
 OUT      ?= build/menu
 
 KNOWN := standard-boot sysfont card-logo sdcc-sm4450 sdcc-sm6450 sdcc-sm7675 \
-	sd-diagnostics display-quiesce devinfo-settings loader-quirks park-display \
+	sd-diagnostics display-quiesce loader-quirks park-display \
 	debug
 comma := ,
 LIST := $(subst $(comma), ,$(FEATURES))

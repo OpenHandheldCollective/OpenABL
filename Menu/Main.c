@@ -103,9 +103,7 @@ BootContextOf (
     return FALSE;
   }
   Caps = MenuCapsOf (&State);
-  if (!MenuStoredSettings (&State, &Caps, &Settings)) {
-    MenuSettingsOf (&State, &Settings);
-  }
+  MenuStoredSettings (&State, &Caps, &Settings);
   *Ctx = (MENU_BOOT_CONTEXT){
     .Source        = Settings.BootSource,
     .CfwOnInternal = Caps.CfwOnInternal,
@@ -786,6 +784,9 @@ MainBoot (IN CONST MENU_HOST *Host)
   MENU_HOST_STATE State;
   EFI_STATUS      Status;
 
+  // Again, in case the early start couldn't read misc, before
+  // MenuHostState reads the settings.
+  VariablesSetUp (gMenuEfiLog);
   if (EFI_ERROR (MenuHostState (Host, &State))) {
     return EFI_UNSUPPORTED;
   }
@@ -810,14 +811,9 @@ Early (IN CONST MENU_HOST *Host)
   OABL_BUFFER Mode = {0};
   EFI_STATUS  Status;
 
-#ifdef OABL_DEVINFO_SETTINGS
-  // Where XBL can't commit variables, restore the settings from devinfo's
-  // copy before anything reads them.
-  VariablesRestoreFromDevinfo (gMenuEfiLog);
-#endif
-  // Before the ABL reads devinfo.
-  VariablesMoveOutOfDevinfo (gMenuEfiLog);
-  VariablesChargerScreenToDevinfo (gMenuEfiLog);
+  // Read the settings from misc, setting the store up the first time with
+  // the device model an older loader stored.
+  VariablesSetUp (gMenuEfiLog);
   if (VariablesGet (SETTINGS_KEY_ABL_MODE, &Mode) && Mode.Len &&
       Mode.Data[0] != 0) {
     AblConsoleShow ();

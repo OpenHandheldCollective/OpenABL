@@ -82,7 +82,7 @@ MenuVarIs (
   IN UINT8        Value
 );
 
-// Commits written variables to flash (XBL's FlushVariableNV).
+// Writes the changed settings to misc, logging a failure.
 VOID
 MenuFlush (VOID);
 
@@ -90,18 +90,11 @@ MenuFlush (VOID);
 SETTINGS_CAPS
 MenuCapsOf (IN CONST MENU_HOST_STATE *State);
 
-// Reads the settings from their variables, if they have been moved there.
-BOOLEAN
+// Reads the stored settings. Defaults fill in bad or missing ones.
+VOID
 MenuStoredSettings (
   IN CONST MENU_HOST_STATE *State,
   IN CONST SETTINGS_CAPS   *Caps,
-  OUT SETTINGS             *Out
-);
-
-// Fills Out with the settings from the ABL's state.
-VOID
-MenuSettingsOf (
-  IN CONST MENU_HOST_STATE *State,
   OUT SETTINGS             *Out
 );
 

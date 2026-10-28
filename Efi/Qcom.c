@@ -17,22 +17,9 @@
 
 #include "Base/Memory.h"
 #include "Core/Panel.h"
-#include "Efi/Variables.h"
 
 // Defined in Efi.c; LinuxLoaderLib.h has only the macro.
 extern EFI_GUID gQcomTokenSpaceGuid;
-
-// EFI_QCOM_VARIABLESERVICES_PROTOCOL, which has no header in the ABL's tree.
-STATIC EFI_GUID mVariableServicesGuid = {
-  0xf9085b9d,
-  0x9304,
-  0x40fb,
-  {0x8f, 0xe0, 0x4a, 0xee, 0x3b, 0x1a, 0x78, 0x4b}};
-
-typedef struct _VARIABLE_SERVICES {
-  UINT64 Revision;
-  EFI_STATUS (EFIAPI *FlushVariableNv) (IN struct _VARIABLE_SERVICES *This);
-} VARIABLE_SERVICES;
 
 // Values and layouts the calls rely on.
 _Static_assert (
@@ -288,29 +275,6 @@ QcomDisplayPanelConfig (VOID)
 }
 
 BOOLEAN
-QcomFlushVariables (OUT EFI_STATUS *Status)
-{
-  VARIABLE_SERVICES *Services = Open (&mVariableServicesGuid);
-
-  if (!Services) {
-#ifdef OABL_DEVINFO_SETTINGS
-    *Status = VariablesPersistToDevinfo ();
-    return TRUE;
-#else
-    return FALSE;
-#endif
-  }
-  *Status = Services->FlushVariableNv (Services);
-  return TRUE;
-}
-
-BOOLEAN
-QcomHasVariableServices (VOID)
-{
-  return Open (&mVariableServicesGuid) != NULL;
-}
-
-BOOLEAN
 QcomRamBanks (OUT QCOM_BANKS *Out)
 {
   EFI_RAMPARTITION_PROTOCOL *RamPartition =
@@ -373,25 +337,6 @@ QcomReadDeviceState (
     VerifiedBoot, READ_CONFIG, Out->Data, (UINT32)Length
   );
   *Revision = VerifiedBoot->Revision;
-  return TRUE;
-}
-
-BOOLEAN
-QcomWriteDeviceState (
-  IN UINT8       *Record,
-  IN UINTN        Size,
-  OUT EFI_STATUS *Status
-)
-{
-  QCOM_VERIFIEDBOOT_PROTOCOL *VerifiedBoot =
-    Open (&gEfiQcomVerifiedBootProtocolGuid);
-
-  if (!VerifiedBoot) {
-    return FALSE;
-  }
-  *Status = VerifiedBoot->VBRwDeviceState (
-    VerifiedBoot, WRITE_CONFIG, Record, (UINT32)Size
-  );
   return TRUE;
 }
 

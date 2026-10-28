@@ -63,8 +63,8 @@ UninstallRead (
   return Ok;
 }
 
-STATIC EFI_STATUS
-WriteBlocks (
+EFI_STATUS
+UninstallWrite (
   IN EFI_BLOCK_IO_PROTOCOL *BlockIo,
   IN UINT64                 Lba,
   IN CONST UINT8           *Data,
@@ -288,7 +288,7 @@ UninstallRun (IN LOG_SINK Log)
   BufferFree (&Array);
   // Flushed one by one, so the order GptUninstall chose reaches the disk.
   for (UINTN Index = 0; Index < Writes.Count; Index++) {
-    Status = WriteBlocks (
+    Status = UninstallWrite (
       BlockIo, Writes.Items[Index].Lba, Writes.Items[Index].Data.Data,
       Writes.Items[Index].Data.Len
     );
@@ -323,11 +323,8 @@ Done:
   return Status;
 }
 
-// Finds misc on any disk with a primary GPT whose CRCs pass: its disk and
-// first and last block. FALSE if there is none, or more than one, as then
-// which one recovery reads is a guess.
-STATIC BOOLEAN
-FindMisc (
+BOOLEAN
+UninstallFindMisc (
   OUT EFI_BLOCK_IO_PROTOCOL **Found,
   OUT UINT64                 *First,
   OUT UINT64                 *Last,
@@ -366,7 +363,7 @@ FindMisc (
     gBS->FreePool (Handles);
   }
   if (Miscs > 1) {
-    LogPrint (Log, "uninstall: %llu misc partitions", (UINT64)Miscs);
+    LogPrint (Log, "misc: %llu partitions", (UINT64)Miscs);
   }
   return Miscs == 1;
 }
@@ -383,7 +380,7 @@ UninstallRequestWipe (IN LOG_SINK Log)
   UINTN                  Length;
   EFI_STATUS             Status;
 
-  if (!FindMisc (&BlockIo, &First, &Last, Log)) {
+  if (!UninstallFindMisc (&BlockIo, &First, &Last, Log)) {
     LogLine (Log, "uninstall: no single misc partition");
     return EFI_NOT_FOUND;
   }
@@ -398,7 +395,7 @@ UninstallRequestWipe (IN LOG_SINK Log)
   }
   AndroidBcbWipe (Message);
   CopyMem (Blocks.Data, Message, ANDROID_BCB_SIZE);
-  Status = WriteBlocks (BlockIo, First, Blocks.Data, Length);
+  Status = UninstallWrite (BlockIo, First, Blocks.Data, Length);
   if (Status == EFI_SUCCESS) {
     Status = BlockIo->FlushBlocks (BlockIo);
   }

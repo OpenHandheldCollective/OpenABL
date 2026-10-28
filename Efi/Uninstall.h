@@ -38,6 +38,26 @@ UninstallRead (
   OUT OABL_BUFFER          *Out
 );
 
+// Writes Length bytes (whole blocks) at Lba, without flushing.
+EFI_STATUS
+UninstallWrite (
+  IN EFI_BLOCK_IO_PROTOCOL *BlockIo,
+  IN UINT64                 Lba,
+  IN CONST UINT8           *Data,
+  IN UINTN                  Length
+);
+
+// Finds misc on any writable fixed disk with a primary GPT whose CRCs
+// pass: its disk and first and last block. FALSE if there is none, or more
+// than one, as then which one recovery reads is a guess.
+BOOLEAN
+UninstallFindMisc (
+  OUT EFI_BLOCK_IO_PROTOCOL **Found,
+  OUT UINT64                 *First,
+  OUT UINT64                 *Last,
+  IN LOG_SINK                 Log
+);
+
 // Reads the GPT of a fixed disk with media present: the primary header's
 // block (LBA 1) into Block, the parsed header into Header, and the entry
 // array as whole blocks into Array. Caller frees both buffers with
