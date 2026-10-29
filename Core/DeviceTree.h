@@ -153,4 +153,28 @@ DtReserveMemoryNamed (
   OUT BOOLEAN    *Added
 );
 
+#define DT_NO_GPIO 0xFFFFU
+
+typedef struct _DT_GAMEPAD {
+  UINT64  UartBase;
+  UINT16  TxGpio;
+  UINT16  RxGpio;
+  UINT16  VddGpio;
+  UINT16  BootGpio;
+  UINT16  EnGpio;
+  UINT16  RstGpio;
+  BOOLEAN IsRetroid8250;
+} DT_GAMEPAD;
+
+// Extracts the Moorechip UART handheld gamepad configuration ("gamepad,rsinput"
+// or "retroid,retroid-pocket-gamepad") from Fdt, including its parent GENI
+// serial engine base address, TLMM TX/RX pins, and MCU power/reset/enable
+// GPIOs. Returns FALSE if the devicetree has no matching enabled gamepad node.
+BOOLEAN
+DtGamepadConfig (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Size,
+  OUT DT_GAMEPAD *Out
+);
+
 #endif

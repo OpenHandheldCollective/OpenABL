@@ -867,6 +867,82 @@ Activate (
   return None ();
 }
 
+// What Left (Delta < 0) and Right (Delta > 0) do on a menu item: cycle
+// multi-choice settings backward or forward, toggle boolean settings, and
+// allow Right to open non-destructive sub-screens (Language, Boot entries,
+// Device model, Device info, Log, Developer options). Boot, reboot, power-off,
+// and destructive actions ignore Left/Right and require Select (Power).
+STATIC COMMAND
+MenuStep (
+  IN OUT APP *A,
+  IN ITEM     Item,
+  IN INT32    Delta
+)
+{
+  SETTINGS *Settings = &A->Settings;
+
+  switch (Item) {
+  case ITEM_BOOT_SOURCE:
+    if (Delta < 0) {
+      for (INT32 Step = 0; Step < 3; Step++) {
+        BOOT_SOURCE Prev = Settings->BootSource;
+        SettingsNextBootSource (Settings, &A->Caps);
+        if (Settings->BootSource == Prev) {
+          break;
+        }
+      }
+      return Command (COMMAND_SAVE_SETTINGS, 0);
+    }
+    SettingsNextBootSource (Settings, &A->Caps);
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_ROTATION:
+    if (Delta < 0) {
+      for (INT32 Step = 0; Step < 4; Step++) {
+        SettingsNextRotation (Settings);
+      }
+    } else {
+      SettingsNextRotation (Settings);
+    }
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_BOOT_MODE:
+  case ITEM_ABL_MODE:
+  case ITEM_ALT_VOLUME_UP:
+  case ITEM_CHARGING:
+  case ITEM_CUSTOM_LOGO:
+  case ITEM_USB_LIVE:
+  case ITEM_QUIESCE:
+  case ITEM_PANEL_LINES:
+  case ITEM_BOOT_LOG:
+  case ITEM_SD_DIAGNOSTICS:
+    return Activate (A, Item);
+  case ITEM_DEVELOPER_OPTIONS_BACK:
+    if (Delta < 0) {
+      return Activate (A, Item);
+    }
+    return None ();
+  case ITEM_LANGUAGE:
+  case ITEM_ENTRIES:
+  case ITEM_MODEL:
+  case ITEM_DEVICE_INFO:
+  case ITEM_LOG:
+  case ITEM_DEVELOPER_OPTIONS:
+    if (Delta > 0) {
+      return Activate (A, Item);
+    }
+    return None ();
+  case ITEM_START:
+  case ITEM_RESTART_LOADER:
+  case ITEM_RECOVERY:
+  case ITEM_OTHER_SLOT:
+  case ITEM_EDL:
+  case ITEM_UNINSTALL:
+  case ITEM_RESET_SETTINGS:
+  case ITEM_POWER_OFF:
+    return None ();
+  }
+  return None ();
+}
+
 // Up and down move the focus through the items, wrapping around. Back
 // leaves the developer options.
 STATIC COMMAND
@@ -897,6 +973,10 @@ MenuInput (
       DeveloperOptionsLeave (A);
     }
     return None ();
+  case INPUT_LEFT:
+    return MenuStep (A, Items[Focused], -1);
+  case INPUT_RIGHT:
+    return MenuStep (A, Items[Focused], 1);
   case INPUT_SELECT:
     return Activate (A, Items[Focused]);
   }
@@ -917,9 +997,9 @@ UnlockLine (IN CONST APP *A)
          A->Lines[Focus].Label == gStrings->InfoBootloader;
 }
 
-// Up and down move through the lines, scrolling the list. Select and Back
-// go back to the menu, except that Select on the bootloader version counts
-// towards unlocking the developer options while they are locked.
+// Up and down move through the lines, scrolling the list. Select, Back and
+// Left go back to the menu, except that Select on the bootloader version
+// counts towards unlocking the developer options while they are locked.
 STATIC COMMAND
 InfoInput (
   IN OUT APP *A,
@@ -947,9 +1027,12 @@ InfoInput (
     A->InfoList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
+  case INPUT_LEFT:
   case INPUT_SELECT:
     A->Screen    = SCREEN_MENU;
     A->FocusItem = A->LinesFrom;
+    break;
+  case INPUT_RIGHT:
     break;
   }
   return None ();
@@ -980,8 +1063,10 @@ ModelsInput (
     A->ModelList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
+  case INPUT_LEFT:
     LeaveModels (A);
     break;
+  case INPUT_RIGHT:
   case INPUT_SELECT:
     if (Focus == 0) {
       // No model, so the OS gets the firmware's devicetree untouched.
@@ -1041,7 +1126,13 @@ EntriesInput (
     A->EntryList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
+  case INPUT_LEFT:
     return LeaveEntries (A);
+  case INPUT_RIGHT:
+    if (Focus >= A->EntryCount) {
+      return LeaveEntries (A);
+    }
+    break;
   case INPUT_SELECT:
     if (Focus < A->EntryCount) {
       A->Screen  = SCREEN_BOOTING;
@@ -1078,8 +1169,10 @@ LanguagesInput (
     A->LanguageList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
+  case INPUT_LEFT:
     LeaveLanguages (A);
     break;
+  case INPUT_RIGHT:
   case INPUT_SELECT:
     LeaveLanguages (A);
     if (Focus < LANG_COUNT && Focus != A->Settings.Language) {
@@ -1103,6 +1196,8 @@ ConfirmInput (
   switch (Input) {
   case INPUT_UP:
   case INPUT_DOWN:
+  case INPUT_LEFT:
+  case INPUT_RIGHT:
     A->ConfirmYes = !A->ConfirmYes;
     return None ();
   case INPUT_BACK:
