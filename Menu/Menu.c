@@ -645,6 +645,7 @@ DeviceInfo (
   UINT64                              CardSize;
   UINTN                               PmicCount;
 
+  QuirksPrepareStorage (QuirksChipId (), gMenuEfiLog);
   Push (&List, "SoC", SysInfoSoc ());
   if (QcomChip (&Chip)) {
     OABL_STRING Text = {0};

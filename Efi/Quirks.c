@@ -302,15 +302,16 @@ STATIC CONST UINT8 mAcmd41[2][24] = {
 };
 STATIC CONST UINT8 mAcmd41Mask[2][24] = {
   {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1},
-  {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+  {1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1},
 };
 #define MOVK_AT         4
 #define MOVK_S18R_SET   0x72a83ff5u
 #define MOVK_S18R_CLEAR 0x72a81ff5u
 // Also sets XPC (OCR bit 28, SDXC power control).
 #define MOVK_XPC_S18R_CLEAR 0x72aa1ff5u
-// SM8650 and SM8750 chip ids, whose cards get XPC.
-STATIC CONST UINT32 mXpcChips[] = {682, 639, 706};
+// SM8250, SM8550/QCS8550/SG3xG2, SM8650 and SM8750/CQ8725S chip ids, whose
+// cards get XPC.
+STATIC CONST UINT32 mXpcChips[] = {356, 519, 536, 601, 603, 682, 618, 639, 706};
 #define MAX_SITES 16
 
 STATIC BOOLEAN
@@ -1056,6 +1057,8 @@ SdCmdPullup (IN LOG_SINK Log)
 #define SD_SLOT     1ull
 #define SLOT_STRIDE 0x100ull
 
+STATIC UINT64 mSdccSite;
+
 // Finds the base and size of the loaded image containing Addr.
 STATIC BOOLEAN
 ImageAround (
@@ -1356,7 +1359,8 @@ QuirksSdccUhs (
   (VOID)Base;
 #endif
   if (Diagnostics && Sites.Count > 0) {
-    SdSlotReport (Sites.Items[0], "before", Log);
+    mSdccSite = Sites.Items[0];
+    SdSlotReport (mSdccSite, "before", Log);
   }
 #ifdef OABL_SDCC_SM7675
   Pulled = Chip == SM7675_G2 && SdCmdPullup (Log);
@@ -1366,26 +1370,13 @@ QuirksSdccUhs (
     // Detection runs inside SignalEvent, as its notify TPL is above ours.
     QuirksSignalSdDetect ();
   }
-  for (UINTN Index = 0; Index < Tries.Count; Index++) {
-    CONST TRIES_WORD *Word = &Tries.Items[Index];
-    BOOLEAN           Ok;
-
-    if (!Word->Patched) {
-      continue;
-    }
-    Ok = WriteWord (Word->At, TRUE, Word->Longer, Word->Built);
-    LogPrint (
-      Log, "sdcc: ACMD41 tries back to 200 @0x%llx: %s", (UINT64)Word->At,
-      Ok ? "done" : "REFUSED"
-    );
-  }
 #ifdef OABL_SDCC_SM4450
   if (Detected && Base && Chip == SM4450 && SdStuck ()) {
     SdUnstick (Base, Log);
   }
 #endif
   if (Diagnostics && Sites.Count > 0) {
-    SdSlotReport (Sites.Items[0], "after", Log);
+    SdSlotReport (mSdccSite, "after", Log);
   }
   VecFree (&Tries);
   VecFree (&Sites);
@@ -1669,13 +1660,49 @@ QuirksConnectAll (
   QuirksFatCache (Chip, Log);
 }
 
+// SdccDxe's DetectCard only opens the SD slot if its ClientHandle is NULL.
+// Once a card has been detected, removing or swapping it while in the menu
+// does not clear ClientHandle until a BlockIo transfer runs
+// sdcc_handle_is_mem_present (CMD13), sees the card is gone or reset, and
+// calls sdcc_handle_close. Issue a zero-byte ReadBlocks on each removable raw
+// BlockIo handle before QuirksSignalSdDetect so a removed or swapped card's
+// stale handle is closed first.
+STATIC VOID
+SdccRefreshRemovableSlots (VOID)
+{
+  EFI_HANDLE *Handles = NULL;
+  UINTN       Count   = LocateHandles (&gEfiBlockIoProtocolGuid, &Handles);
+
+  for (UINTN Index = 0; Index < Count; Index++) {
+    EFI_BLOCK_IO_PROTOCOL *Bio = NULL;
+    UINT8                  Dummy;
+
+    if (EFI_ERROR (gBS->HandleProtocol (
+          Handles[Index], &gEfiBlockIoProtocolGuid, (VOID **)&Bio
+        )) ||
+        !Bio || !Bio->Media || !Bio->Media->RemovableMedia ||
+        Bio->Media->LogicalPartition || !Bio->Media->MediaPresent ||
+        !Bio->ReadBlocks) {
+      continue;
+    }
+    Bio->ReadBlocks (Bio, Bio->Media->MediaId, 0, 0, &Dummy);
+  }
+  if (Handles) {
+    gBS->FreePool (Handles);
+  }
+}
+
 VOID
 QuirksPrepareStorage (
   IN UINT32   Chip,
   IN LOG_SINK Log
 )
 {
+  SdccRefreshRemovableSlots ();
   QuirksSignalSdDetect ();
+  if (mSdccSite != 0) {
+    SdSlotReport (mSdccSite, "prepare", Log);
+  }
   QuirksConnectAll (Chip, Log);
 }
 
