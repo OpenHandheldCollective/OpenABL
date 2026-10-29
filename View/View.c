@@ -1512,6 +1512,59 @@ EntriesDraw (IN OUT APP *A)
   }
 }
 
+// Languages
+
+_Static_assert (
+  LANG_COUNT + 1 <= MAX_MODELS + 2,
+  "EvenRows is too short"
+);
+
+// A list as wide as the screen: there is nothing to say beside it.
+STATIC VOID
+LanguagesDraw (IN OUT APP *A)
+{
+  RECT Title;
+  RECT Rest;
+  LIST List;
+  // Rows: each language, "Back".
+  UINTN Count = LANG_COUNT + 1;
+  UINTN Focus =
+    A->LanguageList.Focus < Count ? A->LanguageList.Focus : Count - 1;
+
+  TakeTop (mView.Body, ToPxInt (46), &Title, &Rest);
+  TextIn (
+    Rect (Title.X, Title.Y, Title.W, ToPxInt (26)), gStrings->Language, 18,
+    FONT_WEIGHT_MEDIUM, THEME_TEXT, ALIGN_LEFT
+  );
+  TextIn (
+    Rect (Title.X, Title.Y + ToPxInt (26), Title.W, ToPxInt (18)),
+    gStrings->LanguageExplain, 12.5f, FONT_WEIGHT_REGULAR, THEME_TEXT2,
+    ALIGN_LEFT
+  );
+  INT32 Gap  = ToPxInt (6);
+  RECT  Area = Rect (Rest.X, Rest.Y + Gap, Rest.W, Rest.H - Gap);
+  ListInit (&List, Area, ToPxInt (14), Count, EvenRows (Count), NULL);
+  ListPlace (&List, Focus, &A->LanguageList.Scroll);
+  for (UINTN Index = List.First; Index < List.End; Index++) {
+    RECT Row = ListRow (&List, Index);
+    if (Index < LANG_COUNT) {
+      // Each language is named in itself, so it can be found from any.
+      BOOLEAN Current = Index == A->Settings.Language;
+      RowItem (
+        Row, Current ? ICON_CIRCLE_CHECK : ICON_CIRCLE, LangName ((UINT8)Index),
+        Current ? gStrings->Current : NULL, TONE_NORMAL, TRAILING_NONE,
+        Index == Focus
+      );
+    } else {
+      RowItem (
+        Row, ICON_ARROW_LEFT, gStrings->Back, NULL, TONE_NORMAL, TRAILING_NONE,
+        Index == Focus
+      );
+    }
+  }
+  ListChevrons (&List);
+}
+
 // Device info and the log
 
 // Row heights, worked out again only when the lines or the layout change.
@@ -1945,8 +1998,8 @@ STATIC BOOLEAN
 HasFooter (IN CONST APP *A)
 {
   return A->Screen == SCREEN_MENU || A->Screen == SCREEN_MODELS ||
-         A->Screen == SCREEN_ENTRIES || A->Screen == SCREEN_CONFIRM ||
-         A->Screen == SCREEN_LINES;
+         A->Screen == SCREEN_ENTRIES || A->Screen == SCREEN_LANGUAGES ||
+         A->Screen == SCREEN_CONFIRM || A->Screen == SCREEN_LINES;
 }
 
 // The toast sits above the footer, or above the body's end on a screen
@@ -2075,6 +2128,9 @@ Build (IN OUT APP *A)
       break;
     case SCREEN_ENTRIES:
       EntriesDraw (A);
+      break;
+    case SCREEN_LANGUAGES:
+      LanguagesDraw (A);
       break;
     case SCREEN_LINES:
       LinesDraw (A);

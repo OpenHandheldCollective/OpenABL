@@ -16,6 +16,7 @@
 #include "Base/OablBase.h"
 
 #include "Base/Buffer.h"
+#include "Ui/Lang/Languages.h"
 
 typedef enum { BOOT_MODE_LINUX, BOOT_MODE_ANDROID } BOOT_MODE;
 typedef enum { ABL_MODE_SILENT, ABL_MODE_VERBOSE } ABL_MODE;
@@ -68,8 +69,9 @@ typedef struct _SETTINGS {
   UINT8 Language;
 } SETTINGS;
 
-// Languages the menu offers (LANG_COUNT).
-#define SETTINGS_LANGUAGES 2
+// Languages the menu offers (LANG_COUNT), counted from Ui/Lang/Languages.h.
+#define SETTINGS_LANGUAGE_ONE(Id, Symbol) +1
+#define SETTINGS_LANGUAGES                (0 LANG_LIST (SETTINGS_LANGUAGE_ONE))
 
 // Menu timeout choices, in seconds.
 extern CONST UINT8 gSettingsTimeoutChoices[4];
@@ -142,14 +144,6 @@ SettingsEffectiveRotation (IN CONST SETTINGS *Settings);
 // Moves to the next timeout choice. An unlisted value counts as the first.
 VOID
 SettingsNextTimeout (IN OUT SETTINGS *Settings);
-
-// Moves to the next language.
-VOID
-SettingsNextLanguage (IN OUT SETTINGS *Settings);
-
-// Returns the menu label for what volume up does at boot.
-CONST CHAR8 *
-SettingsAltVolumeLabel (IN CONST SETTINGS *Settings);
 
 // A stored variable. An empty value deletes it.
 typedef struct _SETTINGS_VAR {

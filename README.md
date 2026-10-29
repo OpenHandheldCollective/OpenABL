@@ -49,6 +49,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Recovery mode | Restarts into Android recovery. |
 | Emergency download mode | Restarts into Qualcomm EDL mode, after a confirmation. |
 | Boot other slot | Switches to the other A/B slot. Shown on A/B devices. |
+| Language | Opens the list of the menu's languages, each named in itself. |
 | Boot mode | Linux or Android. |
 | ABL mode | Silent, or Verbose to show the ABL's log on screen while booting. |
 | Volume up at boot | Sets what holding Volume Up at power-on does. |
@@ -142,7 +143,6 @@ it.
 
 | Option | |
 |---|---|
-| `--lang zh-hans` | Simplified Chinese menu |
 | `--no-standard-boot` | Leave out standard boot (Linux then boots only from the default boot file) |
 | `--debug` | Debug build, with a Debug section in the menu |
 | `--clean` | Build each chipset from scratch |
@@ -160,6 +160,12 @@ clang and lld-link, fetch the sources with `Scripts/fetch.sh` and run make.
 ```bash
 make FEATURES=standard-boot,card-logo
 ```
+
+**Languages:** the menu's strings live in `Ui/Lang/`, one file per language
+(`En.c`, `ZhHans.c`), and the *Language* setting picks one at run time. To
+add a language, copy `Ui/Lang/En.c` to a new file, translate it and add one
+line to `Ui/Lang/Languages.h`; strings it leaves out show in English. The
+simulator renders it with `--lang` and the language's code.
 
 GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
 `v*` tag is pushed and uploads the images to that tag's release, with

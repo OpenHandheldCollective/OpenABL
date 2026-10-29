@@ -285,6 +285,17 @@ SModels (
 }
 
 STATIC VOID
+SLanguages (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  (VOID)Now;
+  A->FocusItem = ITEM_LANGUAGE;
+  AppInput (A, INPUT_SELECT);
+}
+
+STATIC VOID
 SConfirmUninstall (
   IN OUT APP *A,
   IN UINT64   Now
@@ -434,6 +445,7 @@ STATIC CONST struct {
   {"menu-long-values", SLongValues},
   {"menu-scrolled", SScrolled},
   {"models", SModels},
+  {"languages", SLanguages},
   {"confirm-uninstall", SConfirmUninstall},
   {"confirm-uninstall-final", SConfirmUninstallFinal},
   {"confirm-edl", SConfirmEdl},
@@ -973,15 +985,14 @@ main (
     } else if (!strcmp (Argv[Index], "--filter") && Index + 1 < Argc) {
       Filter = Argv[++Index];
     } else if (!strcmp (Argv[Index], "--lang") && Index + 1 < Argc &&
-               (!strcmp (Argv[Index + 1], "en") ||
-                !strcmp (Argv[Index + 1], "zh-hans"))) {
-      mLanguage = strcmp (Argv[++Index], "en") ? LANG_ZH_HANS : LANG_EN;
+               LangFromCode (Argv[Index + 1]) < LANG_COUNT) {
+      mLanguage = LangFromCode (Argv[++Index]);
     } else if (!strcmp (Argv[Index], "--check")) {
       DoCheck = TRUE;
     } else {
       fprintf (
         stderr,
-        "usage: %s [--out DIR] [--filter TEXT] [--lang en|zh-hans] [--check]\n",
+        "usage: %s [--out DIR] [--filter TEXT] [--lang CODE] [--check]\n",
         Argv[0]
       );
       return 2;
