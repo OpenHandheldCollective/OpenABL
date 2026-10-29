@@ -17,7 +17,7 @@
 #include "Base/OablBase.h"
 
 // The stored values of the Language setting. Add new ones at the end.
-typedef enum { LANG_EN, LANG_ZH_HANS, LANG_COUNT } LANG_ID;
+typedef enum { LANG_EN, LANG_ZH_HANS, LANG_JA, LANG_RU, LANG_COUNT } LANG_ID;
 
 typedef struct _LANG_STRINGS {
   CONST CHAR8 *Language;
