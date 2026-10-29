@@ -30,7 +30,14 @@ typedef struct _DEVICE_INFO {
 
 // Input and commands
 
-typedef enum { INPUT_UP, INPUT_DOWN, INPUT_SELECT, INPUT_BACK } INPUT;
+typedef enum {
+  INPUT_UP,
+  INPUT_DOWN,
+  INPUT_SELECT,
+  INPUT_BACK,
+  INPUT_LEFT,
+  INPUT_RIGHT,
+} INPUT;
 
 // How the user drives the menu. It only changes the footer hints.
 typedef enum {

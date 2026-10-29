@@ -356,8 +356,8 @@ MenuNew (
   if (EFI_ERROR (Status)) {
     return Status;
   }
-  *M          = (MENU_STATE){.Host = *Host, .StartModels = StartModels};
-  M->Caps     = MenuCapsOf (&State);
+  *M      = (MENU_STATE){.Host = *Host, .StartModels = StartModels};
+  M->Caps = MenuCapsOf (&State);
   MenuStoredSettings (&State, &M->Caps, &M->Stored);
   MenuLoadPrefs (
     M->Stored.Model, &M->Stored.Rotation, &M->Stored.ModelRotation,
@@ -385,7 +385,7 @@ Refresh (IN OUT MENU_STATE *M)
   if (EFI_ERROR (Status)) {
     return Status;
   }
-  M->Caps     = MenuCapsOf (&State);
+  M->Caps = MenuCapsOf (&State);
   MenuStoredSettings (&State, &M->Caps, &Base);
   Base.ModelRotation = AsciiStrEq (Base.Model, M->Stored.Model)
                          ? M->Stored.ModelRotation
@@ -496,6 +496,8 @@ UsbLive (IN CONST MENU_STATE *M)
          ChipBoard (&Board);
 }
 
+STATIC INPUT_KEYS mKeys;
+
 STATIC EFI_STATUS
 Act (
   IN MENU_STATE *M,
@@ -504,6 +506,10 @@ Act (
 {
   EFI_STATUS Status;
 
+  if (Action != OPENABL_MENU_ACTION_CHARGER_SCREEN_ON &&
+      Action != OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF) {
+    InputKeysClose (&mKeys);
+  }
   MenuLog ("action %s", MenuHostActionName (Action));
   Status = MenuHostAction (&M->Host, Action);
   MenuLog ("%s -> %s", MenuHostActionName (Action), MENU_STATUS (Status));
@@ -609,10 +615,43 @@ RotationOfModel (IN CONST SCANNED_MODEL *Model OPTIONAL)
   return Model && Model->HasRotation ? Model->Rotation : ROTATION_NONE;
 }
 
-// Looks up the selected model's panel rotation the first time the menu runs
-// with it, so Auto is right from the first screen. The portrait panel guess
-// suits only some devices. The result is saved even when the devicetree has
-// none, so this only repeats if the scan failed (USB boot source).
+// Configures the handheld UART gamepad from the selected model's devicetree,
+// or from the drive's devicetrees when all scanned models share the same
+// gamepad configuration.
+STATIC VOID
+ApplyModelsGamepad (
+  IN CONST SCANNED_MODELS *Found,
+  IN CONST CHAR8          *ModelName
+)
+{
+  if (ModelName[0]) {
+    CONST SCANNED_MODEL *Model = ModelNamed (Found, ModelName);
+
+    InputKeysConfigureGamepad (
+      &mKeys, Model && Model->HasGamepad ? &Model->Gamepad : NULL
+    );
+    return;
+  }
+  if (!Found->Count || !Found->Items[0].HasGamepad) {
+    InputKeysConfigureGamepad (&mKeys, NULL);
+    return;
+  }
+  for (UINTN Index = 1; Index < Found->Count; Index++) {
+    if (!Found->Items[Index].HasGamepad ||
+        CompareMem (
+          &Found->Items[Index].Gamepad, &Found->Items[0].Gamepad,
+          sizeof (DT_GAMEPAD)
+        ) != 0) {
+      InputKeysConfigureGamepad (&mKeys, NULL);
+      return;
+    }
+  }
+  InputKeysConfigureGamepad (&mKeys, &Found->Items[0].Gamepad);
+}
+
+// Scans the allowed drives to configure the handheld gamepad from the active
+// devicetree and looks up the selected model's panel rotation the first time
+// the menu runs with it, so Auto is right from the first screen.
 STATIC VOID
 LearnModelRotation (IN OUT MENU_STATE *M)
 {
@@ -620,7 +659,17 @@ LearnModelRotation (IN OUT MENU_STATE *M)
   EFI_STATUS     Status;
   CHAR8          Text[8];
 
+  Status = FindModels (M, FALSE, &Found);
+  if (EFI_ERROR (Status)) {
+    MenuLog (
+      "couldn't look up the model's devicetree: %s", MENU_STATUS (Status)
+    );
+    InputKeysConfigureGamepad (&mKeys, NULL);
+    return;
+  }
+  ApplyModelsGamepad (&Found, M->Stored.Model);
   if (!M->Stored.Model[0]) {
+    ModelsFree (&Found);
     return;
   }
   {
@@ -632,15 +681,9 @@ LearnModelRotation (IN OUT MENU_STATE *M)
                         );
     BufferFree (&Owner);
     if (Same) {
+      ModelsFree (&Found);
       return;
     }
-  }
-  Status = FindModels (M, FALSE, &Found);
-  if (EFI_ERROR (Status)) {
-    MenuLog (
-      "couldn't look up the model's panel rotation: %s", MENU_STATUS (Status)
-    );
-    return;
   }
   M->Stored.ModelRotation =
     RotationOfModel (ModelNamed (&Found, M->Stored.Model));
@@ -670,6 +713,7 @@ Scan (
   if (EFI_ERROR (Status)) {
     return Status;
   }
+  ApplyModelsGamepad (&Found, M->Stored.Model);
   Selected = M->Stored.Model[0] ? ModelNamed (&Found, M->Stored.Model) : NULL;
   if (Selected && M->Stored.ModelRotation != RotationOfModel (Selected)) {
     M->Stored.ModelRotation = RotationOfModel (Selected);
@@ -776,8 +820,8 @@ FillEntries (
 
       AddRow (
         Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
-        EntryKind (Entry->Source), Entry->Version,
-        BootEntryIsBad (Entry), Entry->Id
+        EntryKind (Entry->Source), Entry->Version, BootEntryIsBad (Entry),
+        Entry->Id
       );
     }
   }
@@ -1205,7 +1249,7 @@ RunCommand (
       // Shut down as when the ABL asks the menu to leave.
       return TRUE;
     }
-    Status  = Act (M, OPENABL_MENU_ACTION_START);
+    Status = Act (M, OPENABL_MENU_ACTION_START);
 #ifdef OABL_STANDARD_BOOT
     // The restart didn't happen: don't leave the pick for a later Start.
     MenuVarPut (MENU_PICK_VAR, NULL, 0);
@@ -1222,6 +1266,10 @@ RunCommand (
     CONST CHAR8 *Failure = Save (M, &Want);
     AppSetSettings (&mApp, &M->Stored);
     AppSetCaps (&mApp, &M->Caps);
+    if (!AsciiStrEq (M->Stored.Model, Was.Model) ||
+        M->Stored.BootSource != Was.BootSource) {
+      LearnModelRotation (M);
+    }
 #ifdef OABL_STANDARD_BOOT
     // Only these change what Start would try.
     if (M->Stored.BootMode != Was.BootMode ||
@@ -1313,7 +1361,7 @@ RunCommand (
     // Android is next picked. The boot source stays: an SD card may still
     // hold Linux.
     Want.BootMode = BOOT_MODE_ANDROID;
-    Android = !Save (M, &Want) && M->Stored.BootMode == BOOT_MODE_ANDROID;
+    Android       = !Save (M, &Want) && M->Stored.BootMode == BOOT_MODE_ANDROID;
     AppSetSettings (&mApp, &M->Stored);
     AppSetCaps (&mApp, &M->Caps);
     AppSetCfwParts (&mApp, NULL, 0);
@@ -1447,7 +1495,6 @@ MenuRun (
   STATIC MENU_STATE M;
   STATIC CHAR8      Version[64];
   DEVICE_INFO       Info;
-  INPUT_KEYS        Keys    = InputKeysNew ();
   PENDING_COMMANDS  Pending = {0};
   PANEL             Panel;
   SCHEME            Scheme;
@@ -1458,6 +1505,7 @@ MenuRun (
   UINTN             PanelW;
   UINTN             PanelH;
 
+  mKeys  = InputKeysNew ();
   Status = MenuNew (&M, Host, StartModels, CameBack, &Info);
   if (EFI_ERROR (Status)) {
     MenuLog ("reading the ABL's state failed: %s", MENU_STATUS (Status));
@@ -1541,7 +1589,7 @@ MenuRun (
   gST->ConOut->ClearScreen (gST->ConOut);
   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
   // Ignore a key still held from opening the menu.
-  InputKeysHeldAtStart (&Keys, ClockNowMs ());
+  InputKeysHeldAtStart (&mKeys, ClockNowMs ());
   ViewRotate (Rotation);
   mApp.Dirty = TRUE;
 
@@ -1551,7 +1599,7 @@ MenuRun (
     INPUT_EVENTS Events = {0};
     UINT16       Want;
 
-    InputKeysPoll (&Keys, Now, &Events);
+    InputKeysPoll (&mKeys, Now, &Events);
     // Once an uninstall waits to restart into recovery, keys and timers do
     // nothing, so its settings can't be changed back before the wipe.
     for (UINTN Index = 0; Index < Events.Count && !M.RestartAt; Index++) {
@@ -1586,11 +1634,12 @@ MenuRun (
     if (Pending.Count) {
       ViewSettle ();
       if (RunCommand (&M, NextPending (&Pending))) {
+        InputKeysClose (&mKeys);
         ViewDone ();
         return (MENU_END){MENU_END_START_HERE, EFI_ABORTED};
       }
       // The key that started a slow command can still be reported.
-      InputKeysAfterBusy (&Keys, ClockNowMs ());
+      InputKeysAfterBusy (&mKeys, ClockNowMs ());
       continue;
     }
     // Give idle time to fastboot. The ABL serves one USB event per poll,
@@ -1600,6 +1649,7 @@ MenuRun (
       Status = MenuHostPoll (&M.Host);
       if (Status != EFI_SUCCESS) {
         MenuLog ("the ABL asked to leave (%s)", MENU_STATUS (Status));
+        InputKeysClose (&mKeys);
         ViewDone ();
         return (MENU_END){MENU_END_LEFT, Status};
       }

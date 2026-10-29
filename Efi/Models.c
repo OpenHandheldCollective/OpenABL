@@ -66,13 +66,19 @@ AddModels (
     for (UINTN Index2 = 0; Index2 < Found->Count && !Known; Index2++) {
       Known = AsciiStrEq (Found->Items[Index2].Name, Info.Model);
     }
-    if (!Known && VecPush (
-                    Found, (SCANNED_MODEL){Info.Model, Info.HasPanelRotation,
-                                           Info.PanelRotation}
-                  )) {
-      // Found owns the name now.
-      Info.Model = NULL;
-      Added++;
+    if (!Known) {
+      DT_GAMEPAD Gamepad;
+      BOOLEAN    HasGamepad =
+        DtGamepadConfig (Blob, Dtbs.Items[Index].Size, &Gamepad);
+
+      if (VecPush (
+            Found, (SCANNED_MODEL){Info.Model, Info.HasPanelRotation,
+                                   Info.PanelRotation, HasGamepad, Gamepad}
+          )) {
+        // Found owns the name now.
+        Info.Model = NULL;
+        Added++;
+      }
     }
     DtInfoFree (&Info);
   }
