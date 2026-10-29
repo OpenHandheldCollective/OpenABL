@@ -6,21 +6,33 @@
 /**
   Lang - the menu's strings, in every language the menu offers.
 
-  The Language setting picks one at run time. The CJK face (made from these
-  strings at build time) is a fallback for the characters the menu font
-  lacks. {}, {0} and {1} mark where LangFill puts values.
+  Each language is a LANG_STRINGS table in its own file in Ui/Lang/, listed
+  in Ui/Lang/Languages.h. The Language setting picks one at run time. The
+  CJK face (made from these strings at build time) is a fallback for the
+  characters the menu font lacks. {}, {0} and {1} mark where LangFill puts
+  values.
 */
 
 #ifndef __UI_LANG_H__
 #define __UI_LANG_H__
 
 #include "Base/OablBase.h"
+#include "Ui/Lang/Languages.h"
 
-// The stored values of the Language setting. Add new ones at the end.
-typedef enum { LANG_EN, LANG_ZH_HANS, LANG_COUNT } LANG_ID;
+#define LANG_ID_ENTRY(Id, Symbol) Id,
 
+// The stored values of the Language setting, from LANG_LIST.
+typedef enum { LANG_LIST (LANG_ID_ENTRY) LANG_COUNT } LANG_ID;
+
+// Only pointers to strings, so LangSet can fill a language's gaps one by
+// one. A string a language leaves out (NULL) is shown in English.
 typedef struct _LANG_STRINGS {
+  // The language's name in itself, for the Language setting. Required.
+  CONST CHAR8 *Name;
+  // Lowercase BCP 47 tag, for the simulator's --lang. Required.
+  CONST CHAR8 *Code;
   CONST CHAR8 *Language;
+  CONST CHAR8 *LanguageExplain;
   CONST CHAR8 *SectionBoot;
   CONST CHAR8 *SectionSettings;
   CONST CHAR8 *SectionSystem;
@@ -158,6 +170,9 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *RemovableStorage;
 } LANG_STRINGS;
 
+#define LANG_TABLE_DECL(Id, Symbol) extern CONST LANG_STRINGS gLang##Symbol;
+LANG_LIST (LANG_TABLE_DECL)
+
 // Strings in the current language, English until LangSet.
 extern CONST LANG_STRINGS *gStrings;
 
@@ -168,6 +183,10 @@ LangSet (IN UINT8 Lang);
 // Returns Lang's name, in Lang.
 CONST CHAR8 *
 LangName (IN UINT8 Lang);
+
+// Returns the language whose Code is Code, or LANG_COUNT if none is.
+UINT8
+LangFromCode (IN CONST CHAR8 *Code);
 
 // Writes Template to Out with Args filled in. {} takes the next argument
 // and {0} or {1} a given one, so word order can differ between languages.

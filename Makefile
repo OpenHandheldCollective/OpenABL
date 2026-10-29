@@ -21,9 +21,10 @@
 #   debug             Debug section in the menu (adds sd-diagnostics and
 #                     display-quiesce)
 #
-# The menu has every language in Ui/Lang.c. Its CJK face is made at build
-# time from Assets/SourceHanSansSC-Normal.otf by Scripts/mkfont.py with just
-# the characters those strings use (needs fontTools: pip install fonttools).
+# The menu has every language in Ui/Lang/, one file each (listed in
+# Ui/Lang/Languages.h). Its CJK face is made at build time from
+# Assets/SourceHanSansSC-Normal.otf by Scripts/mkfont.py with just the
+# characters those strings use (needs fontTools: pip install fonttools).
 # The ABL image is 512 KiB and the abl partition 1 MiB, so the program is
 # kept small.
 #
@@ -80,6 +81,7 @@ OWN_FLAGS := $(BASE_FLAGS) $(DEFINES) $(foreach d,$(EDK2_INCLUDES),-isystem $(ED
 	-Wall -Wextra -Wno-unused-parameter -Werror -MMD -MP
 
 CJK_FONT := $(OBJ)/cjk-sc.oablf
+LANG_SRCS := $(sort $(wildcard Ui/Lang/*.c))
 ASSETS := Font=Assets/montserrat.oablf FontCjk=$(CJK_FONT)
 
 .PHONY: all sim clean
@@ -103,9 +105,9 @@ $(OBJ)/$(VARIANT)/%.o: %.c
 	$(CC) $(OWN_FLAGS) -c $< -o $@
 
 # The CJK face: the characters the strings use, from the full font.
-$(CJK_FONT): Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf Ui/Lang.c
+$(CJK_FONT): Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf $(LANG_SRCS)
 	@mkdir -p $(@D)
-	$(PYTHON) Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf Ui/Lang.c > $@.tmp
+	$(PYTHON) Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf $(LANG_SRCS) > $@.tmp
 	@mv $@.tmp $@
 
 $(OBJ)/$(VARIANT)/assets.c: Scripts/bin2c.py $(wildcard Assets/*.oablf) $(CJK_FONT)

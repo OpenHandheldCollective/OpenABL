@@ -176,12 +176,13 @@ typedef enum {
   SCREEN_SCANNING,
   SCREEN_MODELS,
   SCREEN_ENTRIES,
+  SCREEN_LANGUAGES,
   SCREEN_CONFIRM,
   SCREEN_BOOTING,
   SCREEN_ERROR,
-  SCREEN_LINES,      // the device info, or the log
+  SCREEN_LINES,        // the device info, or the log
   SCREEN_UNINSTALLING, // while Linux is removed; takes no input
-  SCREEN_RESTARTING, // into recovery after an uninstall; takes no input
+  SCREEN_RESTARTING,   // into recovery after an uninstall; takes no input
 } SCREEN;
 
 // An uninstall asks twice: the partitions it erases, then once more.
@@ -268,6 +269,9 @@ typedef struct _APP {
   ENTRY_VIEW Entries[MAX_ENTRIES];
   UINTN      EntryCount;
   LIST_STATE EntryList;
+
+  // Rows: each language in LANG_LIST order, then "Back".
+  LIST_STATE LanguageList;
 
   // The device info or the log. LinesFrom is the menu item it was opened
   // from, focused again on the way back.
