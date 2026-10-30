@@ -895,6 +895,91 @@ Activate (
   return None ();
 }
 
+// What Left (Delta < 0) and Right (Delta > 0) do on a menu item: cycle
+// multi-choice settings backward or forward, toggle boolean settings, and
+// allow Right to open non-destructive sub-screens (Boot entries, Device model,
+// Device info, Log). Boot, reboot, power-off, and destructive actions ignore
+// Left/Right and require Select (the Power button).
+STATIC COMMAND
+MenuStep (
+  IN OUT APP *A,
+  IN ITEM     Item,
+  IN INT32    Delta
+)
+{
+  SETTINGS *Settings = &A->Settings;
+
+  switch (Item) {
+  case ITEM_LANGUAGE:
+    if (Delta < 0) {
+      Settings->Language =
+        (UINT8)((Settings->Language + SETTINGS_LANGUAGES - 1) %
+                SETTINGS_LANGUAGES);
+    } else {
+      SettingsNextLanguage (Settings);
+    }
+    LangSet (Settings->Language);
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_BOOT_SOURCE:
+    if (Delta < 0) {
+      for (INT32 Step = 0; Step < 3; Step++) {
+        BOOT_SOURCE Prev = Settings->BootSource;
+        SettingsNextBootSource (Settings, &A->Caps);
+        if (Settings->BootSource == Prev) {
+          break;
+        }
+      }
+      return Command (COMMAND_SAVE_SETTINGS, 0);
+    }
+    SettingsNextBootSource (Settings, &A->Caps);
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_ROTATION:
+    if (Delta < 0) {
+      for (INT32 Step = 0; Step < 4; Step++) {
+        SettingsNextRotation (Settings);
+      }
+    } else {
+      SettingsNextRotation (Settings);
+    }
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_TIMEOUT:
+    if (Delta < 0) {
+      for (INT32 Step = 0; Step < 3; Step++) {
+        SettingsNextTimeout (Settings);
+      }
+    } else {
+      SettingsNextTimeout (Settings);
+    }
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_BOOT_MODE:
+  case ITEM_ABL_MODE:
+  case ITEM_ALT_VOLUME_UP:
+  case ITEM_CHARGING:
+  case ITEM_CUSTOM_LOGO:
+  case ITEM_USB_LIVE:
+  case ITEM_QUIESCE:
+  case ITEM_PANEL_LINES:
+    return Activate (A, Item);
+  case ITEM_ENTRIES:
+  case ITEM_MODEL:
+  case ITEM_DEVICE_INFO:
+  case ITEM_LOG:
+    if (Delta > 0) {
+      return Activate (A, Item);
+    }
+    return None ();
+  case ITEM_START:
+  case ITEM_RESTART_LOADER:
+  case ITEM_RECOVERY:
+  case ITEM_OTHER_SLOT:
+  case ITEM_EDL:
+  case ITEM_UNINSTALL:
+  case ITEM_POWER_OFF:
+    return None ();
+  }
+  return None ();
+}
+
 // Up and down move the focus through the items, wrapping around.
 STATIC COMMAND
 MenuInput (
@@ -921,14 +1006,18 @@ MenuInput (
     return None ();
   case INPUT_BACK:
     return None ();
+  case INPUT_LEFT:
+    return MenuStep (A, Items[Focused], -1);
+  case INPUT_RIGHT:
+    return MenuStep (A, Items[Focused], 1);
   case INPUT_SELECT:
     return Activate (A, Items[Focused]);
   }
   return None ();
 }
 
-// Up and down move through the lines, scrolling the list. Select and Back
-// go back to the menu.
+// Up and down move through the lines, scrolling the list. Select, Back and
+// Left go back to the menu.
 STATIC COMMAND
 InfoInput (
   IN OUT APP *A,
@@ -946,9 +1035,12 @@ InfoInput (
     A->InfoList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
+  case INPUT_LEFT:
   case INPUT_SELECT:
     A->Screen    = SCREEN_MENU;
     A->FocusItem = A->LinesFrom;
+    break;
+  case INPUT_RIGHT:
     break;
   }
   return None ();
@@ -979,8 +1071,10 @@ ModelsInput (
     A->ModelList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
+  case INPUT_LEFT:
     LeaveModels (A);
     break;
+  case INPUT_RIGHT:
   case INPUT_SELECT:
     if (Focus == 0) {
       // No model, so the OS gets the firmware's devicetree untouched.
@@ -1033,7 +1127,13 @@ EntriesInput (
     A->EntryList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
+  case INPUT_LEFT:
     LeaveEntries (A);
+    break;
+  case INPUT_RIGHT:
+    if (Focus >= A->EntryCount) {
+      LeaveEntries (A);
+    }
     break;
   case INPUT_SELECT:
     if (Focus < A->EntryCount) {
@@ -1058,6 +1158,8 @@ ConfirmInput (
   switch (Input) {
   case INPUT_UP:
   case INPUT_DOWN:
+  case INPUT_LEFT:
+  case INPUT_RIGHT:
     A->ConfirmYes = !A->ConfirmYes;
     return None ();
   case INPUT_BACK:
