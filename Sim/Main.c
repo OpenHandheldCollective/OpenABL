@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <sys/stat.h>
 #include <zlib.h>
 
 #include "Core/Settings.h"
@@ -85,6 +87,32 @@ Chunk (
   uLong Crc         = crc32 (crc32 (0, (CONST Bytef *)Type, 4), Data, Len);
   UINT8 CrcBytes[4] = {Crc >> 24, Crc >> 16, Crc >> 8, Crc};
   fwrite (CrcBytes, 1, 4, File);
+}
+
+// Creates Path and any missing parents. Exits if one can't be made.
+STATIC VOID
+MakeDirs (
+  IN CONST CHAR8  *Path
+)
+{
+  CHAR8 Dir[4096];
+
+  snprintf (Dir, sizeof (Dir), "%s", Path);
+  for (CHAR8 *Slash = Dir + 1;; Slash++) {
+    if (*Slash != '/' && *Slash != '\0') {
+      continue;
+    }
+    CHAR8 Saved = *Slash;
+    *Slash = '\0';
+    if (mkdir (Dir, 0755) && errno != EEXIST) {
+      perror (Dir);
+      exit (1);
+    }
+    *Slash = Saved;
+    if (Saved == '\0') {
+      break;
+    }
+  }
 }
 
 // Writes 0x00RRGGBB pixels as an RGB PNG. Exits if Path can't be opened.
@@ -998,6 +1026,7 @@ main (
       return 2;
     }
   }
+  MakeDirs (Out);
   if (DoCheck) {
     STATIC CONST INT32 Pairs[][3] = {
       {1280, 800, 0}, {1080, 1920, 270}, {960, 1280, 90}, {1080, 1920, 0}};
