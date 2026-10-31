@@ -1,0 +1,155 @@
+From 867a3eb5fba5a51b2ab214132a325a3fddc2d2b6 Mon Sep 17 00:00:00 2001
+From: Harshal Dev <harshal.dev@oss.qualcomm.com>
+Date: Thu, 15 Oct 2026 17:09:35 +0530
+Subject: [PATCH v5 1/7] tee: qcomtee: Track the object invocation context
+
+QCOMTEE needs to distinguish between object invocations arriving from
+kernel clients and user-space clients in order to correctly marshal
+UBUF parameters and decide whether certain operations should be permitted.
+
+Introduce an enum tee_object_invoke_origin to allow clients to indicate
+the context of the TEE object invocation, and add a kernel_ctx flag to the
+QCOMTEE context so the TEE back-end can track it.
+
+Reviewed-by: Sumit Garg <sumit.garg@oss.qualcomm.com>
+Reviewed-by: Amirreza Zarrabi <amirreza.zarrabi@oss.qualcomm.com>
+Signed-off-by: Harshal Dev <harshal.dev@oss.qualcomm.com>
+Tested-by: Kuldeep Singh <kuldeep.singh@oss.qualcomm.com> #on Glymur-crd
+---
+ drivers/tee/qcomtee/call.c           | 12 +++++++++---
+ drivers/tee/qcomtee/qcomtee_object.h |  8 ++++++--
+ drivers/tee/tee_core.c               |  3 ++-
+ include/linux/tee_core.h             |  8 +++++++-
+ 4 files changed, 24 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/tee/qcomtee/call.c b/drivers/tee/qcomtee/call.c
+index 0efc56462..7e7f300e0 100644
+--- a/drivers/tee/qcomtee/call.c
++++ b/drivers/tee/qcomtee/call.c
+@@ -388,20 +388,26 @@ static int qcomtee_root_object_check(u32 op, struct tee_param *params,
+  * @ctx: TEE context.
+  * @arg: ioctl arguments.
+  * @params: parameters for the object.
++ * @origin: origin of the object invocation (kernel or user-space).
+  *
+  * Return: On success, returns 0; on failure, returns < 0.
+  */
+ static int qcomtee_object_invoke(struct tee_context *ctx,
+ 				 struct tee_ioctl_object_invoke_arg *arg,
+-				 struct tee_param *params)
++				 struct tee_param *params,
++				 enum tee_object_invoke_origin origin)
+ {
+ 	struct qcomtee_context_data *ctxdata = ctx->data;
+ 	struct qcomtee_object *object;
++	bool kernel_ctx = false;
+ 	int i, ret, result;
+ 
+ 	if (qcomtee_params_check(params, arg->num_params))
+ 		return -EINVAL;
+ 
++	if (origin == TEE_OBJECT_INVOKE_KERNEL)
++		kernel_ctx = true;
++
+ 	/* First, handle reserved operations: */
+ 	if (arg->op == QCOMTEE_MSG_OBJECT_OP_RELEASE) {
+ 		del_qtee_object(arg->id, ctxdata);
+@@ -411,7 +417,7 @@ static int qcomtee_object_invoke(struct tee_context *ctx,
+ 
+ 	/* Otherwise, invoke a QTEE object: */
+ 	struct qcomtee_object_invoke_ctx *oic __free(kfree) =
+-		qcomtee_object_invoke_ctx_alloc(ctx);
++		qcomtee_object_invoke_ctx_alloc(ctx, kernel_ctx);
+ 	if (!oic)
+ 		return -ENOMEM;
+ 
+@@ -648,7 +654,7 @@ static void qcomtee_get_qtee_feature_list(struct tee_context *ctx, u32 id,
+ 	int result;
+ 
+ 	struct qcomtee_object_invoke_ctx *oic __free(kfree) =
+-		qcomtee_object_invoke_ctx_alloc(ctx);
++		qcomtee_object_invoke_ctx_alloc(ctx, true);
+ 	if (!oic)
+ 		return;
+ 
+diff --git a/drivers/tee/qcomtee/qcomtee_object.h b/drivers/tee/qcomtee/qcomtee_object.h
+index 8b4401eca..2528d07e4 100644
+--- a/drivers/tee/qcomtee/qcomtee_object.h
++++ b/drivers/tee/qcomtee/qcomtee_object.h
+@@ -146,6 +146,7 @@ static inline int qcomtee_args_len(struct qcomtee_arg *args)
+  * struct qcomtee_object_invoke_ctx - QTEE context for object invocation.
+  * @ctx: TEE context for this invocation.
+  * @flags: flags for the invocation context.
++ * @kernel_ctx: flag that indicates this context is owned by a kernel client.
+  * @errno: error code for the invocation.
+  * @object: current object invoked in this callback context.
+  * @u: array of arguments for the current invocation (+1 for ending arg).
+@@ -158,6 +159,7 @@ static inline int qcomtee_args_len(struct qcomtee_arg *args)
+ struct qcomtee_object_invoke_ctx {
+ 	struct tee_context *ctx;
+ 	unsigned long flags;
++	bool kernel_ctx;
+ 	int errno;
+ 
+ 	struct qcomtee_object *object;
+@@ -172,13 +174,15 @@ struct qcomtee_object_invoke_ctx {
+ };
+ 
+ static inline struct qcomtee_object_invoke_ctx *
+-qcomtee_object_invoke_ctx_alloc(struct tee_context *ctx)
++qcomtee_object_invoke_ctx_alloc(struct tee_context *ctx, bool kernel_ctx)
+ {
+ 	struct qcomtee_object_invoke_ctx *oic;
+ 
+ 	oic = kzalloc_obj(*oic);
+-	if (oic)
++	if (oic) {
+ 		oic->ctx = ctx;
++		oic->kernel_ctx = kernel_ctx;
++	}
+ 	return oic;
+ }
+ 
+diff --git a/drivers/tee/tee_core.c b/drivers/tee/tee_core.c
+index 1aac50c7c..309013901 100644
+--- a/drivers/tee/tee_core.c
++++ b/drivers/tee/tee_core.c
+@@ -701,7 +701,8 @@ static int tee_ioctl_object_invoke(struct tee_context *ctx,
+ 			goto out;
+ 	}
+ 
+-	rc = ctx->teedev->desc->ops->object_invoke_func(ctx, &arg, params);
++	rc = ctx->teedev->desc->ops->object_invoke_func(ctx, &arg, params,
++							TEE_OBJECT_INVOKE_USERSPACE);
+ 	if (rc)
+ 		goto out;
+ 
+diff --git a/include/linux/tee_core.h b/include/linux/tee_core.h
+index f993d5118..bcb5418d6 100644
+--- a/include/linux/tee_core.h
++++ b/include/linux/tee_core.h
+@@ -73,6 +73,11 @@ struct tee_device {
+ 	struct tee_shm_pool *pool;
+ };
+ 
++enum tee_object_invoke_origin {
++	TEE_OBJECT_INVOKE_USERSPACE,
++	TEE_OBJECT_INVOKE_KERNEL,
++};
++
+ /**
+  * struct tee_driver_ops - driver operations vtable
+  * @get_version:	returns version of driver
+@@ -117,7 +122,8 @@ struct tee_driver_ops {
+ 			   struct tee_param *param);
+ 	int (*object_invoke_func)(struct tee_context *ctx,
+ 				  struct tee_ioctl_object_invoke_arg *arg,
+-				  struct tee_param *param);
++				  struct tee_param *param,
++				  enum tee_object_invoke_origin origin);
+ 	int (*cancel_req)(struct tee_context *ctx, u32 cancel_id, u32 session);
+ 	int (*supp_recv)(struct tee_context *ctx, u32 *func, u32 *num_params,
+ 			 struct tee_param *param);
+-- 
+2.56.0
+

@@ -1,0 +1,403 @@
+From 9d432a3d51f8055d446675fc05e64ec657dfec41 Mon Sep 17 00:00:00 2001
+From: sunshineinabox <aqemail@gmail.com>
+Date: Sat, 17 Oct 2026 21:42:30 -0700
+Subject: [PATCH] tee: qcomtee: reach uefisecapp through the QSEECom compat app
+ loader
+
+On chips whose UEFI uses ScmDxeCompat, such as SM8650 and SM8750, UEFI
+loads uefisecapp through QTEE's QSEECom compat app loader over SMCInvoke.
+QTEE's legacy QSEECOM app lookup doesn't find apps loaded that way, so
+qcom_qseecom offers no uefisecapp client, and QTEE 5.2 refuses
+uefisecapp.
+
+
+uefisecapp refuses writes at runtime here, so the variables can be read 
+but not written.
+
+Applies on top of "Add TEE based client driver for UEFI Secure
+Application" v5, patches 1-5.
+---
+ .../firmware/qcom/qcom_qseecom_uefisecapp.c   |   1 +
+ drivers/tee/qcomtee/Kconfig                   |   1 +
+ drivers/tee/qcomtee/Makefile                  |   1 +
+ drivers/tee/qcomtee/call.c                    |   2 +
+ drivers/tee/qcomtee/qcomtee.h                 |   8 +
+ drivers/tee/qcomtee/qseecom_compat.c          | 244 ++++++++++++++++++
+ include/linux/firmware/qcom/qcom_qseecom.h    |   7 +
+ 7 files changed, 264 insertions(+)
+ create mode 100644 drivers/tee/qcomtee/qseecom_compat.c
+
+diff --git a/drivers/firmware/qcom/qcom_qseecom_uefisecapp.c b/drivers/firmware/qcom/qcom_qseecom_uefisecapp.c
+index befa68d1d..8bfee0d27 100644
+--- a/drivers/firmware/qcom/qcom_qseecom_uefisecapp.c
++++ b/drivers/firmware/qcom/qcom_qseecom_uefisecapp.c
+@@ -845,6 +845,7 @@ static void qcom_uefisecapp_remove(struct auxiliary_device *aux_dev)
+ 
+ static const struct auxiliary_device_id qcom_uefisecapp_id_table[] = {
+ 	{ .name = "qcom_qseecom.uefisecapp" },
++	{ .name = "qcomtee.uefisecapp" },
+ 	{}
+ };
+ MODULE_DEVICE_TABLE(auxiliary, qcom_uefisecapp_id_table);
+diff --git a/drivers/tee/qcomtee/Kconfig b/drivers/tee/qcomtee/Kconfig
+index 9f19dee08..37b4650cd 100644
+--- a/drivers/tee/qcomtee/Kconfig
++++ b/drivers/tee/qcomtee/Kconfig
+@@ -4,6 +4,7 @@ config QCOMTEE
+ 	tristate "Qualcomm TEE Support"
+ 	depends on ARCH_QCOM || COMPILE_TEST
+ 	depends on !CPU_BIG_ENDIAN
++	select AUXILIARY_BUS
+ 	select QCOM_SCM
+ 	select QCOM_TZMEM_MODE_SHMBRIDGE
+ 	help
+diff --git a/drivers/tee/qcomtee/Makefile b/drivers/tee/qcomtee/Makefile
+index 7c466c9f3..c5d43ef14 100644
+--- a/drivers/tee/qcomtee/Makefile
++++ b/drivers/tee/qcomtee/Makefile
+@@ -5,5 +5,6 @@ qcomtee-objs += call.o
+ qcomtee-objs += core.o
+ qcomtee-objs += mem_obj.o
+ qcomtee-objs += primordial_obj.o
++qcomtee-objs += qseecom_compat.o
+ qcomtee-objs += shm.o
+ qcomtee-objs += user_obj.o
+diff --git a/drivers/tee/qcomtee/call.c b/drivers/tee/qcomtee/call.c
+index b6b6e7598..ffe62b3f5 100644
+--- a/drivers/tee/qcomtee/call.c
++++ b/drivers/tee/qcomtee/call.c
+@@ -933,6 +933,7 @@ static int qcomtee_probe(struct platform_device *pdev)
+ 		QTEE_VERSION_GET_PATCH(qcomtee->qtee_version));
+ 
+ 	qtee_register_services(qcomtee->ctx);
++	qcomtee_compat_register(qcomtee, &pdev->dev);
+ 
+ 	return 0;
+ 
+@@ -963,6 +964,7 @@ static void qcomtee_remove(struct platform_device *pdev)
+ {
+ 	struct qcomtee *qcomtee = platform_get_drvdata(pdev);
+ 
++	qcomtee_compat_unregister(qcomtee);
+ 	qtee_unregister_services();
+ 	teedev_close_context(qcomtee->ctx);
+ 	/* Wait for RELEASE operations to be processed for QTEE objects. */
+diff --git a/drivers/tee/qcomtee/qcomtee.h b/drivers/tee/qcomtee/qcomtee.h
+index b1fe1d317..e9d00e39e 100644
+--- a/drivers/tee/qcomtee/qcomtee.h
++++ b/drivers/tee/qcomtee/qcomtee.h
+@@ -17,6 +17,8 @@
+ #define QCOMTEE_OBJREF_FLAG_USER	BIT(1)
+ #define QCOMTEE_OBJREF_FLAG_MEM		BIT(2)
+ 
++struct qcomtee_compat_client;
++
+ /**
+  * struct qcomtee - Main service struct.
+  * @teedev: client device.
+@@ -27,6 +29,8 @@
+  * @xa_local_objects: array of objects exported to QTEE.
+  * @xa_last_id: next ID to allocate.
+  * @qtee_version: QTEE version.
++ * @compat_uefisecapp: uefisecapp's QSEECOM client, when only the QSEECom
++ *                     compat app loader reaches it.
+  */
+ struct qcomtee {
+ 	struct tee_device *teedev;
+@@ -37,6 +41,7 @@ struct qcomtee {
+ 	struct xarray xa_local_objects;
+ 	u32 xa_last_id;
+ 	u32 qtee_version;
++	struct qcomtee_compat_client *compat_uefisecapp;
+ };
+ 
+ /**
+@@ -49,6 +54,9 @@ struct qtee_service {
+ 	const u32 uid;
+ };
+ 
++void qcomtee_compat_register(struct qcomtee *qcomtee, struct device *parent);
++void qcomtee_compat_unregister(struct qcomtee *qcomtee);
++
+ void qcomtee_fetch_async_reqs(struct qcomtee_object_invoke_ctx *oic);
+ struct qcomtee_object *qcomtee_idx_erase(struct qcomtee_object_invoke_ctx *oic,
+ 					 u32 idx);
+diff --git a/drivers/tee/qcomtee/qseecom_compat.c b/drivers/tee/qcomtee/qseecom_compat.c
+new file mode 100644
+index 000000000..db7ae4b8b
+--- /dev/null
++++ b/drivers/tee/qcomtee/qseecom_compat.c
+@@ -0,0 +1,244 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * QSEECOM apps reached through QTEE's QSEECom compat interface.
++ *
++ * On some chips UEFI loads its trusted apps, uefisecapp among them, through
++ * QTEE's QSEECom compat app loader over SMCInvoke. QTEE's legacy QSEECOM app
++ * lookup doesn't find apps loaded that way, so qcom_qseecom offers no
++ * uefisecapp client, and QTEE may also refuse the app's object-IPC service to
++ * Linux. The compat app loader still finds the app by name. This offers it as
++ * a qseecom_client whose requests go through IQSEEComCompat_sendRequest, so
++ * the QSEECOM uefisecapp driver can use it unchanged.
++ *
++ * Releasing the last reference to an app's IQSEEComCompat object unloads the
++ * app from QTEE, and only UEFI loads uefisecapp, so the client keeps the
++ * object for as long as it exists.
++ */
++
++#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
++
++#include <linux/auxiliary_bus.h>
++#include <linux/firmware/qcom/qcom_qseecom.h>
++#include <linux/firmware/qcom/qcom_scm.h>
++#include <linux/slab.h>
++#include <linux/string.h>
++
++#include "qcomtee.h"
++
++/* CQSEEComCompatAppLoader and its lookupTA operation. */
++#define QCOMTEE_COMPAT_APP_LOADER_UID		122
++#define QCOMTEE_COMPAT_APP_LOADER_OP_LOOKUP_TA	2
++/* IQSEEComCompat's sendRequest operation. */
++#define QCOMTEE_COMPAT_OP_SEND_REQUEST		0
++/* The architecture lookupTA reports for a 64-bit app (ELFCLASS64). */
++#define QCOMTEE_COMPAT_ARCH_64			2
++
++#define QCOMTEE_COMPAT_UEFISECAPP		"qcom.tz.uefisecapp"
++
++/**
++ * struct qcomtee_compat_client - QSEECOM client for an app behind the compat
++ * app loader.
++ * @client: client the QSEECOM app drivers bind to.
++ * @ctx: TEE context for the invocations.
++ * @app: the app's IQSEEComCompat object.
++ * @is64: the app is 64-bit.
++ */
++struct qcomtee_compat_client {
++	struct qseecom_client client;
++	struct tee_context *ctx;
++	struct qcomtee_object *app;
++	u32 is64;
++};
++
++/* qseecom_client.send: IQSEEComCompat_sendRequest with no embedded buffers. */
++static int qcomtee_compat_send(struct qseecom_client *client, void *req,
++			       size_t req_size, void *rsp, size_t rsp_size)
++{
++	struct qcomtee_compat_client *compat =
++		container_of(client, struct qcomtee_compat_client, client);
++	struct qcomtee_arg u[11] = { 0 };
++	int i, ret, result;
++
++	struct qcomtee_object_invoke_ctx *oic __free(kfree) =
++		qcomtee_object_invoke_ctx_alloc(compat->ctx, true);
++	if (!oic)
++		return -ENOMEM;
++
++	/* IB: request, response, embedded buffer offsets (none) and is64. */
++	u[0].type = QCOMTEE_ARG_TYPE_IB;
++	u[0].b.addr = req;
++	u[0].b.size = req_size;
++	u[1].type = QCOMTEE_ARG_TYPE_IB;
++	u[1].b.addr = rsp;
++	u[1].b.size = rsp_size;
++	u[2].type = QCOMTEE_ARG_TYPE_IB;
++	u[3].type = QCOMTEE_ARG_TYPE_IB;
++	u[3].b.addr = &compat->is64;
++	u[3].b.size = sizeof(compat->is64);
++	/* OB: the request and response as the app leaves them. */
++	u[4].type = QCOMTEE_ARG_TYPE_OB;
++	u[4].b.addr = req;
++	u[4].b.size = req_size;
++	u[5].type = QCOMTEE_ARG_TYPE_OB;
++	u[5].b.addr = rsp;
++	u[5].b.size = rsp_size;
++	/* IO: four shared memory objects, none used. */
++	for (i = 6; i < 10; i++) {
++		u[i].type = QCOMTEE_ARG_TYPE_IO;
++		u[i].o = NULL_QCOMTEE_OBJECT;
++	}
++
++	ret = qcomtee_object_do_invoke(oic, compat->app,
++				       QCOMTEE_COMPAT_OP_SEND_REQUEST, u,
++				       &result);
++	if (ret)
++		return ret;
++	if (result) {
++		dev_dbg(&client->aux_dev.dev, "sendRequest failed (%d)\n",
++			result);
++		return -EIO;
++	}
++
++	return 0;
++}
++
++/* Looks up the app @name through the compat app loader. */
++static struct qcomtee_object *
++qcomtee_compat_lookup(struct qcomtee_object_invoke_ctx *oic,
++		      struct qcomtee_object *client_env, const char *name,
++		      u32 *arch)
++{
++	struct qcomtee_object *loader, *app = NULL_QCOMTEE_OBJECT;
++	struct qcomtee_arg u[4] = { 0 };
++	int ret, result = 0;
++
++	loader = qcomtee_object_get_service(oic, client_env,
++					    QCOMTEE_COMPAT_APP_LOADER_UID,
++					    &result);
++	if (loader == NULL_QCOMTEE_OBJECT) {
++		pr_debug("QSEECom compat app loader unavailable (%d)\n",
++			 result);
++		return NULL_QCOMTEE_OBJECT;
++	}
++
++	u[0].type = QCOMTEE_ARG_TYPE_IB;
++	u[0].b.addr = (void *)name;
++	u[0].b.size = strlen(name);
++	u[1].type = QCOMTEE_ARG_TYPE_OB;
++	u[1].b.addr = arch;
++	u[1].b.size = sizeof(*arch);
++	u[2].type = QCOMTEE_ARG_TYPE_OO;
++	ret = qcomtee_object_do_invoke(oic, loader,
++				       QCOMTEE_COMPAT_APP_LOADER_OP_LOOKUP_TA,
++				       u, &result);
++	if (!ret && !result)
++		app = u[2].o;
++	else
++		pr_debug("%s not found by the compat app loader (%d, %d)\n",
++			 name, ret, result);
++
++	qcomtee_object_put(loader);
++	return app;
++}
++
++static void qcomtee_compat_release(struct device *dev)
++{
++	struct qcomtee_compat_client *compat =
++		container_of(dev, struct qcomtee_compat_client,
++			     client.aux_dev.dev);
++
++	qcomtee_object_put(compat->app);
++	kfree(compat);
++}
++
++/**
++ * qcomtee_compat_register() - Offer uefisecapp as a QSEECOM client when only
++ * the compat app loader reaches it.
++ * @qcomtee: the QTEE driver.
++ * @parent: device the client goes under.
++ *
++ * Does nothing when QTEE's legacy QSEECOM lookup finds uefisecapp, which
++ * qcom_qseecom then serves, when QTEE lets Linux open uefisecapp's own
++ * service, which the TEE uefisecapp driver uses, or when the compat app loader
++ * doesn't find it.
++ */
++void qcomtee_compat_register(struct qcomtee *qcomtee, struct device *parent)
++{
++	struct qcomtee_object *client_env, *service, *app;
++	struct qcomtee_compat_client *compat;
++	int result = 0;
++	u32 arch = 0;
++	u32 app_id;
++
++	if (!IS_ENABLED(CONFIG_QCOM_QSEECOM_UEFISECAPP))
++		return;
++
++	if (!qcom_scm_qseecom_app_get_id(QCOMTEE_COMPAT_UEFISECAPP, &app_id))
++		return;
++
++	struct qcomtee_object_invoke_ctx *oic __free(kfree) =
++		qcomtee_object_invoke_ctx_alloc(qcomtee->ctx, true);
++	if (!oic)
++		return;
++
++	client_env = qcomtee_object_get_client_env(oic);
++	if (client_env == NULL_QCOMTEE_OBJECT)
++		return;
++
++	service = qcomtee_object_get_service(oic, client_env,
++					     QCOMTEE_UEFI_SEC_UID, &result);
++	if (service != NULL_QCOMTEE_OBJECT) {
++		qcomtee_object_put(service);
++		app = NULL_QCOMTEE_OBJECT;
++	} else {
++		app = qcomtee_compat_lookup(oic, client_env,
++					    QCOMTEE_COMPAT_UEFISECAPP, &arch);
++	}
++	qcomtee_object_put(client_env);
++	if (app == NULL_QCOMTEE_OBJECT)
++		return;
++
++	compat = kzalloc_obj(*compat);
++	if (!compat) {
++		qcomtee_object_put(app);
++		return;
++	}
++	compat->ctx = qcomtee->ctx;
++	compat->app = app;
++	compat->is64 = arch == QCOMTEE_COMPAT_ARCH_64;
++	compat->client.send = qcomtee_compat_send;
++	compat->client.aux_dev.name = "uefisecapp";
++	compat->client.aux_dev.dev.parent = parent;
++	compat->client.aux_dev.dev.release = qcomtee_compat_release;
++
++	if (auxiliary_device_init(&compat->client.aux_dev)) {
++		qcomtee_object_put(app);
++		kfree(compat);
++		return;
++	}
++	if (auxiliary_device_add(&compat->client.aux_dev)) {
++		auxiliary_device_uninit(&compat->client.aux_dev);
++		return;
++	}
++
++	qcomtee->compat_uefisecapp = compat;
++	pr_info("%s reached through the QSEECom compat app loader\n",
++		QCOMTEE_COMPAT_UEFISECAPP);
++}
++
++/**
++ * qcomtee_compat_unregister() - Remove the client qcomtee_compat_register()
++ * offered.
++ * @qcomtee: the QTEE driver.
++ */
++void qcomtee_compat_unregister(struct qcomtee *qcomtee)
++{
++	struct qcomtee_compat_client *compat = qcomtee->compat_uefisecapp;
++
++	if (!compat)
++		return;
++
++	qcomtee->compat_uefisecapp = NULL;
++	auxiliary_device_delete(&compat->client.aux_dev);
++	auxiliary_device_uninit(&compat->client.aux_dev);
++}
+diff --git a/include/linux/firmware/qcom/qcom_qseecom.h b/include/linux/firmware/qcom/qcom_qseecom.h
+index 3387897bf..5ea22d75a 100644
+--- a/include/linux/firmware/qcom/qcom_qseecom.h
++++ b/include/linux/firmware/qcom/qcom_qseecom.h
+@@ -19,10 +19,14 @@
+  * struct qseecom_client - QSEECOM client device.
+  * @aux_dev: Underlying auxiliary device.
+  * @app_id: ID of the loaded application.
++ * @send: sends to the application when it isn't reached through the QSEECOM
++ *        SCM calls, or NULL.
+  */
+ struct qseecom_client {
+ 	struct auxiliary_device aux_dev;
+ 	u32 app_id;
++	int (*send)(struct qseecom_client *client, void *req, size_t req_size,
++		    void *rsp, size_t rsp_size);
+ };
+ 
+ /**
+@@ -48,6 +52,9 @@ static inline int qcom_qseecom_app_send(struct qseecom_client *client,
+ 					void *req, size_t req_size,
+ 					void *rsp, size_t rsp_size)
+ {
++	if (client->send)
++		return client->send(client, req, req_size, rsp, rsp_size);
++
+ 	return qcom_scm_qseecom_app_send(client->app_id, req, req_size, rsp, rsp_size);
+ }
+ 
