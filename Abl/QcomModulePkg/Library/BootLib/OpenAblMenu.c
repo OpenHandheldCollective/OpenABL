@@ -33,6 +33,7 @@
 #include <Protocol/OpenAblAblLib.h>
 #include <Protocol/OpenAblMenuHost.h>
 #include <libfdt.h>
+#include "../avb/KeymasterClient.h"
 
 /* FILE GUID of openabl-menu.efi in QcomModulePkg.fdf. */
 STATIC EFI_GUID mOpenAblMenuFileGuid = {
@@ -50,6 +51,34 @@ STATIC BootInfo mInfo;
 STATIC UINT8    mEntry;
 STATIC UINT16   mKey;
 STATIC BOOLEAN  mSetRot;
+STATIC BOOLEAN  mNativeKeymasterAttempted;
+
+STATIC VOID
+PrepareNativeKeymaster (VOID)
+{
+  KMRotAndBootState State = {0};
+  EFI_STATUS Status;
+
+  if (mSetRot || mNativeKeymasterAttempted || !IsUnlocked ()) {
+    return;
+  }
+  /* No Android image is authenticated here. Report an unlocked, unverified
+   * boot with no Android OS version or security patch level. Do not read
+   * Android partitions or invoke AVB's slot-failure recovery.
+   */
+  State.IsUnlocked = TRUE;
+  State.Color = ORANGE;
+  /* Even a failed request may have partially initialized the one-shot TEE
+   * state. Do not retry or use it for an Android boot in this firmware boot.
+   */
+  mNativeKeymasterAttempted = TRUE;
+  Status = KeyMasterSetRotAndBootState (&State);
+  DEBUG ((EFI_D_ERROR, "OpenAblMenu: native Keymaster preparation: %r\n",
+          Status));
+  /* Optional for native Linux: a failure disables Android storage access,
+   * not Linux boot. Do not mark Android's AVB hash/state as initialized.
+   */
+}
 /* Qualcomm's code reads these later, for the A/B retry count. */
 STATIC BOOLEAN  *mFastboot;
 STATIC BOOLEAN  *mRecovery;
@@ -107,6 +136,10 @@ BootAndroid (IN BOOLEAN Recovery)
   BootInfo   Info = mInfo;
   EFI_STATUS Status;
 
+  if (mNativeKeymasterAttempted) {
+    DEBUG ((EFI_D_ERROR, "OpenAblMenu: reboot before starting Android after native Keymaster preparation\n"));
+    return EFI_ACCESS_DENIED;
+  }
   Info.BootIntoRecovery = Recovery;
   *mRecovery = Recovery;
   /* An earlier Linux boot may have left FdtRw's cache stale. */
@@ -183,6 +216,7 @@ HostDoAction (IN OPENABL_MENU_HOST_PROTOCOL *This, IN UINT32 Action)
   case OPENABL_MENU_ACTION_BOOT_PREP:
     ExitMenuKeysDetection ();
     OpenAblBootPrep (OPENABL_PREP_BOOT);
+    PrepareNativeKeymaster ();
     return EFI_SUCCESS;
   case OPENABL_MENU_ACTION_BOOT_ANDROID:
   case OPENABL_MENU_ACTION_BOOT_ANDROID_RECOVERY:
