@@ -35,6 +35,7 @@
 #ifdef OABL_STANDARD_BOOT
 #include "Boot/Bli.h"
 #include "Boot/Booter.h"
+#include "Core/Bls.h"
 #endif
 
 MENU_HOST gMenuHost;
@@ -707,6 +708,113 @@ ModelListAfterRestart (IN CONST MENU_HOST *Host)
   return MenuHostAction (Host, OPENABL_MENU_ACTION_RESTART_BOOTLOADER);
 }
 
+#ifdef OABL_STANDARD_BOOT
+// Size limit for loader.conf.
+#define LOADER_CONF_LIMIT ((UINTN)64 << 10)
+
+// Reads what the menu timeout asks for, as systemd-boot does: loader.conf's
+// timeout key (from the first allowed drive whose loader.conf has one),
+// then LoaderConfigTimeout, then the one-shot LoaderConfigTimeoutOneShot,
+// which always shows the entries. Storage must be ready.
+STATIC BLS_MENU
+LoaderMenu (
+  IN CONST MENU_BOOT_CONTEXT *Ctx,
+  OUT UINT32                 *Seconds
+)
+{
+  EFI_HANDLE *Volumes;
+  UINTN       Count;
+  BLS_MENU    Menu  = BLS_MENU_HIDDEN;
+  BOOLEAN     Found = FALSE;
+  CHAR8      *Value;
+
+  *Seconds = 0;
+  MenuBootVolumes (Ctx, &Volumes, &Count);
+  for (UINTN Index = 0; Index < Count && !Found; Index++) {
+    CHAR8 *Conf =
+      FilesReadText (Volumes[Index], BLS_LOADER_CONF, LOADER_CONF_LIMIT);
+
+    if (Conf) {
+      Found = BlsLoaderConfTimeout (TextOf (Conf), &Menu, Seconds);
+      FreePool (Conf);
+    }
+  }
+  FreePool (Volumes);
+  Value = BliGet ("LoaderConfigTimeout");
+  if (Value) {
+    BlsParseTimeout (TextOf (Value), &Menu, Seconds);
+    FreePool (Value);
+  }
+  Value = BliTake ("LoaderConfigTimeoutOneShot");
+  if (Value) {
+    if (BlsParseTimeout (TextOf (Value), &Menu, Seconds) &&
+        Menu == BLS_MENU_HIDDEN) {
+      Menu = BLS_MENU_FORCE;
+    }
+    FreePool (Value);
+  }
+  return Menu;
+}
+
+// Before a Linux boot, shows Boot entries if the menu timeout asks for it:
+// a number of seconds counts down to the default, menu-force waits for a
+// pick. 0, menu-hidden, menu-disabled or no timeout boots the default at
+// once. Returns FALSE if Back asked for the menu instead of a boot.
+STATIC BOOLEAN
+EntriesBeforeBoot (
+  IN CONST MENU_HOST *Host,
+  IN BOOLEAN          Usb
+)
+{
+  MENU_BOOT_CONTEXT Ctx;
+  OABL_BUFFER       Pick = {0};
+  CHAR8            *OneShot;
+  BLS_MENU          Menu;
+  UINT32            Seconds;
+  MENU_END          End;
+
+  // A pick from before a restart, or an entry the OS asked for, boots now.
+  if (MenuVarGet (MENU_PICK_VAR, &Pick)) {
+    BufferFree (&Pick);
+    return TRUE;
+  }
+  OneShot = BliGet ("LoaderEntryOneShot");
+  if (OneShot) {
+    FreePool (OneShot);
+    MenuLog ("menu timeout: skipped for LoaderEntryOneShot");
+    return TRUE;
+  }
+  if (!BootContextOf (Host, &Ctx)) {
+    return TRUE;
+  }
+  QuirksPrepareStorage (QuirksChipId (), gMenuEfiLog);
+  // LinuxBoot finds USB host up and keeps it.
+  if (Usb) {
+    UsbHostOn ();
+  }
+  Menu = LoaderMenu (&Ctx, &Seconds);
+  if (Menu == BLS_MENU_HIDDEN) {
+    MenuLog ("menu timeout: none, booting the default");
+    return TRUE;
+  }
+  if (Menu == BLS_MENU_FORCE) {
+    MenuLog ("menu timeout: menu-force, Boot entries until a pick");
+  } else {
+    MenuLog ("menu timeout: %u s on Boot entries", Seconds);
+  }
+  AblConsoleHold (TRUE);
+  End = MenuRunEntries (Host, Menu == BLS_MENU_FORCE ? 0 : Seconds);
+  AblConsoleHold (FALSE);
+  if (End.Kind == MENU_END_FAILED) {
+    MenuLog (
+      "Boot entries couldn't run (%s): booting the default",
+      MENU_STATUS (End.Status)
+    );
+  }
+  return End.Kind != MENU_END_OPEN_MENU;
+}
+#endif
+
 // Runs the boot described at MainBoot.
 STATIC EFI_STATUS
 RunBoot (
@@ -756,8 +864,19 @@ RunBoot (
     // Linux boot.
     return FastbootPath (Host, MENU_START_RESULT_ANDROID_FAILED);
   }
-  Usb    = (State->Flags & OPENABL_MENU_STATE_USB_HOST) &&
-           (State->BootSource == MENU_HOST_BOOT_SOURCE_USB || Alt);
+  Usb = (State->Flags & OPENABL_MENU_STATE_USB_HOST) &&
+        (State->BootSource == MENU_HOST_BOOT_SOURCE_USB || Alt);
+#ifdef OABL_STANDARD_BOOT
+  if (!EntriesBeforeBoot (Host, Usb)) {
+    MenuLog ("Boot entries: Back, so the menu");
+    if (Usb) {
+      // USB host may be up, so fastboot needs a restart.
+      UsbHostTeardown ();
+      MenuHostAction (Host, OPENABL_MENU_ACTION_RESTART_BOOTLOADER);
+    }
+    return FastbootPath (Host, MENU_START_RESULT_NONE);
+  }
+#endif
   Result = LinuxBoot (Host, Usb, &UsbUp);
   MenuLog ("nothing booted (%u); the menu says why", Result);
   HoldLogUntilKey (State);

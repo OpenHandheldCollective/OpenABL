@@ -147,6 +147,31 @@ BlsUkiEntry (
 CHAR8 *
 BlsLoaderConfDefault (IN OABL_TEXT Text);
 
+// What the timeout key of loader.conf asks for.
+typedef enum {
+  BLS_MENU_HIDDEN,  // 0, menu-hidden or menu-disabled: boot the default now
+  BLS_MENU_TIMEOUT, // show the entries, then boot the default after a while
+  BLS_MENU_FORCE,   // menu-force: show the entries until one is picked
+} BLS_MENU;
+
+// Parses a timeout value: seconds, menu-force, menu-hidden or
+// menu-disabled. Fails on anything else, leaving Menu and Seconds as they
+// were.
+BOOLEAN
+BlsParseTimeout (
+  IN OABL_TEXT  Value,
+  OUT BLS_MENU *Menu,
+  OUT UINT32   *Seconds
+);
+
+// Reads the timeout key of loader.conf. Fails if it is absent or invalid.
+BOOLEAN
+BlsLoaderConfTimeout (
+  IN OABL_TEXT  Text,
+  OUT BLS_MENU *Menu,
+  OUT UINT32   *Seconds
+);
+
 // Compares in systemd-boot's menu order: entries with no tries left go
 // last, entries with a sort-key first (by sort-key, machine-id, newest
 // version), then newest id, then more tries left and fewer done.

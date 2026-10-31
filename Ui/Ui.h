@@ -65,6 +65,7 @@ typedef enum {
   COMMAND_DEVICE_INFO,
   COMMAND_LOG,
   COMMAND_SAVE_EXPERIMENTS, // saves Experiments
+  COMMAND_OPEN_MENU,        // leave Boot entries before a boot for the menu
 } COMMAND_KIND;
 
 // Work for the platform. Run it after the next frame, so the screen
@@ -288,6 +289,11 @@ typedef struct _APP {
   UINT64  ToastUntil; // 0 for no toast
   BOOLEAN Countdown;
   UINT64  CountdownUntil;
+  // How long the countdown ran from the start, in ms.
+  UINT64 CountdownMs;
+  // Boot entries shown before a boot, with no menu behind it. Back asks
+  // for the menu.
+  BOOLEAN BootPicker;
   // Clock in milliseconds, from the last call that passed it.
   UINT64 Now;
   // Set when the state changes. ViewSync clears it.
@@ -315,6 +321,15 @@ AppStart (
   IN OUT APP *A,
   IN UINT64   Now,
   IN BOOLEAN  ForceMenu
+);
+
+// Opens Boot entries before a boot, with the default first. With TimeoutS
+// it counts down to booting the default; with 0 it waits for a pick.
+VOID
+AppStartEntries (
+  IN OUT APP *A,
+  IN UINT64   Now,
+  IN UINT32   TimeoutS
 );
 
 // Advances the clock to Now. Hides a toast that is due, and starts the

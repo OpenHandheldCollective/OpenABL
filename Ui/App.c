@@ -215,8 +215,28 @@ AppStart (
     return BeginBoot (A);
   }
   A->Countdown      = TRUE;
-  A->CountdownUntil = Now + (UINT64)A->Settings.MenuTimeoutS * 1000;
+  A->CountdownMs    = (UINT64)A->Settings.MenuTimeoutS * 1000;
+  A->CountdownUntil = Now + A->CountdownMs;
   return None ();
+}
+
+VOID
+AppStartEntries (
+  IN OUT APP *A,
+  IN UINT64   Now,
+  IN UINT32   TimeoutS
+)
+{
+  A->Now        = Now;
+  A->Dirty      = TRUE;
+  A->BootPicker = TRUE;
+  A->Screen     = SCREEN_ENTRIES;
+  A->EntryList  = (LIST_STATE){0};
+  if (TimeoutS) {
+    A->Countdown      = TRUE;
+    A->CountdownMs    = (UINT64)TimeoutS * 1000;
+    A->CountdownUntil = Now + A->CountdownMs;
+  }
 }
 
 COMMAND
@@ -1009,11 +1029,16 @@ ModelsInput (
   return None ();
 }
 
-STATIC VOID
+// Back to the menu. Before a boot there is no menu here, so ask for it.
+STATIC COMMAND
 LeaveEntries (IN OUT APP *A)
 {
+  if (A->BootPicker) {
+    return Command (COMMAND_OPEN_MENU, 0);
+  }
   A->Screen    = SCREEN_MENU;
   A->FocusItem = ITEM_ENTRIES;
+  return None ();
 }
 
 STATIC COMMAND
@@ -1034,16 +1059,14 @@ EntriesInput (
     A->EntryList.Focus = (Focus + 1) % Count;
     break;
   case INPUT_BACK:
-    LeaveEntries (A);
-    break;
+    return LeaveEntries (A);
   case INPUT_SELECT:
     if (Focus < A->EntryCount) {
       A->Screen  = SCREEN_BOOTING;
       A->Booting = (INT32)Focus;
       return Command (COMMAND_BOOT_ENTRY, (INT32)Focus);
     }
-    LeaveEntries (A);
-    break;
+    return LeaveEntries (A);
   }
   return None ();
 }

@@ -255,19 +255,6 @@ SMenu (
   (VOID)A, (VOID)Now;
 }
 
-STATIC VOID
-SCountdown (
-  IN OUT APP *A,
-  IN UINT64   Now
-)
-{
-  SETTINGS Settings     = A->Settings;
-  Settings.MenuTimeoutS = 5;
-  MakeApp (A, &Settings);
-  AppStart (A, Now, FALSE);
-  AppTick (A, Now + 1200);
-}
-
 // Values too long for the info card's boxes, shrunk to fit: an SoC name as
 // the ABL reports it and a long device model name.
 STATIC VOID
@@ -464,12 +451,36 @@ SEntries (
   AppInput (A, INPUT_DOWN);
 }
 
+// Boot entries before a boot, as loader.conf's "timeout 5" shows it, 1.2 s
+// in.
+STATIC VOID
+SEntriesCountdown (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SMenuEntries (A, Now);
+  AppStartEntries (A, Now, 5);
+  AppTick (A, Now + 1200);
+}
+
+// Boot entries before a boot, as loader.conf's "timeout menu-force" shows
+// it.
+STATIC VOID
+SEntriesForce (
+  IN OUT APP *A,
+  IN UINT64   Now
+)
+{
+  SMenuEntries (A, Now);
+  AppStartEntries (A, Now, 0);
+}
+
 STATIC CONST struct {
   CONST CHAR8  *Name;
   SESSION_SETUP Setup;
 } mScreens[] = {
   {"menu", SMenu},
-  {"menu-countdown", SCountdown},
   {"menu-long-values", SLongValues},
   {"menu-scrolled", SScrolled},
   {"models", SModels},
@@ -486,6 +497,8 @@ STATIC CONST struct {
   {"toast", SToast},
   {"menu-entries", SMenuEntries},
   {"entries", SEntries},
+  {"entries-countdown", SEntriesCountdown},
+  {"entries-force", SEntriesForce},
 };
 
 STATIC APP mApp;
