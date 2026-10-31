@@ -117,6 +117,7 @@ typedef enum {
   MENU_END_LEFT,       // the ABL asked the menu to leave
   MENU_END_START_HERE, // Start Linux was chosen, booting without a restart
   MENU_END_FAILED,     // the menu couldn't run
+  MENU_END_OPEN_MENU,  // Back on Boot entries before a boot: open the menu
 } MENU_END_KIND;
 
 typedef struct _MENU_END {
@@ -132,6 +133,16 @@ MenuRun (
   IN CONST MENU_HOST *Host,
   IN BOOLEAN          StartModels,
   IN UINT8            CameBack
+);
+
+// Shows only Boot entries before a boot, without fastboot. It counts down
+// TimeoutS to the default, or with 0 waits for a pick. MENU_END_START_HERE
+// means boot now: the pick, if one was made, is stored for BootDrives.
+// Without entries it returns MENU_END_START_HERE at once.
+MENU_END
+MenuRunEntries (
+  IN CONST MENU_HOST *Host,
+  IN UINT32           TimeoutS
 );
 
 // Brings USB host up for the menu, pausing fastboot's gadget. If no drive

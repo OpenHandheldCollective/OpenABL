@@ -88,6 +88,21 @@ order:
 | extlinux.conf | `\extlinux\extlinux.conf`, `\boot\extlinux\extlinux.conf` |
 | The default boot file (GRUB, systemd-boot or any EFI loader) | `\EFI\BOOT\BOOTAA64.EFI` |
 
+The `timeout` key of `\loader\loader.conf` (read from the first allowed
+drive whose `loader.conf` has one) decides whether *Boot entries* shows
+before Linux boots:
+
+| `timeout` | At boot |
+|---|---|
+| Not set, `0`, `menu-hidden` or `menu-disabled` | Boots the default entry at once. |
+| A number of seconds | Shows *Boot entries* and counts down to the default. Any key stops the countdown; Back opens the menu. |
+| `menu-force` | Shows *Boot entries* until an entry is picked. |
+
+As in systemd-boot, the `LoaderConfigTimeout` variable (`bootctl
+set-timeout`) overrides it, and `LoaderConfigTimeoutOneShot` (`systemctl
+reboot --boot-loader-menu=`) overrides both for one boot and always shows
+the entries. A `LoaderEntryOneShot` entry boots at once.
+
 - Kernels are started through their EFI stub (gzip-compressed kernels are
   decompressed first), with their initrds and either the entry's devicetree
   or the selected device model's.

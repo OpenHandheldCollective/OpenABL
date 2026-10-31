@@ -330,6 +330,10 @@ typedef struct _MENU_STATE {
   UINT64 RestartAt;
   // Why the last Start Linux didn't boot (MENU_START_RESULT_*).
   UINT8 CameBack;
+  // Boot entries before a boot: a pick boots in this boot, with no
+  // restart. OpenMenu is set when Back asked for the menu instead.
+  BOOLEAN BootPicker;
+  BOOLEAN OpenMenu;
   // For the device info screen.
   CHAR8 AblVersion[64];
   UINTN DisplayW, DisplayH;
@@ -1201,7 +1205,8 @@ RunCommand (
       PickEntry ((UINTN)Command.Arg);
     }
 #endif
-    if (StartsHere (M) && MayStartHere (M)) {
+    // Before a boot, the boot goes on as soon as the menu leaves.
+    if (M->BootPicker || (StartsHere (M) && MayStartHere (M))) {
       // Shut down as when the ABL asks the menu to leave.
       return TRUE;
     }
@@ -1333,6 +1338,9 @@ RunCommand (
     M->RestartAt = ClockNowMs () + UNINSTALL_RESTART_MS;
     break;
   }
+  case COMMAND_OPEN_MENU:
+    M->OpenMenu = TRUE;
+    return TRUE;
   case COMMAND_SAVE_EXPERIMENTS: {
 #ifdef OABL_DEBUG
     EXPERIMENTS Want = Command.Experiments;
@@ -1437,11 +1445,15 @@ NextPending (IN OUT PENDING_COMMANDS *Pending)
   return Command;
 }
 
-MENU_END
-MenuRun (
+// Runs the menu, or with BootPicker only Boot entries before a boot,
+// counting down TimeoutS (0 for none) to the default.
+STATIC MENU_END
+RunMenu (
   IN CONST MENU_HOST *Host,
   IN BOOLEAN          StartModels,
-  IN UINT8            CameBack
+  IN UINT8            CameBack,
+  IN BOOLEAN          BootPicker,
+  IN UINT32           TimeoutS
 )
 {
   STATIC MENU_STATE M;
@@ -1463,7 +1475,8 @@ MenuRun (
     MenuLog ("reading the ABL's state failed: %s", MENU_STATUS (Status));
     return (MENU_END){MENU_END_FAILED, Status};
   }
-  if (M.CameBack == MENU_START_RESULT_NO_USB) {
+  M.BootPicker = BootPicker;
+  if (!BootPicker && M.CameBack == MENU_START_RESULT_NO_USB) {
     // USB host didn't come up (no drive, or XBL kept the core). Restart, so
     // the next boot brings it up before fastboot.
     MenuLog (
@@ -1522,11 +1535,20 @@ MenuRun (
     AppSetExperiments (&mApp, &Switches);
   }
 #endif
-  AppStart (&mApp, ClockNowMs (), TRUE);
+  if (BootPicker) {
+    if (!mApp.EntryCount) {
+      MenuLog ("Boot entries: nothing to pick from, booting");
+      ViewDone ();
+      return (MENU_END){MENU_END_START_HERE, EFI_SUCCESS};
+    }
+    AppStartEntries (&mApp, ClockNowMs (), TimeoutS);
+  } else {
+    AppStart (&mApp, ClockNowMs (), TRUE);
+  }
   {
     BOOLEAN    Ok;
     BOOT_ERROR Error;
-    if (CameBackShown (&M, &Ok, &Error)) {
+    if (!BootPicker && CameBackShown (&M, &Ok, &Error)) {
       AppOnBootResult (&mApp, Ok, Error, NULL);
     }
   }
@@ -1587,7 +1609,9 @@ MenuRun (
       ViewSettle ();
       if (RunCommand (&M, NextPending (&Pending))) {
         ViewDone ();
-        return (MENU_END){MENU_END_START_HERE, EFI_ABORTED};
+        return (MENU_END){
+          M.OpenMenu ? MENU_END_OPEN_MENU : MENU_END_START_HERE, EFI_ABORTED
+        };
       }
       // The key that started a slow command can still be reported.
       InputKeysAfterBusy (&Keys, ClockNowMs ());
@@ -1608,4 +1632,23 @@ MenuRun (
       }
     }
   }
+}
+
+MENU_END
+MenuRun (
+  IN CONST MENU_HOST *Host,
+  IN BOOLEAN          StartModels,
+  IN UINT8            CameBack
+)
+{
+  return RunMenu (Host, StartModels, CameBack, FALSE, 0);
+}
+
+MENU_END
+MenuRunEntries (
+  IN CONST MENU_HOST *Host,
+  IN UINT32           TimeoutS
+)
+{
+  return RunMenu (Host, FALSE, MENU_START_RESULT_NONE, TRUE, TimeoutS);
 }

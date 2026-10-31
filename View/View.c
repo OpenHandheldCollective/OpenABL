@@ -1120,7 +1120,7 @@ BarWidth (
   if (!mView.BarShown || mView.BarUntil != A->CountdownUntil) {
     mView.BarShown = TRUE;
     mView.BarUntil = A->CountdownUntil;
-    mView.BarTotal = (UINT64)A->Settings.MenuTimeoutS * 1000;
+    mView.BarTotal = A->CountdownMs;
     if (mView.BarTotal == 0) {
       mView.BarTotal = 1;
     }
@@ -1480,6 +1480,15 @@ EntriesDraw (IN OUT APP *A)
   Split (
     Rect (Rest.X, Rest.Y + Gap, Rest.W, Rest.H - Gap), &Area, &Side, &HasSide
   );
+  // Before a boot, the countdown to the default sits over the list.
+  if (A->Countdown) {
+    RECT  Banner;
+    RECT  Below;
+    INT32 BannerGap = ToPxInt (8);
+    TakeTop (Area, ToPxInt (34), &Banner, &Below);
+    Countdown (A, Banner);
+    Area = Rect (Below.X, Below.Y + BannerGap, Below.W, Below.H - BannerGap);
+  }
   ListInit (&List, Area, ToPxInt (14), Count, EvenRows (Count), NULL);
   ListPlace (&List, Focus, &A->EntryList.Scroll);
   for (UINTN Index = List.First; Index < List.End; Index++) {
@@ -2087,7 +2096,8 @@ Build (IN OUT APP *A)
   INT32   H;
   BOOLEAN Footer  = HasFooter (A);
   SCREEN  Screen  = A->Screen == SCREEN_CONFIRM ? SCREEN_MENU : A->Screen;
-  BOOLEAN WithBar = Screen == SCREEN_MENU && A->Countdown;
+  BOOLEAN WithBar =
+    (Screen == SCREEN_MENU || Screen == SCREEN_ENTRIES) && A->Countdown;
 
   mView.App       = A;
   mView.Now       = mView.Clock ();

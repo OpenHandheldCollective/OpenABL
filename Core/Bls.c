@@ -715,30 +715,83 @@ BlsUkiEntry (
   return TRUE;
 }
 
-CHAR8 *
-BlsLoaderConfDefault (IN OABL_TEXT Text)
+// Finds the last "Key value" line of loader.conf with a value.
+STATIC BOOLEAN
+ConfValue (
+  IN OABL_TEXT    Text,
+  IN CONST CHAR8 *Key,
+  OUT OABL_TEXT  *Out
+)
 {
   OABL_TEXT Line;
   OABL_TEXT Value;
-  OABL_TEXT Default = {0};
-  BOOLEAN   Found   = FALSE;
+  UINTN     KeyLen = AsciiStrLen (Key);
+  BOOLEAN   Found  = FALSE;
 
   while (TextNextLine (&Text, &Line)) {
     Line = TextTrim (Line);
-    if (!TextStartsWith (Line, "default")) {
+    if (!TextStartsWith (Line, Key)) {
       continue;
     }
-    Value = TextSub (Line, 7, Line.Len);
+    Value = TextSub (Line, KeyLen, Line.Len);
     if (!Value.Len || !IsAsciiSpace (Value.Ptr[0])) {
       continue;
     }
     Value = TextTrim (Value);
     if (Value.Len) {
-      Default = Value;
-      Found   = TRUE;
+      *Out  = Value;
+      Found = TRUE;
     }
   }
-  return Found ? TextDup (Default) : NULL;
+  return Found;
+}
+
+CHAR8 *
+BlsLoaderConfDefault (IN OABL_TEXT Text)
+{
+  OABL_TEXT Default;
+
+  return ConfValue (Text, "default", &Default) ? TextDup (Default) : NULL;
+}
+
+BOOLEAN
+BlsParseTimeout (
+  IN OABL_TEXT  Value,
+  OUT BLS_MENU *Menu,
+  OUT UINT32   *Seconds
+)
+{
+  UINT64 Number;
+
+  if (TextEqStr (Value, "menu-force")) {
+    *Menu    = BLS_MENU_FORCE;
+    *Seconds = 0;
+    return TRUE;
+  }
+  if (TextEqStr (Value, "menu-hidden") || TextEqStr (Value, "menu-disabled")) {
+    *Menu    = BLS_MENU_HIDDEN;
+    *Seconds = 0;
+    return TRUE;
+  }
+  if (!TextParseU64 (Value, 10, &Number) || Number > MAX_UINT32) {
+    return FALSE;
+  }
+  *Menu    = Number ? BLS_MENU_TIMEOUT : BLS_MENU_HIDDEN;
+  *Seconds = (UINT32)Number;
+  return TRUE;
+}
+
+BOOLEAN
+BlsLoaderConfTimeout (
+  IN OABL_TEXT  Text,
+  OUT BLS_MENU *Menu,
+  OUT UINT32   *Seconds
+)
+{
+  OABL_TEXT Value;
+
+  return ConfValue (Text, "timeout", &Value) &&
+         BlsParseTimeout (Value, Menu, Seconds);
 }
 
 // Compares strings that may be NULL. NULL sorts first.
