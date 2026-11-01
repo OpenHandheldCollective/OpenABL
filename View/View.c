@@ -1097,9 +1097,9 @@ CountdownText (
 {
   UINT64       Seconds = 0;
   CHAR8        Number[12];
-  CONST CHAR8 *What = A->Settings.BootMode == BOOT_MODE_ANDROID ? "Android"
-                      : AppBootTitle (A) ? AppBootTitle (A)
-                                         : "Linux";
+  // Only Boot entries count down, and they always start Linux, even in
+  // Android mode when volume up was held.
+  CONST CHAR8 *What = AppBootTitle (A) ? AppBootTitle (A) : "Linux";
   AppCountdownSeconds (A, &Seconds);
   AsciiStrFromU64 (Number, sizeof (Number), Seconds);
   CONST CHAR8 *Args[] = {What, Number};
@@ -1176,8 +1176,8 @@ Countdown (
   Fill (Bar, THEME_ACCENT, 255);
 }
 
-// The menu, with the countdown banner over the list and the info card
-// beside it (landscape) or above it (portrait).
+// The menu, with the info card beside the list (landscape) or above it
+// (portrait).
 STATIC VOID
 MenuDraw (IN OUT APP *A)
 {
@@ -1209,14 +1209,6 @@ MenuDraw (IN OUT APP *A)
     Area =
       Rect (BottomPart.X, BottomPart.Y + Gap, BottomPart.W, BottomPart.H - Gap);
     Card = TopPart;
-  }
-  if (A->Countdown) {
-    RECT  Banner;
-    RECT  Rest;
-    INT32 Gap = ToPxInt (8);
-    TakeTop (Area, ToPxInt (34), &Banner, &Rest);
-    Countdown (A, Banner);
-    Area = Rect (Rest.X, Rest.Y + Gap, Rest.W, Rest.H - Gap);
   }
   for (UINTN Index = 0; Index < Count; Index++) {
     Headers[Index] = Rows[Index].Header != NULL;
@@ -2096,8 +2088,7 @@ Build (IN OUT APP *A)
   INT32   H;
   BOOLEAN Footer  = HasFooter (A);
   SCREEN  Screen  = A->Screen == SCREEN_CONFIRM ? SCREEN_MENU : A->Screen;
-  BOOLEAN WithBar =
-    (Screen == SCREEN_MENU || Screen == SCREEN_ENTRIES) && A->Countdown;
+  BOOLEAN WithBar = Screen == SCREEN_ENTRIES && A->Countdown;
 
   mView.App       = A;
   mView.Now       = mView.Clock ();

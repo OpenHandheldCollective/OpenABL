@@ -12,8 +12,6 @@
 #include "Base/Buffer.h"
 #include "Base/Text.h"
 
-CONST UINT8 gSettingsTimeoutChoices[4] = {0, 3, 5, 10};
-
 VOID
 SettingsDefault (OUT SETTINGS *Settings)
 {
@@ -33,8 +31,7 @@ SettingsToggleBootMode (
 )
 {
   if (Settings->BootMode == BOOT_MODE_LINUX) {
-    Settings->BootMode   = BOOT_MODE_ANDROID;
-    Settings->BootSource = BOOT_SOURCE_INTERNAL;
+    Settings->BootMode = BOOT_MODE_ANDROID;
   } else {
     Settings->BootMode = BOOT_MODE_LINUX;
     if (Settings->BootSource == BOOT_SOURCE_INTERNAL && !Caps->CfwOnInternal) {
@@ -118,22 +115,6 @@ SettingsEffectiveRotation (IN CONST SETTINGS *Settings)
   return Settings->Rotation % 360;
 }
 
-VOID
-SettingsNextTimeout (IN OUT SETTINGS *Settings)
-{
-  UINTN Count = sizeof (gSettingsTimeoutChoices);
-  UINTN Index = 0;
-
-  while (Index < Count &&
-         gSettingsTimeoutChoices[Index] != Settings->MenuTimeoutS) {
-    Index++;
-  }
-  if (Index == Count) {
-    Index = 0;
-  }
-  Settings->MenuTimeoutS = gSettingsTimeoutChoices[(Index + 1) % Count];
-}
-
 // Variables
 
 STATIC VOID
@@ -196,7 +177,6 @@ SettingsToVars (
     &Out[Count++], SETTINGS_KEY_OFFMODE_CHARGING, Settings->OffmodeCharging
   );
   PutLe16 (&Out[Count++], SETTINGS_KEY_ROTATION, Settings->Rotation);
-  PutU8 (&Out[Count++], SETTINGS_KEY_MENU_TIMEOUT, Settings->MenuTimeoutS);
   Put (&Out[Count++], SETTINGS_KEY_MODEL, Settings->Model, ModelLen);
   PutLe16 (&Out[Count++], SETTINGS_KEY_MODEL_ROTATION, Settings->ModelRotation);
   PutU8 (&Out[Count++], SETTINGS_KEY_CUSTOM_LOGO, Settings->CustomLogo);
@@ -289,17 +269,6 @@ Word (
   return TRUE;
 }
 
-STATIC BOOLEAN
-TimeoutChoice (IN UINT8 Timeout)
-{
-  for (UINTN Index = 0; Index < sizeof (gSettingsTimeoutChoices); Index++) {
-    if (gSettingsTimeoutChoices[Index] == Timeout) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
 VOID
 SettingsFromVars (
   IN CONST SETTINGS *Defaults,
@@ -346,10 +315,6 @@ SettingsFromVars (
       (Word16 == ROTATION_AUTO || Word16 == 0 || Word16 == 90 ||
        Word16 == 180 || Word16 == 270)) {
     Settings.Rotation = Word16;
-  }
-  if (Byte (Get, Context, SETTINGS_KEY_MENU_TIMEOUT, &Byte8) &&
-      TimeoutChoice (Byte8)) {
-    Settings.MenuTimeoutS = Byte8;
   }
   if (Word (Get, Context, SETTINGS_KEY_MODEL_ROTATION, &Word16)) {
     Settings.ModelRotation = Word16 == ROTATION_NONE || Word16 % 90 != 0
