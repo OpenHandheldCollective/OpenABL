@@ -11,7 +11,6 @@
 
 CONST LANG_STRINGS gLangFr = {
   .Name              = "Français",
-  .Code              = "fr",
   .Language          = "Langue",
   .LanguageExplain   = "Langue d'affichage du menu.",
   .SectionBoot       = "Démarrage",
