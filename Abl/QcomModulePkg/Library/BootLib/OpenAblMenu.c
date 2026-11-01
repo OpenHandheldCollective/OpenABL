@@ -198,6 +198,14 @@ HostDoAction (IN OPENABL_MENU_HOST_PROTOCOL *This, IN UINT32 Action)
   case OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF:
     return EnableChargingScreen (Action ==
                                  OPENABL_MENU_ACTION_CHARGER_SCREEN_ON);
+  case OPENABL_MENU_ACTION_BATTERY_OK: {
+    UINT32 Voltage = 0;
+    BOOLEAN Ok = TargetBatterySocOk (&Voltage);
+
+    DEBUG ((EFI_D_ERROR, "OpenAblMenu: battery %u mV, %a to flash\n", Voltage,
+            Ok ? "enough" : "not enough"));
+    return Ok ? EFI_SUCCESS : EFI_NOT_READY;
+  }
   case OPENABL_MENU_ACTION_GADGET_PAUSE:
   case OPENABL_MENU_ACTION_GADGET_RESUME:
     return !mFastbootUp

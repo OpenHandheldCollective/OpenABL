@@ -31,6 +31,9 @@ build() {
   done
   mkdir -p QcomModulePkg/Prebuilt/OpenAblMenu
   cp "$menu" QcomModulePkg/Prebuilt/OpenAblMenu/openabl-menu.efi
+  # Image tag for firmware updates (Core/AblImage.h).
+  python3 -c 'import sys; sys.stdout.buffer.write(b"OABLIMG1" + b"".join(a.encode().ljust(16, b"\0")[:16] for a in sys.argv[1:]))' \
+    "$(echo "$soc" | tr a-z A-Z)" "$(cat /openabl/VERSION)" > QcomModulePkg/Prebuilt/OpenAblMenu/image-tag.bin
   if [ "$ABL_CLEAN" = 1 ] || [ "$(cat "$B/.make-args" 2>/dev/null)" != "$*" ]; then rm -rf "$B"; fi
   incremental=0; [ -d "$B" ] && incremental=1
   mkdir -p "$B"; echo "$soc" > "$B/.chipset"; echo "$*" > "$B/.make-args"

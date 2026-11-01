@@ -48,6 +48,8 @@
 #define OPENABL_MENU_ACTION_CHARGER_BOOT          16
 #define OPENABL_MENU_ACTION_CHARGER_SCREEN_ON     17
 #define OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF    18
+/* EFI_NOT_READY if the battery is too low to flash. */
+#define OPENABL_MENU_ACTION_BATTERY_OK            19
 
 typedef struct {
   UINT8  OffmodeCharging; /* Qualcomm's charger screen flag */

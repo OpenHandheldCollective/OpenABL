@@ -92,6 +92,8 @@ extern CONST UINT8 gSettingsTimeoutChoices[4];
 // Set by the menu before restarting into fastboot: why nothing could boot
 // (MENU_START_RESULT_*). Deleted once read.
 #define SETTINGS_KEY_BOOT_FAILURE "BootFailure"
+// Last firmware update attempt, for the ESRT (Core/FwUpdate.h).
+#define SETTINGS_KEY_FIRMWARE_UPDATE "FirmwareUpdate"
 // DISPLAY_HANDOVER_* bits from Core/Panel.h. Absent means 0.
 #define SETTINGS_KEY_DISPLAY_QUIESCE "DisplayQuiesce"
 #define SETTINGS_KEY_CUSTOM_LOGO     "CustomLogo"

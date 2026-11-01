@@ -461,6 +461,8 @@ UefiEsrtOne (
   IN CONST UINT8 FwClass[16],
   IN UINT32      Type,
   IN UINT32      Version,
+  IN UINT32      LastAttemptVersion,
+  IN UINT32      LastAttemptStatus,
   OUT UINT8      Out[UEFI_ESRT_ONE_SIZE]
 )
 {
@@ -474,9 +476,8 @@ UefiEsrtOne (
   // LowestSupportedFwVersion, CapsuleFlags.
   WriteLe32 (Out + 40, 0);
   WriteLe32 (Out + 44, 0);
-  // LastAttemptVersion and LastAttemptStatus (success).
-  WriteLe32 (Out + 48, Version);
-  WriteLe32 (Out + 52, 0);
+  WriteLe32 (Out + 48, LastAttemptVersion);
+  WriteLe32 (Out + 52, LastAttemptStatus);
 }
 
 UINT32

@@ -118,7 +118,9 @@ the entries. A `LoaderEntryOneShot` entry boots at once.
   `qcom_scm`'s allowlist; the kernel patch in `Linux/` adds OpenABL's
   chipsets.
 - Linux finds the ABL's version in the ESRT:
-  `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor).
+  `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor),
+  and the last update's result in `last_attempt_version` and
+  `last_attempt_status`.
 - An `EFI_RT_PROPERTIES_TABLE` tells Linux which runtime services XBL
   lacks: `SetVirtualAddressMap` on SDM845, all of them on SM6115.
 - The display: a `splash_region` (or `cont_splash_region`) in the kernel's
@@ -194,31 +196,54 @@ archive for an existing release. CI keeps the sources it fetches in the
 `sources` pre-release and fetches them again only after a pin in
 `Scripts/fetch.sh` changes.
 
+## Firmware updates
+
+OpenABL can be updated from Linux, without fastboot:
+
+```bash
+openabl-update abl_signed-SM8550.elf
+```
+
+`Linux/openabl-update` copies the image and its `.sha256` to
+`\openabl\update\` on the ESP. On the next boot into Linux, OpenABL checks
+it against the ABL in the active slot. XBL won't fall back to the other
+slot, so the image is only written if:
+
+- its SHA-256 matches the `.sha256`
+- its segment hashes check out and it fits in `abl`
+- it's for the same chipset and a newer version (`--force` skips the
+  version check)
+- the ELF type, MBN version, software id and kind of signature match the
+  installed ABL
+- the battery is charged enough to flash
+
+The inactive slot is written first, then the active one, each read back and
+retried up to three times, then the device restarts. A slot that still
+fails gets the old image back. If the battery is too low the update stays
+staged for the next boot.
+
+To see how it went:
+
+```bash
+openabl-update --status
+```
+
+This reads the ESRT's `last_attempt_status`: 0 success, 2 too large, 3 not
+newer, 4 wrong image, 5 bad SHA-256, 7 battery low, 1 anything else (see the
+log).
+
+Only images with the image tag can be installed this way, so the first one
+has to be flashed with fastboot.
+
 ## Future direction
 
-**Firmware updates.** XBL starts the ABL in the active slot and never falls
-back to the other slot, so an update must never write an image XBL would
-reject. The plan:
+**fwupd.** fwupd's capsule path needs `UpdateCapsule` or a persistent
+`OsIndications`, which XBL doesn't have, so it needs a small plugin that
+stages images the way `openabl-update` does.
 
-1. Linux puts `abl_signed-<CHIPSET>.elf` and its `.sha256` in
-   `\openabl\update\` on the boot drive. No UEFI variables are needed, which
-   Linux can't write persistently on every chip.
-2. At the next boot, before the menu, OpenABL checks the file: its SHA-256,
-   the ELF and its segment hashes (what XBL checks), its size, the chip it
-   was built for, a newer version unless forced, and enough battery or a
-   charger.
-3. It writes the inactive slot's `abl` and reads it back, then the active
-   slot's. A failed write of the active slot is redone from the checked
-   copy. The file is then removed and the device restarts.
-4. The result goes in a UEFI variable, which the ESRT reports as
-   `last_attempt_version` and `last_attempt_status`.
-5. fwupd's UEFI capsule path needs `UpdateCapsule` or a persistent
-   `OsIndications`, which XBL doesn't offer, so fwupd needs a small plugin
-   for steps 1 and 4.
-
-A safer step can come later: start the new ABL in memory first and write it
-only once its menu comes up. A bad ABL can always be restored through EDL
-(9008) with the device's flat build.
+**Test boot.** Boot the new ABL from memory first and only write it once its
+menu comes up. A bad ABL can still be restored through EDL (9008) with the
+device's flat build.
 
 ## Licence
 

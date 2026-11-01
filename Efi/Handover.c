@@ -22,12 +22,15 @@
 #include "Base/Memory.h"
 #include "Core/Carveouts.h"
 #include "Core/EfiData.h"
+#include "Core/FwUpdate.h"
+#include "Core/Settings.h"
 #include "Efi/DisplayHandover.h"
 #include "Efi/DtFixup.h"
 #include "Efi/Dxe.h"
 #include "Efi/Models.h"
 #include "Efi/Qcom.h"
 #include "Efi/Splash.h"
+#include "Efi/Variables.h"
 
 #define PAGE 4096ull
 
@@ -561,7 +564,10 @@ FirmwareTables (
   UINT32       Gaps = RuntimeGaps (Id);
   UINT8        Rt[8];
   UINT8        Esrt[UEFI_ESRT_ONE_SIZE];
-  EFI_GUID     Class = mAblClass;
+  EFI_GUID     Class       = mAblClass;
+  UINT32       LastVersion = UefiVersionPair (Version);
+  UINT32       LastStatus  = FW_UPDATE_SUCCESS;
+  OABL_BUFFER  Last        = {0};
   EFI_STATUS   Status;
 
   if (Gaps) {
@@ -575,15 +581,24 @@ FirmwareTables (
     );
   }
   WriteLe32 (&Class.Data4[4], Id);
+  // No record yet means this version, successful.
+  if (VariablesGet (SETTINGS_KEY_FIRMWARE_UPDATE, &Last) &&
+      Last.Len == FW_UPDATE_RECORD_SIZE) {
+    LastVersion = ReadLe32 (Last.Data);
+    LastStatus  = ReadLe32 (Last.Data + 4);
+  }
+  BufferFree (&Last);
   UefiEsrtOne (
     (CONST UINT8 *)&Class, UEFI_ESRT_FW_TYPE_SYSTEM, UefiVersionPair (Version),
-    Esrt
+    LastVersion, LastStatus, Esrt
   );
   Status = InstallTable (&mEsrtGuid, Esrt, sizeof (Esrt), &EsrtKept);
   LogPrint (
-    Log, "handover: ESRT: ABL %s as firmware version 0x%08x at 0x%llx: %s",
-    Version ? Version : "?", UefiVersionPair (Version), (UINT64)(UINTN)EsrtKept,
-    STATUS_STR (Status)
+    Log,
+    "handover: ESRT: ABL %s as firmware version 0x%08x (last attempt "
+    "0x%08x, status %u) at 0x%llx: %s",
+    Version ? Version : "?", UefiVersionPair (Version), LastVersion, LastStatus,
+    (UINT64)(UINTN)EsrtKept, STATUS_STR (Status)
   );
 }
 

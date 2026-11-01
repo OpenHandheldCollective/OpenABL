@@ -55,6 +55,8 @@ MenuHostActionName (IN UINT32 Action)
     return "CHARGER_SCREEN_ON";
   case OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF:
     return "CHARGER_SCREEN_OFF";
+  case OPENABL_MENU_ACTION_BATTERY_OK:
+    return "BATTERY_OK";
   }
   return "?";
 }

@@ -29,6 +29,7 @@
 #include "Efi/Variables.h"
 #include "Efi/UsbHost.h"
 #include "Efi/Files.h"
+#include "Efi/FwUpdate.h"
 #ifdef OABL_SYSFONT
 #include "Efi/SysFont.h"
 #endif
@@ -815,6 +816,29 @@ EntriesBeforeBoot (
 }
 #endif
 
+// Installs a staged ABL update and restarts. Returns if there wasn't one
+// or it wasn't written.
+STATIC VOID
+FirmwareUpdate (IN CONST MENU_HOST *Host)
+{
+  MENU_BOOT_CONTEXT Ctx;
+  EFI_HANDLE       *Volumes;
+  UINTN             Count;
+  FW_UPDATE_OUTCOME Outcome;
+
+  if (!BootContextOf (Host, &Ctx)) {
+    return;
+  }
+  QuirksPrepareStorage (QuirksChipId (), gMenuEfiLog);
+  MenuBootVolumes (&Ctx, &Volumes, &Count);
+  Outcome = FwUpdateRun (Host, Volumes, Count, gMenuEfiLog);
+  FreePool (Volumes);
+  if (Outcome == FW_UPDATE_WRITTEN) {
+    MenuLog ("firmware updated; restarting into it");
+    MenuHostAction (Host, OPENABL_MENU_ACTION_START);
+  }
+}
+
 // Runs the boot described at MainBoot.
 STATIC EFI_STATUS
 RunBoot (
@@ -864,6 +888,8 @@ RunBoot (
     // Linux boot.
     return FastbootPath (Host, MENU_START_RESULT_ANDROID_FAILED);
   }
+  // Updates are staged from Linux, so only Linux boots look for one.
+  FirmwareUpdate (Host);
   Usb = (State->Flags & OPENABL_MENU_STATE_USB_HOST) &&
         (State->BootSource == MENU_HOST_BOOT_SOURCE_USB || Alt);
 #ifdef OABL_STANDARD_BOOT
