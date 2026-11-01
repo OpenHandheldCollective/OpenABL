@@ -323,17 +323,17 @@ Done:
   return Status;
 }
 
-BOOLEAN
-UninstallFindMisc (
-  OUT EFI_BLOCK_IO_PROTOCOL **Found,
-  OUT UINT64                 *First,
-  OUT UINT64                 *Last,
-  IN LOG_SINK                 Log
+UINTN
+UninstallFindPartition (
+  IN CONST CHAR8           *Name,
+  OUT UNINSTALL_PARTITION *Out
 )
 {
   EFI_HANDLE *Handles;
   UINTN       Count = LocateHandles (&gEfiBlockIoProtocolGuid, &Handles);
-  UINTN       Miscs = 0;
+  UINTN       Found = 0;
+  // A disk can show up under two handles, so count each unique GUID once.
+  UINT8 Seen[4][16];
 
   for (UINTN Index = 0; Index < Count; Index++) {
     EFI_BLOCK_IO_PROTOCOL *BlockIo = UninstallBlockIo (Handles[Index]);
@@ -349,11 +349,31 @@ UninstallFindMisc (
     Verified =
       GptVerify (Block.Data, Block.Len, Array.Data, Array.Len, &Header);
     for (UINTN Entry = 0; Verified && Entry < Header.Entries; Entry++) {
-      // Every misc is counted; the first one found is kept.
-      if (GptEntryNamed (&Header, Array.Data, Array.Len, Entry, "misc") &&
-          Miscs++ == 0 &&
-          GptExtent (&Header, Array.Data, Array.Len, Entry, First, Last)) {
-        *Found = BlockIo;
+      UINT8   Unique[16];
+      BOOLEAN Again = FALSE;
+
+      if (!GptEntryNamed (&Header, Array.Data, Array.Len, Entry, Name) ||
+          !GptEntryUnique (&Header, Array.Data, Array.Len, Entry, Unique)) {
+        continue;
+      }
+      for (UINTN At = 0; At < Found && At < 4; At++) {
+        Again |= CompareMem (Seen[At], Unique, 16) == 0;
+      }
+      if (Again) {
+        continue;
+      }
+      if (Found < 4) {
+        CopyMem (Seen[Found], Unique, 16);
+      }
+      // Count them all, keep the first.
+      if (Found++ == 0 &&
+          GptExtent (
+            &Header, Array.Data, Array.Len, Entry, &Out->First, &Out->Last
+          ) &&
+          GptEntryAttributes (
+            &Header, Array.Data, Array.Len, Entry, &Out->Attributes
+          )) {
+        Out->BlockIo = BlockIo;
       }
     }
     BufferFree (&Block);
@@ -362,10 +382,30 @@ UninstallFindMisc (
   if (Handles) {
     gBS->FreePool (Handles);
   }
+  return Found;
+}
+
+BOOLEAN
+UninstallFindMisc (
+  OUT EFI_BLOCK_IO_PROTOCOL **Found,
+  OUT UINT64                 *First,
+  OUT UINT64                 *Last,
+  IN LOG_SINK                 Log
+)
+{
+  UNINSTALL_PARTITION Misc;
+  UINTN               Miscs = UninstallFindPartition ("misc", &Misc);
+
   if (Miscs > 1) {
     LogPrint (Log, "misc: %llu partitions", (UINT64)Miscs);
   }
-  return Miscs == 1;
+  if (Miscs != 1) {
+    return FALSE;
+  }
+  *Found = Misc.BlockIo;
+  *First = Misc.First;
+  *Last  = Misc.Last;
+  return TRUE;
 }
 
 EFI_STATUS

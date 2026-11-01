@@ -763,3 +763,47 @@ GptExtent (
   *End   = ReadLe64 (Entry + 40);
   return TRUE;
 }
+
+BOOLEAN
+GptEntryAttributes (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  OUT UINT64          *Attributes
+)
+{
+  CONST UINT8 *Entry;
+
+  if (Index >= EntryCount (Header, ArrayLen)) {
+    return FALSE;
+  }
+  Entry = Array + Index * Header->EntrySize;
+  if (!InUse (Entry)) {
+    return FALSE;
+  }
+  *Attributes = ReadLe64 (Entry + 48);
+  return TRUE;
+}
+
+BOOLEAN
+GptEntryUnique (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  OUT UINT8            Unique[16]
+)
+{
+  CONST UINT8 *Entry;
+
+  if (Index >= EntryCount (Header, ArrayLen)) {
+    return FALSE;
+  }
+  Entry = Array + Index * Header->EntrySize;
+  if (!InUse (Entry)) {
+    return FALSE;
+  }
+  CopyMem (Unique, Entry + 16, 16);
+  return TRUE;
+}

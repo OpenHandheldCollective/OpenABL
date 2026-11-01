@@ -138,6 +138,11 @@ typedef struct _SETTINGS {
 // Android's data. The first boot that isn't recovery's puts Linux back.
 #define SETTINGS_FLAG_LINUX_AFTER_RECOVERY "LinuxAfterRecovery"
 
+// Records kept in the store.
+
+// Last firmware update attempt, for the ESRT (Core/FwUpdate.h).
+#define SETTINGS_RECORD_FIRMWARE_UPDATE "FirmwareUpdate"
+
 // Rules
 
 VOID

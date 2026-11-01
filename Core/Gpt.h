@@ -201,4 +201,24 @@ GptExtent (
   OUT UINT64          *End
 );
 
+// FALSE if the entry is unused.
+BOOLEAN
+GptEntryUnique (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  OUT UINT8            Unique[16]
+);
+
+// FALSE if the entry is unused.
+BOOLEAN
+GptEntryAttributes (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             Index,
+  OUT UINT64          *Attributes
+);
+
 #endif

@@ -1,0 +1,123 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026-present Open Handheld Collective
+#   https://github.com/OpenHandheldCollective
+
+# Stages an OpenABL image on the ESP. OpenABL installs it on the next boot
+# into Linux.
+#
+#   openabl-update [--esp DIR] [--force] abl_signed-<CHIPSET>.elf
+#   openabl-update [--esp DIR] --cancel
+#   openabl-update --status
+
+set -eu
+
+ESRT=/sys/firmware/efi/esrt/entries/entry0
+# OpenABL's ESRT class, minus the chip id on the end.
+CLASS=c02d2ab2-3223-42be-9608-e280
+
+die() { echo "openabl-update: $*" >&2; exit 1; }
+
+usage() {
+  echo "usage: openabl-update [--esp DIR] [--force] IMAGE.elf" >&2
+  echo "       openabl-update [--esp DIR] --cancel" >&2
+  echo "       openabl-update --status" >&2
+  exit 2
+}
+
+pair() { echo "$(($1 >> 16)).$(($1 & 0xffff))"; }
+
+status_name() {
+  case $1 in
+    0) echo "success" ;;
+    1) echo "unsuccessful (see OpenABL's log)" ;;
+    2) echo "too large for the abl partition" ;;
+    3) echo "not newer than the installed version (use --force)" ;;
+    4) echo "not a valid image for this device" ;;
+    5) echo "damaged: its SHA-256 doesn't match" ;;
+    7) echo "battery too low; it stays staged for the next boot" ;;
+    *) echo "status $1" ;;
+  esac
+}
+
+status() {
+  [ -r "$ESRT/fw_class" ] || die "no ESRT: not booted through OpenABL"
+  case $(cat "$ESRT/fw_class") in
+    "$CLASS"*) ;;
+    *) die "the ESRT's firmware isn't OpenABL's ($(cat "$ESRT/fw_class"))" ;;
+  esac
+  echo "installed:    $(pair "$(cat "$ESRT/fw_version")")"
+  echo "last attempt: $(pair "$(cat "$ESRT/last_attempt_version")"), $(status_name "$(cat "$ESRT/last_attempt_status")")"
+}
+
+find_esp() {
+  if [ -n "$ESP" ]; then
+    [ -d "$ESP" ] || die "$ESP isn't a directory"
+    return
+  fi
+  ESP=$(bootctl --print-esp-path 2> /dev/null || :)
+  [ -n "$ESP" ] && return
+  for dir in /efi /boot/efi /boot; do
+    if [ "$(findmnt -n -o FSTYPE --target "$dir" 2> /dev/null)" = vfat ]; then
+      ESP=$dir
+      return
+    fi
+  done
+  die "no EFI system partition found; pass --esp"
+}
+
+# tag FILE OFFSET: a field from the image tag, empty if there isn't one.
+tag() {
+  at=$(LC_ALL=C grep -a -b -o OABLIMG1 "$1" 2> /dev/null | cut -d: -f1)
+  [ "$(echo "$at" | wc -w)" = 1 ] || return 0
+  dd if="$1" bs=1 skip=$((at + 8 + $2)) count=16 2> /dev/null | tr -d '\000'
+}
+
+ESP="" FORCE=0 CANCEL=0 IMAGE=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --esp) [ $# -ge 2 ] || usage; ESP=$2; shift ;;
+    --force) FORCE=1 ;;
+    --cancel) CANCEL=1 ;;
+    --status) status; exit 0 ;;
+    -*) usage ;;
+    *) [ -z "$IMAGE" ] || usage; IMAGE=$1 ;;
+  esac
+  shift
+done
+[ "$CANCEL" = 1 ] || [ -n "$IMAGE" ] || usage
+
+find_esp
+DIR=$ESP/openabl/update
+
+if [ "$CANCEL" = 1 ]; then
+  rm -f "$DIR"/*.elf "$DIR"/*.elf.sha256 "$DIR"/force
+  sync
+  echo "openabl-update: nothing staged on $ESP"
+  exit 0
+fi
+
+case $IMAGE in
+  *.elf) ;;
+  *) die "$IMAGE isn't an .elf image" ;;
+esac
+[ -f "$IMAGE" ] || die "$IMAGE doesn't exist"
+NAME=$(basename "$IMAGE")
+SUM=$(sha256sum "$IMAGE" | cut -d' ' -f1)
+if [ -f "$IMAGE.sha256" ]; then
+  [ "$(cut -d' ' -f1 "$IMAGE.sha256")" = "$SUM" ] || die "$IMAGE doesn't match $IMAGE.sha256"
+fi
+CHIPSET=$(tag "$IMAGE" 0)
+VERSION=$(tag "$IMAGE" 16)
+[ -n "$CHIPSET" ] || die "$IMAGE has no image tag (too old?)"
+
+mkdir -p "$DIR"
+rm -f "$DIR"/*.elf "$DIR"/*.elf.sha256 "$DIR"/force
+cp "$IMAGE" "$DIR/$NAME.tmp"
+mv "$DIR/$NAME.tmp" "$DIR/$NAME"
+echo "$SUM  $NAME" > "$DIR/$NAME.sha256"
+if [ "$FORCE" = 1 ]; then
+  : > "$DIR/force"
+fi
+sync
+echo "openabl-update: staged OpenABL $VERSION for $CHIPSET on $ESP, reboot into Linux to install"

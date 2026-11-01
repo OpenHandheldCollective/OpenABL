@@ -518,6 +518,27 @@ Done:
   return Status;
 }
 
+EFI_STATUS
+FilesDelete (
+  IN EFI_HANDLE   Fs,
+  IN CONST CHAR8 *Path
+)
+{
+  CHAR16            *WidePath = Ucs2 (Path);
+  EFI_FILE_PROTOCOL *File;
+
+  if (!WidePath) {
+    return EFI_INVALID_PARAMETER;
+  }
+  File = OpenFile (Fs, WidePath, EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE);
+  FreePool (WidePath);
+  if (!File) {
+    return EFI_NOT_FOUND;
+  }
+  // Delete closes the file even if it fails.
+  return File->Delete (File);
+}
+
 CHAR8 *
 FilesVolumeLabel (IN EFI_HANDLE Fs)
 {

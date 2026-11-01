@@ -251,12 +251,14 @@ UefiRtPropertiesTable (
 
 // Writes an ESRT with one entry for FwClass (an EFI_GUID's 16 bytes): the
 // firmware type and version, lowest supported version 0, no capsule flags,
-// and a successful last attempt at Version.
+// and the last attempt's version and status.
 VOID
 UefiEsrtOne (
   IN CONST UINT8 FwClass[16],
   IN UINT32      Type,
   IN UINT32      Version,
+  IN UINT32      LastAttemptVersion,
+  IN UINT32      LastAttemptStatus,
   OUT UINT8      Out[UEFI_ESRT_ONE_SIZE]
 );
 

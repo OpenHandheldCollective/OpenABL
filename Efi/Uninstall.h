@@ -47,6 +47,21 @@ UninstallWrite (
   IN UINTN                  Length
 );
 
+typedef struct _UNINSTALL_PARTITION {
+  EFI_BLOCK_IO_PROTOCOL *BlockIo;
+  UINT64                 First;
+  UINT64                 Last;
+  UINT64                 Attributes;
+} UNINSTALL_PARTITION;
+
+// Counts partitions called Name on writable fixed disks with a valid
+// primary GPT. Out gets the first.
+UINTN
+UninstallFindPartition (
+  IN CONST CHAR8          *Name,
+  OUT UNINSTALL_PARTITION *Out
+);
+
 // Finds misc on any writable fixed disk with a primary GPT whose CRCs
 // pass: its disk and first and last block. FALSE if there is none, or more
 // than one, as then which one recovery reads is a guess.
@@ -71,8 +86,8 @@ UninstallTable (
 );
 
 // Whether Linux is installed on internal storage, after userdata or as an
-// image in it. The first call connects the storage
-//looks and logs the answer; later calls return the,same answer.
+// image in it. The first call connects the storage, looks and logs the
+// answer; later calls return the same answer.
 BOOLEAN
 UninstallCfwOnInternal (
   IN UINT32   Chip,
