@@ -180,7 +180,8 @@ make FEATURES=standard-boot,card-logo
 (`En.c`, `ZhHans.c`), and the *Language* setting picks one at run time. To
 add a language, copy `Ui/Lang/En.c` to a new file, translate it and add one
 line to `Ui/Lang/Languages.h`; strings it leaves out show in English. The
-simulator renders it with `--lang` and the language's code.
+simulator renders it with `--lang` and the language's symbol from
+`Ui/Lang/Languages.h` (`En`, `ZhHans`).
 
 GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
 `v*` tag is pushed and uploads the images to that tag's release, with

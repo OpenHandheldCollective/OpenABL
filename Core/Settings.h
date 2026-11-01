@@ -61,13 +61,29 @@ typedef struct _SETTINGS {
   UINT16 ModelRotation;
   // Draw the card's /logo/ pictures, or the OpenABL wordmark, at boot.
   BOOLEAN CustomLogo;
-  // The menu's language, a LANG_ID from Ui/Lang.h.
+  // The menu's language, a LANG_ID from Ui/Lang.h. Stored as its Symbol.
   UINT8 Language;
 } SETTINGS;
 
 // Languages the menu offers (LANG_COUNT), counted from Ui/Lang/Languages.h.
 #define SETTINGS_LANGUAGE_ONE(Id, Symbol) +1
 #define SETTINGS_LANGUAGES                (0 LANG_LIST (SETTINGS_LANGUAGE_ONE))
+
+// Longest stored language, in bytes.
+#define SETTINGS_MAX_LANGUAGE_LEN 16
+
+// Returns how Lang is stored: its Symbol from LANG_LIST, or English's for
+// an unknown Lang.
+CONST CHAR8 *
+SettingsLanguageKey (IN UINT8 Lang);
+
+// Returns the language stored as the Len bytes at Key, or SETTINGS_LANGUAGES
+// if none is.
+UINT8
+SettingsLanguageFromKey (
+  IN CONST UINT8 *Key,
+  IN UINTN        Len
+);
 
 #define SETTINGS_KEY_BOOT_MODE        "BootMode"
 #define SETTINGS_KEY_ABL_MODE         "AblMode"

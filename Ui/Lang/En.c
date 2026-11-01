@@ -14,7 +14,6 @@
 
 CONST LANG_STRINGS gLangEn = {
   .Name              = "English",
-  .Code              = "en",
   .Language          = "Language",
   .LanguageExplain   = "The language the menu is shown in.",
   .SectionBoot       = "Boot",

@@ -6,13 +6,14 @@
 /**
   Main - renders the menu's screens to PNG on the host.
 
-    openabl-menu-sim [--out DIR] [--filter TEXT] [--lang en|zh-hans] [--check]
+    openabl-menu-sim [--out DIR] [--filter TEXT] [--lang En|ZhHans] [--check]
 
   For every panel and rotation it writes the main menu as the user sees it
   (*-view.png) and as the panel receives it (*-scanout.png, rotated). A few
   panel and rotation pairs also get every other screen. --check instead
   runs sessions of key presses and compares each frame with a full redraw
-  and with a freshly built view. --lang picks the menu's language.
+  and with a freshly built view. --lang picks the menu's language by its
+  Symbol in Ui/Lang/Languages.h.
 */
 
 #include <stdio.h>
@@ -1026,14 +1027,14 @@ main (
     } else if (!strcmp (Argv[Index], "--filter") && Index + 1 < Argc) {
       Filter = Argv[++Index];
     } else if (!strcmp (Argv[Index], "--lang") && Index + 1 < Argc &&
-               LangFromCode (Argv[Index + 1]) < LANG_COUNT) {
-      mLanguage = LangFromCode (Argv[++Index]);
+               LangFromSymbol (Argv[Index + 1]) < LANG_COUNT) {
+      mLanguage = LangFromSymbol (Argv[++Index]);
     } else if (!strcmp (Argv[Index], "--check")) {
       DoCheck = TRUE;
     } else {
       fprintf (
         stderr,
-        "usage: %s [--out DIR] [--filter TEXT] [--lang CODE] [--check]\n",
+        "usage: %s [--out DIR] [--filter TEXT] [--lang SYMBOL] [--check]\n",
         Argv[0]
       );
       return 2;

@@ -249,17 +249,21 @@ MenuLoadPrefs (
     *ModelRotation = Degrees;
   }
   BufferFree (&Owner);
-  *Language = MenuVarGet (SETTINGS_KEY_LANGUAGE, &Stored) && Stored.Len == 1 &&
-                  Stored.Data[0] < SETTINGS_LANGUAGES
-                ? Stored.Data[0]
-                : LANG_EN;
+  *Language = MenuVarGet (SETTINGS_KEY_LANGUAGE, &Stored) &&
+                  Stored.Len <= SETTINGS_MAX_LANGUAGE_LEN
+                ? SettingsLanguageFromKey (Stored.Data, Stored.Len)
+                : SETTINGS_LANGUAGES;
+  if (*Language >= SETTINGS_LANGUAGES) {
+    *Language = LANG_EN;
+  }
   BufferFree (&Stored);
 }
 
 VOID
 MenuSavePrefs (IN CONST SETTINGS *Settings)
 {
-  UINT8 Bytes[2];
+  UINT8        Bytes[2];
+  CONST CHAR8 *Key;
 
   WriteLe16 (
     Bytes, Settings->Rotation == ROTATION_AUTO ? NONE_U16 : Settings->Rotation
@@ -271,7 +275,8 @@ MenuSavePrefs (IN CONST SETTINGS *Settings)
   );
   WriteLe16 (Bytes, Settings->ModelRotation);
   VarSet (SETTINGS_KEY_MODEL_ROTATION, Bytes, 2);
-  VarSet (SETTINGS_KEY_LANGUAGE, &Settings->Language, 1);
+  Key = SettingsLanguageKey (Settings->Language);
+  VarSet (SETTINGS_KEY_LANGUAGE, (CONST UINT8 *)Key, AsciiStrLen (Key));
   MenuFlush ();
 }
 

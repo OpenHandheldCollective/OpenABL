@@ -12,6 +12,54 @@
 #include "Base/Buffer.h"
 #include "Base/Text.h"
 
+// Languages
+
+#define SETTINGS_LANGUAGE_KEY(Id, Symbol) #Symbol,
+
+// In LANG_LIST order, so a LANG_ID indexes it.
+STATIC CONST CHAR8 *CONST mLanguageKeys[SETTINGS_LANGUAGES] = {
+  LANG_LIST (SETTINGS_LANGUAGE_KEY)};
+
+#define SETTINGS_LANGUAGE_FITS(Id, Symbol) \
+  _Static_assert (sizeof (#Symbol) - 1 <= SETTINGS_MAX_LANGUAGE_LEN, #Symbol);
+LANG_LIST (SETTINGS_LANGUAGE_FITS)
+
+UINT8
+SettingsLanguageFromKey (
+  IN CONST UINT8 *Key,
+  IN UINTN        Len
+)
+{
+  for (UINT8 Lang = 0; Lang < SETTINGS_LANGUAGES; Lang++) {
+    CONST CHAR8 *Have  = mLanguageKeys[Lang];
+    UINTN        Index = 0;
+
+    while (Index < Len && Have[Index] && Have[Index] == (CHAR8)Key[Index]) {
+      Index++;
+    }
+    if (Index == Len && Have[Len] == 0) {
+      return Lang;
+    }
+  }
+  return SETTINGS_LANGUAGES;
+}
+
+// English, wherever LANG_LIST puts it.
+STATIC UINT8
+SettingsLanguageEnglish (VOID)
+{
+  return SettingsLanguageFromKey ((CONST UINT8 *)"En", 2);
+}
+
+CONST CHAR8 *
+SettingsLanguageKey (IN UINT8 Lang)
+{
+  if (Lang >= SETTINGS_LANGUAGES) {
+    Lang = SettingsLanguageEnglish ();
+  }
+  return mLanguageKeys[Lang];
+}
+
 VOID
 SettingsDefault (OUT SETTINGS *Settings)
 {
@@ -21,6 +69,7 @@ SettingsDefault (OUT SETTINGS *Settings)
     .BootSource    = BOOT_SOURCE_AUTO,
     .Rotation      = ROTATION_AUTO,
     .ModelRotation = ROTATION_NONE,
+    .Language      = SettingsLanguageEnglish (),
   };
 }
 
@@ -161,8 +210,9 @@ SettingsToVars (
   OUT SETTINGS_VAR   Out[SETTINGS_VARS]
 )
 {
-  UINTN Count    = 0;
-  UINTN ModelLen = 0;
+  UINTN        Count    = 0;
+  UINTN        ModelLen = 0;
+  CONST CHAR8 *Language = SettingsLanguageKey (Settings->Language);
 
   while (ModelLen < SETTINGS_MAX_MODEL_LEN && Settings->Model[ModelLen]) {
     ModelLen++;
@@ -180,7 +230,7 @@ SettingsToVars (
   Put (&Out[Count++], SETTINGS_KEY_MODEL, Settings->Model, ModelLen);
   PutLe16 (&Out[Count++], SETTINGS_KEY_MODEL_ROTATION, Settings->ModelRotation);
   PutU8 (&Out[Count++], SETTINGS_KEY_CUSTOM_LOGO, Settings->CustomLogo);
-  PutU8 (&Out[Count++], SETTINGS_KEY_LANGUAGE, Settings->Language);
+  Put (&Out[Count++], SETTINGS_KEY_LANGUAGE, Language, AsciiStrLen (Language));
   return Count;
 }
 
@@ -279,6 +329,7 @@ SettingsFromVars (
 {
   SETTINGS    Settings = *Defaults;
   OABL_BUFFER Model    = {0};
+  OABL_BUFFER Language = {0};
   UINT8       Byte8;
   UINT16      Word16;
 
@@ -324,9 +375,13 @@ SettingsFromVars (
   if (Byte (Get, Context, SETTINGS_KEY_CUSTOM_LOGO, &Byte8) && Byte8 <= 1) {
     Settings.CustomLogo = Byte8 == 1;
   }
-  if (Byte (Get, Context, SETTINGS_KEY_LANGUAGE, &Byte8) &&
-      Byte8 < SETTINGS_LANGUAGES) {
-    Settings.Language = Byte8;
+  if (Get (Context, SETTINGS_KEY_LANGUAGE, &Language) &&
+      Language.Len <= SETTINGS_MAX_LANGUAGE_LEN) {
+    Byte8 = SettingsLanguageFromKey (Language.Data, Language.Len);
+    if (Byte8 < SETTINGS_LANGUAGES) {
+      Settings.Language = Byte8;
+    }
   }
+  BufferFree (&Language);
   *Out = Settings;
 }

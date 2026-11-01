@@ -21,7 +21,8 @@
 
 #define LANG_ID_ENTRY(Id, Symbol) Id,
 
-// The stored values of the Language setting, from LANG_LIST.
+// The languages, in LANG_LIST order. Only held in memory: the Language
+// setting is stored as the language's Symbol.
 typedef enum { LANG_LIST (LANG_ID_ENTRY) LANG_COUNT } LANG_ID;
 
 // Only pointers to strings, so LangSet can fill a language's gaps one by
@@ -29,8 +30,6 @@ typedef enum { LANG_LIST (LANG_ID_ENTRY) LANG_COUNT } LANG_ID;
 typedef struct _LANG_STRINGS {
   // The language's name in itself, for the Language setting. Required.
   CONST CHAR8 *Name;
-  // Lowercase BCP 47 tag, for the simulator's --lang. Required.
-  CONST CHAR8 *Code;
   CONST CHAR8 *Language;
   CONST CHAR8 *LanguageExplain;
   CONST CHAR8 *SectionBoot;
@@ -182,9 +181,10 @@ LangSet (IN UINT8 Lang);
 CONST CHAR8 *
 LangName (IN UINT8 Lang);
 
-// Returns the language whose Code is Code, or LANG_COUNT if none is.
+// Returns the language whose LANG_LIST Symbol is Symbol ("ZhHans"), or
+// LANG_COUNT if none is.
 UINT8
-LangFromCode (IN CONST CHAR8 *Code);
+LangFromSymbol (IN CONST CHAR8 *Symbol);
 
 // Writes Template to Out with Args filled in. {} takes the next argument
 // and {0} or {1} a given one, so word order can differ between languages.

@@ -11,7 +11,6 @@
 
 CONST LANG_STRINGS gLangZhHans = {
   .Name                  = "简体中文",
-  .Code                  = "zh-hans",
   .Language              = "语言",
   .LanguageExplain       = "菜单显示所用的语言。",
   .SectionBoot           = "启动",
