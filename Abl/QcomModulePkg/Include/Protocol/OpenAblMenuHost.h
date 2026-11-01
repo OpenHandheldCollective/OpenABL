@@ -48,6 +48,11 @@
 #define OPENABL_MENU_ACTION_CHARGER_BOOT          16
 #define OPENABL_MENU_ACTION_CHARGER_SCREEN_ON     17
 #define OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF    18
+/* Just before a Linux image starts, on an unlocked device: gives Keymaster
+ * the unlocked (ORANGE) boot state Android would, so Android's storage keys
+ * work. Once per boot, so Android then needs a restart. Failure is not fatal.
+ */
+#define OPENABL_MENU_ACTION_NATIVE_KEYMASTER      19
 
 typedef struct {
   UINT8  OffmodeCharging; /* Qualcomm's charger screen flag */

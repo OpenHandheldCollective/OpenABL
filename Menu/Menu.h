@@ -162,6 +162,8 @@ MenuLiveUsbHostDown (IN CONST MENU_HOST *Host);
 
 // What booting needs from the ABL's state and the settings.
 typedef struct _MENU_BOOT_CONTEXT {
+  // The ABL, for the Keymaster setup before an image starts.
+  CONST MENU_HOST *Host;
   BOOT_SOURCE Source;
   BOOLEAN     CfwOnInternal;
   // Volume Up was held with "Volume up at boot" set to Linux (external).

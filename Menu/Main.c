@@ -106,6 +106,7 @@ BootContextOf (
   Caps = MenuCapsOf (&State);
   MenuStoredSettings (&State, &Caps, &Settings);
   *Ctx = (MENU_BOOT_CONTEXT){
+    .Host          = Host,
     .Source        = Settings.BootSource,
     .CfwOnInternal = Caps.CfwOnInternal,
     .AltVolumeBoot = State.AltVolumeBoot,
@@ -144,8 +145,9 @@ MenuBootVolumes (
   *Count   = Handles.Count;
 }
 
-// Installs the model's devicetree and reclaims memory just before an image
-// starts. If it returns, ReturnedToMenu reserves XBL's staging region again.
+// Sets up Keymaster, installs the model's devicetree and reclaims memory
+// just before an image starts. If it returns, ReturnedToMenu reserves XBL's
+// staging region again.
 STATIC VOID
 HandoverBefore (
   IN CONST MENU_BOOT_CONTEXT *Ctx,
@@ -162,6 +164,9 @@ HandoverBefore (
     .Version       = Ctx->Version,
   };
 
+  // Lets Linux use Android's storage keys. Once per boot; the ABL skips it
+  // on a locked device, and a failure only costs that.
+  MenuHostAction (Ctx->Host, OPENABL_MENU_ACTION_NATIVE_KEYMASTER);
   HandoverPrepare (&Prepare, gMenuEfiLog);
 }
 
