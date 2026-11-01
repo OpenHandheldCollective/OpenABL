@@ -41,8 +41,6 @@ typedef struct _SETTINGS_CAPS {
   BOOLEAN UsbHost;
   // Linux is installed on internal storage.
   BOOLEAN CfwOnInternal;
-  // Opened from inside the ABL, so there is no menu timeout.
-  BOOLEAN Embedded;
   // The A/B slots are unbootable. Offer the ABL's "Boot to Alternate Slot".
   BOOLEAN AlternateSlot;
   BOOLEAN DeviceInfo;
@@ -58,8 +56,6 @@ typedef struct _SETTINGS {
   BOOT_SOURCE BootSource;
   BOOLEAN     OffmodeCharging;
   UINT16      Rotation;
-  // Seconds the menu waits before booting. 0 boots at once.
-  UINT8 MenuTimeoutS;
   // Empty when not set. A stored DeviceModel containing a NUL is cut there.
   CHAR8  Model[MODEL_LEN + 1];
   UINT16 ModelRotation;
@@ -73,16 +69,12 @@ typedef struct _SETTINGS {
 #define SETTINGS_LANGUAGE_ONE(Id, Symbol) +1
 #define SETTINGS_LANGUAGES                (0 LANG_LIST (SETTINGS_LANGUAGE_ONE))
 
-// Menu timeout choices, in seconds.
-extern CONST UINT8 gSettingsTimeoutChoices[4];
-
 #define SETTINGS_KEY_BOOT_MODE        "BootMode"
 #define SETTINGS_KEY_ABL_MODE         "AblMode"
 #define SETTINGS_KEY_ALT_VOLUME_UP    "AltVolumeUp"
 #define SETTINGS_KEY_BOOT_SOURCE      "BootSource"
 #define SETTINGS_KEY_OFFMODE_CHARGING "OffmodeCharging"
 #define SETTINGS_KEY_ROTATION         "DisplayRotation"
-#define SETTINGS_KEY_MENU_TIMEOUT     "MenuTimeout"
 #define SETTINGS_KEY_MODEL            "DeviceModel"
 #define SETTINGS_KEY_MODEL_ROTATION   "DeviceModelRotation"
 // Set by the menu: the model that DeviceModelRotation belongs to.
@@ -136,10 +128,6 @@ SettingsNextRotation (IN OUT SETTINGS *Settings);
 UINT16
 SettingsEffectiveRotation (IN CONST SETTINGS *Settings);
 
-// Moves to the next timeout choice. An unlisted value counts as the first.
-VOID
-SettingsNextTimeout (IN OUT SETTINGS *Settings);
-
 // A stored variable. An empty value deletes it.
 typedef struct _SETTINGS_VAR {
   CONST CHAR8 *Name;
@@ -147,7 +135,7 @@ typedef struct _SETTINGS_VAR {
   UINTN        Len;
 } SETTINGS_VAR;
 
-#define SETTINGS_VARS 11
+#define SETTINGS_VARS 10
 
 // Converts the settings to variables. Returns the count, SETTINGS_VARS.
 UINTN

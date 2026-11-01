@@ -142,7 +142,6 @@ typedef enum {
   ITEM_CHARGING,
   ITEM_ROTATION,
   ITEM_CUSTOM_LOGO,
-  ITEM_TIMEOUT,
   ITEM_MODEL,
   ITEM_UNINSTALL,
   ITEM_DEVICE_INFO,
@@ -313,14 +312,11 @@ AppInit (
   IN CONST CHAR8         *Version
 );
 
-// Decides what happens at power-on. With ForceMenu (a key held, or a
-// restart into the menu) the menu stays. Otherwise it counts down the menu
-// timeout, or boots at once if the timeout is 0.
-COMMAND
+// Opens the menu at power-on.
+VOID
 AppStart (
   IN OUT APP *A,
-  IN UINT64   Now,
-  IN BOOLEAN  ForceMenu
+  IN UINT64   Now
 );
 
 // Opens Boot entries before a boot, with the default first. With TimeoutS

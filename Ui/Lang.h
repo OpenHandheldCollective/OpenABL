@@ -62,8 +62,6 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *Rotation;
   CONST CHAR8 *CustomLogo;
   CONST CHAR8 *RotationAuto;
-  CONST CHAR8 *Timeout;
-  CONST CHAR8 *Seconds;
   CONST CHAR8 *DeviceModel;
   CONST CHAR8 *NotSet;
   CONST CHAR8 *UninstallCfw;

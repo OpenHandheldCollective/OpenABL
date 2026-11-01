@@ -199,25 +199,14 @@ BeginBoot (IN OUT APP *A)
   return Command (COMMAND_BOOT, 0);
 }
 
-COMMAND
+VOID
 AppStart (
   IN OUT APP *A,
-  IN UINT64   Now,
-  IN BOOLEAN  ForceMenu
+  IN UINT64   Now
 )
 {
   A->Now   = Now;
   A->Dirty = TRUE;
-  if (ForceMenu) {
-    return None ();
-  }
-  if (A->Settings.MenuTimeoutS == 0) {
-    return BeginBoot (A);
-  }
-  A->Countdown      = TRUE;
-  A->CountdownMs    = (UINT64)A->Settings.MenuTimeoutS * 1000;
-  A->CountdownUntil = Now + A->CountdownMs;
-  return None ();
 }
 
 VOID
@@ -557,14 +546,11 @@ AppRows (
   ADD_ITEM (ITEM_CHARGING);
   ADD_ITEM (ITEM_ROTATION);
   ADD_ITEM (ITEM_CUSTOM_LOGO);
-  if (!Caps->Embedded) {
-    ADD_ITEM (ITEM_TIMEOUT);
-  }
   if (SettingsModelVisible (Settings)) {
     ADD_ITEM (ITEM_MODEL);
   }
   // Experiments, in debug builds only.
-  if (A->Debug && Caps->Embedded) {
+  if (A->Debug) {
     ADD_HEADER (gStrings->SectionDebug);
     if (Caps->UsbHost) {
       ADD_ITEM (ITEM_USB_LIVE);
@@ -762,18 +748,6 @@ AppItemView (
       Value, Cap, Settings->CustomLogo ? gStrings->On : gStrings->Off
     );
     break;
-  case ITEM_TIMEOUT:
-    View->Icon  = ICON_CLOCK;
-    View->Label = gStrings->Timeout;
-    if (Settings->MenuTimeoutS == 0) {
-      AsciiStrCopy (Value, Cap, gStrings->Off);
-    } else {
-      CHAR8        Seconds[4];
-      CONST CHAR8 *Arg = Seconds;
-      AsciiStrFromU64 (Seconds, sizeof (Seconds), Settings->MenuTimeoutS);
-      LangFill (Value, Cap, gStrings->Seconds, &Arg, 1);
-    }
-    break;
   case ITEM_MODEL:
     View->Icon  = ICON_GAMEPAD;
     View->Label = gStrings->DeviceModel;
@@ -880,9 +854,6 @@ Activate (
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_CUSTOM_LOGO:
     Settings->CustomLogo = !Settings->CustomLogo;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
-  case ITEM_TIMEOUT:
-    SettingsNextTimeout (Settings);
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_MODEL:
     A->Screen = SCREEN_SCANNING;
