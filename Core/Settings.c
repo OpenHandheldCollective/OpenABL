@@ -33,8 +33,7 @@ SettingsToggleBootMode (
 )
 {
   if (Settings->BootMode == BOOT_MODE_LINUX) {
-    Settings->BootMode   = BOOT_MODE_ANDROID;
-    Settings->BootSource = BOOT_SOURCE_INTERNAL;
+    Settings->BootMode = BOOT_MODE_ANDROID;
   } else {
     Settings->BootMode = BOOT_MODE_LINUX;
     if (Settings->BootSource == BOOT_SOURCE_INTERNAL && !Caps->CfwOnInternal) {

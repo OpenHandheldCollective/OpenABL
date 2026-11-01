@@ -104,8 +104,7 @@ extern CONST UINT8 gSettingsTimeoutChoices[4];
 VOID
 SettingsDefault (OUT SETTINGS *Settings);
 
-// Switches between Linux and Android. Android boots from internal storage.
-// Back in Linux, internal storage stays only if Linux is installed there.
+// Switches between Linux and Android.
 VOID
 SettingsToggleBootMode (
   IN OUT SETTINGS        *Settings,
