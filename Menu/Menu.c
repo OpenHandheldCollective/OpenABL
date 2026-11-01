@@ -282,7 +282,6 @@ MenuCapsOf (IN CONST MENU_HOST_STATE *State)
     .Android       = TRUE,
     .UsbHost       = (State->Flags & OPENABL_MENU_STATE_USB_HOST) != 0,
     .CfwOnInternal = UninstallCfwOnInternal (QuirksChipId (), gMenuEfiLog),
-    .Embedded      = TRUE,
     .AlternateSlot = (State->Flags & OPENABL_MENU_STATE_ALTERNATE_SLOT) != 0,
     .DeviceInfo    = TRUE,
     .Log           = TRUE,
@@ -1543,7 +1542,7 @@ RunMenu (
     }
     AppStartEntries (&mApp, ClockNowMs (), TimeoutS);
   } else {
-    AppStart (&mApp, ClockNowMs (), TRUE);
+    AppStart (&mApp, ClockNowMs ());
   }
   {
     BOOLEAN    Ok;
