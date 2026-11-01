@@ -40,11 +40,6 @@ STATIC struct {
 
 STATIC LOG_SINK mLog;
 
-// The device model of another version's store that was replaced, kept for
-// VariablesSetUp.
-STATIC UINT8 mKeptModel[SETTINGS_MAX_MODEL_LEN];
-STATIC UINTN mKeptModelLength;
-
 // Finds misc's last 4 KiB. FALSE, logging why the first time, if there is
 // no single misc or its blocks don't fit the store.
 STATIC BOOLEAN
@@ -78,25 +73,7 @@ Locate (VOID)
   return TRUE;
 }
 
-// Finds the model to start a new store with: the one kept from another
-// version's store, else the one an older loader stored (MigrateModel).
-STATIC BOOLEAN
-CarriedModel (
-  OUT UINT8         Out[SETTINGS_MAX_MODEL_LEN],
-  OUT UINTN        *Length,
-  OUT CONST CHAR8 **From
-)
-{
-  if (mKeptModelLength) {
-    CopyMem (Out, mKeptModel, mKeptModelLength);
-    *Length = mKeptModelLength;
-    *From   = "the other version's settings in misc";
-    return TRUE;
-  }
-  return MigrateModel (Out, Length, From);
-}
-
-// Logs the model CarriedModel found.
+// Logs a device model carried over into a new store.
 STATIC VOID
 LogMigrated (
   IN CONST UINT8 *Model,
@@ -115,8 +92,9 @@ LogMigrated (
   );
 }
 
-// Without misc, an empty store holding any carried model, so the settings
-// can still be changed for this boot. Flushes don't write it.
+// Without misc, an empty store holding any model an older loader stored,
+// so the settings can still be changed for this boot. Flushes don't write
+// it.
 STATIC VOID
 Fallback (VOID)
 {
@@ -128,7 +106,7 @@ Fallback (VOID)
     return;
   }
   SettingsStoreFormat (mStore.Store);
-  if (CarriedModel (Model, &Length, &From) &&
+  if (MigrateModel (Model, &Length, &From) &&
       SettingsStoreSet (mStore.Store, SETTINGS_KEY_MODEL, Model, Length)) {
     LogMigrated (Model, Length, From);
   }
@@ -172,15 +150,6 @@ VariablesLoad (IN LOG_SINK Log)
   }
   CopyMem (mStore.Store, Raw.Data, SETTINGS_STORE_SIZE);
   BufferFree (&Raw);
-  // Keep the model from the fixed header, which every version keeps,
-  // before another version's store is replaced. A model too long to be one
-  // is ignored.
-  if (!SettingsStoreValid (mStore.Store) &&
-      SettingsStoreModel (mStore.Store, &Model) &&
-      Model.Len <= SETTINGS_MAX_MODEL_LEN) {
-    CopyMem (mKeptModel, Model.Ptr, Model.Len);
-    mKeptModelLength = Model.Len;
-  }
   State         = SettingsStoreOpen (mStore.Store);
   mStore.Loaded = TRUE;
   mStore.Ready  = TRUE;
@@ -193,6 +162,9 @@ VariablesLoad (IN LOG_SINK Log)
     break;
   case SETTINGS_STORE_OTHER_VERSION:
     LogLine (mLog, "settings: misc has another version's settings: replaced");
+    if (SettingsStoreGet (mStore.Store, SETTINGS_KEY_MODEL, &Model)) {
+      LogMigrated (Model.Ptr, Model.Len, "the other version's settings");
+    }
     break;
   case SETTINGS_STORE_DAMAGED:
     LogLine (mLog, "settings: misc's store is damaged: replaced");
@@ -300,15 +272,18 @@ VariablesSetUp (IN LOG_SINK Log)
   UINT8        Model[SETTINGS_MAX_MODEL_LEN];
   UINTN        Length;
   CONST CHAR8 *From;
+  OABL_BYTES   Held;
   EFI_STATUS   Status = EFI_SUCCESS;
 
   if (!VariablesLoad (Log) || !mStore.Fresh) {
     return;
   }
   // Write the new store even if there is no model to carry over, so the
-  // next boot finds it.
+  // next boot finds it. A store that replaced another version's already
+  // holds that one's model.
   mStore.Dirty = TRUE;
-  if (CarriedModel (Model, &Length, &From)) {
+  if (!SettingsStoreGet (mStore.Store, SETTINGS_KEY_MODEL, &Held) &&
+      MigrateModel (Model, &Length, &From)) {
     Status = VariablesPut (SETTINGS_KEY_MODEL, Model, Length);
     if (Status == EFI_SUCCESS) {
       LogMigrated (Model, Length, From);
