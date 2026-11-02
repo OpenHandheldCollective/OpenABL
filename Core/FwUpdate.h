@@ -49,15 +49,19 @@ typedef struct _FW_UPDATE_INPUT {
   // The active slot's abl.
   OABL_BYTES Installed;
   // The smaller of the two abl partitions.
-  UINT64  PartitionSize;
+  UINT64 PartitionSize;
+  // ChipInfo id, 0 if unknown.
+  UINT32  Chip;
   BOOLEAN Force;
 } FW_UPDATE_INPUT;
 
 typedef struct _FW_UPDATE_CHECK {
   UINT32 Status;
   // major << 16 | minor
-  UINT32    Version;
-  BOOLEAN   AlreadyInstalled;
+  UINT32  Version;
+  BOOLEAN AlreadyInstalled;
+  // The image is for other chips.
+  BOOLEAN   OtherDevice;
   ABL_IMAGE New;
   ABL_IMAGE Old;
   CHAR8     Why[96];

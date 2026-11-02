@@ -219,6 +219,7 @@ ReadTag (
 {
   CONST UINT8 *Found = NULL;
   UINTN        Magic = sizeof (ABL_IMAGE_TAG_MAGIC) - 1;
+  UINT32       Count = 0;
 
   for (UINTN At = 0; At + Magic <= Size; At++) {
     if (Data[At] == ABL_IMAGE_TAG_MAGIC[0] &&
@@ -227,10 +228,22 @@ ReadTag (
         return FALSE;
       }
       Found = Data + At;
+      Count = ReadLe32 (Found + ABL_IMAGE_TAG_SIZE - 4);
+      if (Count == 0 || Count > ABL_IMAGE_MAX_CHIPS ||
+          !InBounds (Size, At, ABL_IMAGE_TAG_SIZE + 4 * Count)) {
+        return FALSE;
+      }
     }
   }
-  return !Found || (TagText (Found + Magic, Out->Chipset) &&
-                    TagText (Found + Magic + ABL_IMAGE_TEXT_MAX, Out->Version));
+  if (!Found) {
+    return TRUE;
+  }
+  for (UINTN Index = 0; Index < Count; Index++) {
+    Out->Chips[Index] = ReadLe32 (Found + ABL_IMAGE_TAG_SIZE + 4 * Index);
+  }
+  Out->ChipCount = Count;
+  return TagText (Found + Magic, Out->Name) &&
+         TagText (Found + Magic + ABL_IMAGE_TEXT_MAX, Out->Version);
 }
 
 ABL_IMAGE_RESULT
@@ -298,6 +311,20 @@ AblImageRead (
     }
   }
   return ReadTag (Data, Out->Size, Out) ? ABL_IMAGE_OK : ABL_IMAGE_BAD_TAG;
+}
+
+BOOLEAN
+AblImageForChip (
+  IN CONST ABL_IMAGE *Image,
+  IN UINT32           Chip
+)
+{
+  for (UINTN Index = 0; Index < Image->ChipCount; Index++) {
+    if (Image->Chips[Index] == Chip) {
+      return TRUE;
+    }
+  }
+  return FALSE;
 }
 
 CONST CHAR8 *

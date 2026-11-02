@@ -17,6 +17,7 @@
 #include "Base/Text.h"
 #include "Core/Panel.h"
 #include "Core/Settings.h"
+#include "Efi/Quirks.h"
 #include "Efi/Variables.h"
 
 #define LINE_SIZE 160
@@ -411,6 +412,24 @@ typedef enum {
 } DECISION;
 
 STATIC DECISION mDecision;
+STATIC BOOLEAN  mPark;
+
+// SM8650, SM8750 and SM7750: display on before the boot and off at
+// ExitBootServices unless a tree says otherwise, like LinuxLoader.
+STATIC BOOLEAN
+Parks (IN UINT32 Chip)
+{
+  switch (Chip) {
+  case 682:
+  case 639:
+  case 706:
+  case 659:
+  case 732:
+    return TRUE;
+  default:
+    return FALSE;
+  }
+}
 
 VOID
 DisplayHandoverReset (VOID)
@@ -435,11 +454,7 @@ KeepAtExit (VOID)
   default:
     break;
   }
-#ifdef OABL_PARK_DISPLAY
-  return FALSE;
-#else
-  return TRUE;
-#endif
+  return !mPark;
 }
 
 STATIC VOID EFIAPI
@@ -466,12 +481,11 @@ DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   // Read the settings now: at ExitBootServices only the copy in memory is
   // read.
   VariablesLoad (LOG_QUIET);
+  mPark  = Parks (QuirksChipId ());
   mPower = LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
   if (!mPower) {
     Say (Log, "arm: no display power protocol");
-  }
-#ifdef OABL_PARK_DISPLAY
-  else {
+  } else if (mPark) {
     EFI_DISPLAY_POWER_STATE State = 0;
 
     Status = mPower->GetDisplayPowerState (mPower, &State);
@@ -484,7 +498,6 @@ DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL)
       Say (Log, "arm: set on: %s", StatusString (Status, Scratch));
     }
   }
-#endif
   Status = gBS->CreateEvent (
     EVT_SIGNAL_EXIT_BOOT_SERVICES, TPL_CALLBACK, AtExit, NULL, &Event
   );

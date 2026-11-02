@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Builds the ABL with the menu program for one or more chipsets:
+# Builds the ABL with the menu program, one image per MBN version:
 #
-#   ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]
+#   ./build.sh <image|chipset...|all> [--debug] [--no-standard-boot] [--clean]
 #
-# Needs git and Docker. The sources are fetched by Scripts/fetch.sh; the
-# program (Makefile) and the ABL (Scripts/abl.sh) are built in the tianocore
-# container. Images go to build/out/abl_signed-<CHIPSET>.elf, the full log
-# to build/abl-build.log.
+# A chipset builds its image. Needs git and Docker. The sources are
+# fetched by Scripts/fetch.sh; the program (Makefile) and the ABL
+# (Scripts/abl.sh) are built in the tianocore container. Images go to
+# build/out/abl_signed-<IMAGE>.elf, the full log to build/abl-build.log.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -21,32 +21,44 @@ VERSION=$(cat VERSION)
 IMAGE=ghcr.io/tianocore/containers/fedora-40-dev:latest
 # The ABL tree's path in the container; its build cache stores this path.
 WORKSPACE=/workspaces/LinuxLoader
-CHIPSETS="sdm845 sm4450 sm6115 sm6450 sm7675 sm8250 sm8475 sm8550 sm8650 sm8750"
+IMAGES="mbn5 mbn6 mbn7"
+CHIPSETS="sdm845 sm4450 sm6115 sm6450 sm7675 sm7750 sm8250 sm8475 sm8550 sm8650 sm8750"
 
 usage() {
-  echo "usage: ./build.sh <chipset...|all> [--debug] [--no-standard-boot] [--clean]" >&2
+  echo "usage: ./build.sh <image|chipset...|all> [--debug] [--no-standard-boot] [--clean]" >&2
+  echo "images: $IMAGES" >&2
   echo "chipsets: $CHIPSETS" >&2
   exit 1
 }
 
-# Per-chipset settings, as in Qualcomm's make_abl.sh: signing version,
-# protected VM firmware, whether XBL has the kernel protocol (SDM845's
-# doesn't), whether to bundle edk2's USB host stack (where XBL has none),
-# extra ABL make parameters, and extra program features.
-chipset() {
-  SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1 BUNDLED_USB=0 ABL_EXTRA="" OWN="" OWN_FULL=""
+# Each chipset's image. Chips signed with the same MBN version share one;
+# per-chip fixes check the id at runtime.
+image_of() {
   case $1 in
-    sdm845) SIGN=-v5 PVMFW=false KERNEL_PROTOCOL=0 OWN=loader-quirks ;;
-    sm4450) OWN=sdcc-sm4450 ;;
-    sm6115) SIGN=-v6 PVMFW=false BUNDLED_USB=1 ABL_EXTRA=TARGET_SOC_SM6115=1 OWN=loader-quirks ;;
-    sm6450) OWN=sdcc-sm6450 ;;
-    sm7675) OWN=sdcc-sm7675 ;;
-    sm8475) PVMFW=false ;;
-    sm8550) ;;
-    sm8650) OWN=park-display ;;
-    sm8750) OWN=park-display OWN_FULL=sysfont ;;
-    sm8250) SIGN=-v6 PVMFW=false ;;
-    *) echo "unknown chipset $1" >&2; usage ;;
+    sdm845) echo mbn5 ;;
+    sm6115 | sm8250) echo mbn6 ;;
+    sm4450 | sm6450 | sm7675 | sm7750 | sm8475 | sm8550 | sm8650 | sm8750) echo mbn7 ;;
+    mbn5 | mbn6 | mbn7) echo "$1" ;;
+    *) echo "unknown image or chipset $1" >&2; usage ;;
+  esac
+}
+
+# Per-image settings, as in Qualcomm's make_abl.sh: signing version, the
+# ChipInfo ids of its chips (for the image tag), protected VM firmware,
+# whether XBL has the kernel protocol (SDM845's doesn't), whether to bundle
+# edk2's USB host stack (SM6115's XBL has none), and extra program features.
+image() {
+  case $1 in
+    # SDM845, SDA845.
+    mbn5) SIGN=-v5 IDS=321,341 PVMFW=false KERNEL_PROTOCOL=0 BUNDLED_USB=0
+      OWN=loader-quirks OWN_FULL="" ;;
+    # SM6115 and QCS6125, SM8250.
+    mbn6) SIGN=-v6 IDS=444,467,356 PVMFW=false KERNEL_PROTOCOL=1 BUNDLED_USB=1
+      OWN=loader-quirks OWN_FULL="" ;;
+    # SM4450, SM6450, SM7675, SM8475, SM8550 and QCS8550, SM8650, SM8750 and
+    # Q8750, and SM7750, which ran SM8750's image.
+    mbn7) SIGN=-v7 IDS=654,634,700,531,601,603,682,639,706,659,732 PVMFW=true KERNEL_PROTOCOL=1
+      BUNDLED_USB=0 OWN=sdcc-sm4450,sdcc-sm6450,sdcc-sm7675 OWN_FULL=sysfont ;;
   esac
 }
 
@@ -57,13 +69,15 @@ while [ $# -gt 0 ]; do
     --no-standard-boot) STANDARD_BOOT=0 ;;
     --clean) CLEAN=1 ;;
     -*) echo "unknown option $1" >&2; usage ;;
-    all) ASKED+=($CHIPSETS) ;;
-    *) ASKED+=("$(echo "$1" | tr A-Z a-z)") ;;
+    all) ASKED+=($IMAGES) ;;
+    *)
+      name=$(image_of "$(echo "$1" | tr A-Z a-z)")
+      [[ " ${ASKED[*]} " == *" $name "* ]] || ASKED+=("$name")
+      ;;
   esac
   shift
 done
 [ ${#ASKED[@]} -gt 0 ] || usage
-for soc in "${ASKED[@]}"; do chipset "$soc"; done
 
 command -v git > /dev/null || { echo "git is needed" >&2; exit 1; }
 docker info > /dev/null 2>&1 || { echo "Docker isn't running" >&2; exit 1; }
@@ -89,7 +103,7 @@ if ! docker image inspect "$TAG" > /dev/null 2>&1; then
   docker build -q --platform linux/amd64 -t "$TAG" build/image > /dev/null
 fi
 
-# Script for the container: build the program, then the ABL, per chipset.
+# Script for the container: build the program, then the ABL, per image.
 COMMON=(
   "PREBUILT_HOST_TOOLS=BUILD_CC=clang BUILD_CXX=clang++ LDPATH=-fuse-ld=lld BUILD_AR=llvm-ar"
   QSPA_BOOTCONFIG_ENABLE=0 AB_RETRYCOUNT_DISABLE=0 VERIFIED_BOOT_ENABLED=1
@@ -102,26 +116,25 @@ SCRIPT="exec 2>&1
 export ABL_CLEAN=$CLEAN
 . /openabl/Scripts/abl.sh
 "
-for soc in "${ASKED[@]}"; do
-  chipset "$soc"
+for name in "${ASKED[@]}"; do
+  image "$name"
   features=""
   [ "$STANDARD_BOOT" = 1 ] && features="standard-boot,card-logo${OWN_FULL:+,$OWN_FULL}"
-  for f in $OWN $([ "$DEBUG" = 1 ] && echo debug); do
+  for f in ${OWN//,/ } $([ "$DEBUG" = 1 ] && echo debug); do
     features="${features:+$features,}$f"
   done
   params=("${COMMON[@]}" "PVMFW_ENABLED=$PVMFW" "DISABLE_KERNEL_PROTOCOL=$((1 - KERNEL_PROTOCOL))")
   [ "$BUNDLED_USB" = 1 ] && params+=(ABL_USB_HOST_BUNDLED_STACK=1)
-  [ -n "$ABL_EXTRA" ] && params+=("$ABL_EXTRA")
   quoted=$(printf " '%s'" "${params[@]}")
-  SCRIPT+="echo \"Building the program for $soc ($features)\"
-make -s -C /openabl FEATURES='$features' OBJ=build/obj-abl OUT=build/menu/$soc || { echo \"ERROR: the program didn't build for $soc.\"; exit 1; }
-build $soc /openabl/build/menu/$soc/openabl-menu.efi $SIGN$quoted || exit 1
+  SCRIPT+="echo \"Building the program for $name ($features)\"
+make -s -C /openabl FEATURES='$features' OBJ=build/obj-abl OUT=build/menu/$name || { echo \"ERROR: the program didn't build for $name.\"; exit 1; }
+build $name /openabl/build/menu/$name/openabl-menu.efi $SIGN $IDS$quoted || exit 1
 "
 done
 
 # Progress lines to show; everything else goes only to the log.
 show() {
-  grep --line-buffered -E "Building the program|Starting build for Chipset|SUCCESS:|ERROR|error:|NOTE:|> Incremental build failed|KiB\)" |
+  grep --line-buffered -E "Building the program|Starting build for image|SUCCESS:|ERROR|error:|NOTE:|> Incremental build failed|KiB\)" |
     grep --line-buffered -v "^expr:" | sed 's/^/  /'
 }
 
@@ -166,17 +179,17 @@ done
 rm -f build/.silent
 
 echo "build: $((($(date +%s) - STARTED) / 60)) minutes"
-for soc in "${ASKED[@]}"; do
-  elf=build/out/abl_signed-$(echo "$soc" | tr a-z A-Z).elf
+for name in "${ASKED[@]}"; do
+  elf=build/out/abl_signed-$(echo "$name" | tr a-z A-Z).elf
   if [ -f "$elf" ] && [ "$(mtime "$elf")" -ge "$STARTED" ]; then
     echo "  $elf ($(($(wc -c < "$elf") / 1024)) KiB) sha256 $(cut -d' ' -f1 "$elf.sha256")"
   else
-    echo "  $soc: not built"
+    echo "  $name: not built"
   fi
 done
 [ "$status" = 0 ] || { echo "build: the build failed; see $LOG" >&2; exit 1; }
 
-for soc in "${ASKED[@]}"; do
-  upper=$(echo "$soc" | tr a-z A-Z)
-  Scripts/build-recovery-flashable.zip "build/out/abl_signed-$upper.elf" "build/out/openabl-recovery-flashable-$soc.zip"
+for name in "${ASKED[@]}"; do
+  upper=$(echo "$name" | tr a-z A-Z)
+  Scripts/build-recovery-flashable.zip "build/out/abl_signed-$upper.elf" "build/out/openabl-recovery-flashable-$name.zip"
 done

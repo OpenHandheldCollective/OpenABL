@@ -15,9 +15,6 @@
 #   sdcc-sm4450       SD card fix for SM4450's XBL (also sdcc-sm6450,
 #                     sdcc-sm7675)
 #   loader-quirks     XBL workarounds needed by OS loaders (SDM845, SM6115)
-#   park-display      set the display on before the boot, and off at
-#                     ExitBootServices when no devicetree was seen, as
-#                     LinuxLoader did on these chips (SM8650, SM8750)
 #   debug             Debug section in the menu (adds sd-diagnostics and
 #                     display-quiesce)
 #
@@ -48,8 +45,7 @@ FEATURES ?= standard-boot,sysfont,card-logo,sdcc-sm4450,sdcc-sm6450,sdcc-sm7675,
 OUT      ?= build/menu
 
 KNOWN := standard-boot sysfont card-logo sdcc-sm4450 sdcc-sm6450 sdcc-sm7675 \
-	sd-diagnostics display-quiesce loader-quirks park-display \
-	debug
+	sd-diagnostics display-quiesce loader-quirks debug
 comma := ,
 LIST := $(subst $(comma), ,$(FEATURES))
 LIST += $(if $(filter debug,$(LIST)),sd-diagnostics display-quiesce)

@@ -17,6 +17,7 @@
 #include "Core/FwUpdate.h"
 #include "Core/Settings.h"
 #include "Efi/Files.h"
+#include "Efi/Quirks.h"
 #include "Efi/Uninstall.h"
 #include "Efi/Variables.h"
 
@@ -27,6 +28,7 @@
 #define IMAGE_LIMIT  ((UINTN)1 << 20)
 #define SHA256_LIMIT 4096
 #define WRITE_TRIES  3
+#define MAX_STAGED   16
 
 // Active slot first. Letter is 0 on devices without slots.
 typedef struct _ABL_SLOTS {
@@ -48,29 +50,37 @@ NameBefore (
   return (UINT8)*A < (UINT8)*B;
 }
 
-// First *.elf by name. Caller frees it.
-STATIC CHAR8 *
-StagedPath (IN EFI_HANDLE Fs)
+// The *.elf files, sorted by name. Caller frees each path.
+STATIC UINTN
+StagedPaths (
+  IN EFI_HANDLE Fs,
+  OUT CHAR8    *Paths[MAX_STAGED]
+)
 {
   FILES_DIR_ENTRIES Entries = {0};
-  CONST CHAR8      *First   = NULL;
-  CHAR8            *Path    = NULL;
+  UINTN             Count   = 0;
 
   FilesList (Fs, FW_UPDATE_DIR, &Entries);
-  for (UINTN Index = 0; Index < Entries.Count; Index++) {
+  for (UINTN Index = 0; Index < Entries.Count && Count < MAX_STAGED; Index++) {
     CONST CHAR8 *Name = Entries.Items[Index].Name;
+    CHAR8       *Path;
+    UINTN        At;
 
-    if (!Entries.Items[Index].IsDir &&
-        TextEndsWithNoCase (TextOf (Name), ".elf") &&
-        (!First || NameBefore (Name, First))) {
-      First = Name;
+    if (Entries.Items[Index].IsDir ||
+        !TextEndsWithNoCase (TextOf (Name), ".elf")) {
+      continue;
     }
-  }
-  if (First) {
-    Path = SPrintAlloc ("%s\\%s", FW_UPDATE_DIR, First);
+    Path = SPrintAlloc ("%s\\%s", FW_UPDATE_DIR, Name);
+    if (!Path) {
+      continue;
+    }
+    for (At = Count++; At > 0 && NameBefore (Path, Paths[At - 1]); At--) {
+      Paths[At] = Paths[At - 1];
+    }
+    Paths[At] = Path;
   }
   FilesEntriesFree (&Entries);
-  return Path;
+  return Count;
 }
 
 // The active slot comes from boot_a/boot_b, the same way the ABL picks it.
@@ -219,30 +229,71 @@ Record (
 }
 
 STATIC VOID
-RemoveStaged (
+Remove (
   IN EFI_HANDLE   Fs,
   IN CONST CHAR8 *Path,
   IN LOG_SINK     Log
 )
 {
-  CHAR8       *Sha256   = SPrintAlloc ("%s.sha256", Path);
-  CONST CHAR8 *Paths[3] = {Path, Sha256, FORCE_FILE};
+  EFI_STATUS Status = FilesDelete (Fs, Path);
 
-  for (UINTN Index = 0; Index < 3; Index++) {
-    EFI_STATUS Status;
+  if (Status != EFI_SUCCESS && Status != EFI_NOT_FOUND) {
+    LogPrint (
+      Log, "firmware update: %s couldn't be removed: %s", Path,
+      STATUS_TEXT (Status)
+    );
+  }
+}
 
-    if (!Paths[Index]) {
-      continue;
+STATIC VOID
+RemoveStaged (
+  IN EFI_HANDLE Fs,
+  IN CHAR8    **Paths,
+  IN UINTN      Count,
+  IN LOG_SINK   Log
+)
+{
+  for (UINTN Index = 0; Index < Count; Index++) {
+    CHAR8 *Sha256 = SPrintAlloc ("%s.sha256", Paths[Index]);
+
+    Remove (Fs, Paths[Index], Log);
+    if (Sha256) {
+      Remove (Fs, Sha256, Log);
     }
-    Status = FilesDelete (Fs, Paths[Index]);
-    if (Status != EFI_SUCCESS && Status != EFI_NOT_FOUND) {
-      LogPrint (
-        Log, "firmware update: %s couldn't be removed: %s", Paths[Index],
-        STATUS_TEXT (Status)
-      );
-    }
+    FreePool (Sha256);
+  }
+  Remove (Fs, FORCE_FILE, Log);
+}
+
+// Reads and checks Path. Image keeps the file.
+STATIC VOID
+CheckStaged (
+  IN EFI_HANDLE             Fs,
+  IN CONST CHAR8           *Path,
+  IN CONST FW_UPDATE_INPUT *Base,
+  OUT OABL_BUFFER          *Image,
+  OUT FW_UPDATE_CHECK      *Check
+)
+{
+  CHAR8          *Sha256Path = SPrintAlloc ("%s.sha256", Path);
+  CHAR8          *Sha256     = NULL;
+  FW_UPDATE_INPUT In         = *Base;
+
+  if (Sha256Path) {
+    Sha256 = FilesReadText (Fs, Sha256Path, SHA256_LIMIT);
+  }
+  if (!FilesRead (Fs, Path, IMAGE_LIMIT, Image)) {
+    ZeroMem (Check, sizeof (*Check));
+    Check->Status = FW_UPDATE_ERROR_UNSUCCESSFUL;
+    AsciiStrCopy (Check->Why, sizeof (Check->Why), "unreadable, or over 1 MiB");
+  } else {
+    In.Staged = BytesOf (Image->Data, Image->Len);
+    In.Name   = Path + sizeof (FW_UPDATE_DIR);
+    In.Sha256 = TextOf (Sha256);
+    FwUpdateCheck (&In, Check);
   }
   FreePool (Sha256);
+  FreePool (Sha256Path);
 }
 
 FW_UPDATE_OUTCOME
@@ -253,38 +304,35 @@ FwUpdateRun (
   IN LOG_SINK         Log
 )
 {
-  EFI_HANDLE        Fs     = NULL;
-  CHAR8            *Path   = NULL;
-  CHAR8            *Sha256 = NULL;
-  CHAR8            *Sha256Path;
-  OABL_BUFFER       Staged    = {0};
+  EFI_HANDLE        Fs = NULL;
+  CHAR8            *Paths[MAX_STAGED];
+  UINTN             Staged    = 0;
   OABL_BUFFER       Installed = {0};
+  OABL_BUFFER       Image     = {0};
+  OABL_BUFFER       Best      = {0};
   ABL_SLOTS         Slots     = {0};
   FW_UPDATE_INPUT   In;
   FW_UPDATE_CHECK   Check;
+  FW_UPDATE_CHECK   Pick;
+  FW_UPDATE_CHECK   Refused;
   UINT64            PartSize;
-  BOOLEAN           Keep    = FALSE;
-  FW_UPDATE_OUTCOME Outcome = FW_UPDATE_NOT_WRITTEN;
+  BOOLEAN           HaveRefused = FALSE;
+  BOOLEAN           Keep        = FALSE;
+  FW_UPDATE_OUTCOME Outcome     = FW_UPDATE_NOT_WRITTEN;
 
-  for (UINTN Index = 0; Index < Count && !Path; Index++) {
-    Fs   = Volumes[Index];
-    Path = StagedPath (Fs);
+  for (UINTN Index = 0; Index < Count && !Staged; Index++) {
+    Fs     = Volumes[Index];
+    Staged = StagedPaths (Fs, Paths);
   }
-  if (!Path) {
+  if (!Staged) {
     return FW_UPDATE_NONE;
   }
-  LogPrint (Log, "firmware update: %s is staged", Path);
-  Sha256Path = SPrintAlloc ("%s.sha256", Path);
-  if (Sha256Path) {
-    Sha256 = FilesReadText (Fs, Sha256Path, SHA256_LIMIT);
-    FreePool (Sha256Path);
-  }
-  ZeroMem (&Check, sizeof (Check));
-  Check.Status = FW_UPDATE_ERROR_UNSUCCESSFUL;
-  if (!FilesRead (Fs, Path, IMAGE_LIMIT, &Staged)) {
-    AsciiStrCopy (Check.Why, sizeof (Check.Why), "unreadable, or over 1 MiB");
-  } else if (!FindSlots (&Slots, Log)) {
-    AsciiStrCopy (Check.Why, sizeof (Check.Why), "no abl partition");
+  LogPrint (Log, "firmware update: %u image(s) staged", (UINT32)Staged);
+  ZeroMem (&Pick, sizeof (Pick));
+  ZeroMem (&Refused, sizeof (Refused));
+  Pick.Status = Refused.Status = FW_UPDATE_ERROR_UNSUCCESSFUL;
+  if (!FindSlots (&Slots, Log)) {
+    AsciiStrCopy (Refused.Why, sizeof (Refused.Why), "no abl partition");
   } else {
     PartSize = PartBytes (&Slots.Part[0]);
     if (Slots.Count > 1 && PartBytes (&Slots.Part[1]) < PartSize) {
@@ -295,58 +343,88 @@ FwUpdateRun (
           (UINTN)(PartSize < IMAGE_LIMIT ? PartSize : IMAGE_LIMIT), &Installed
         )) {
       AsciiStrCopy (
-        Check.Why, sizeof (Check.Why), "the installed ABL can't be read"
+        Refused.Why, sizeof (Refused.Why), "the installed ABL can't be read"
       );
     } else {
       In = (FW_UPDATE_INPUT){
-        .Staged        = BytesOf (Staged.Data, Staged.Len),
-        .Name          = Path + sizeof (FW_UPDATE_DIR),
-        .Sha256        = TextOf (Sha256),
         .Installed     = BytesOf (Installed.Data, Installed.Len),
         .PartitionSize = PartSize,
+        .Chip          = QuirksChipId (),
         .Force         = FilesExists (Fs, FORCE_FILE),
       };
-      FwUpdateCheck (&In, &Check);
+      // Take the newest that passes. If none does, report the first refusal,
+      // preferring one for this chip.
+      for (UINTN Index = 0; Index < Staged; Index++) {
+        CONST CHAR8 *Name = Paths[Index] + sizeof (FW_UPDATE_DIR);
+
+        CheckStaged (Fs, Paths[Index], &In, &Image, &Check);
+        if (Check.Status == FW_UPDATE_SUCCESS) {
+          LogPrint (Log, "firmware update: %s: %s", Name, Check.Why);
+          if (Pick.Status != FW_UPDATE_SUCCESS ||
+              Check.Version > Pick.Version) {
+            BufferFree (&Best);
+            Best  = Image;
+            Image = (OABL_BUFFER){0};
+            Pick  = Check;
+          }
+        } else {
+          LogPrint (
+            Log, "firmware update: %s refused, %s: %s", Name,
+            FwUpdateStatusName (Check.Status), Check.Why
+          );
+          if (!HaveRefused || (Refused.OtherDevice && !Check.OtherDevice)) {
+            Refused     = Check;
+            HaveRefused = TRUE;
+          }
+        }
+        BufferFree (&Image);
+      }
+      if (Pick.Status != FW_UPDATE_SUCCESS && Refused.OtherDevice &&
+          Staged > 1) {
+        SPrint (
+          Refused.Why, sizeof (Refused.Why),
+          "none of the %u images is for this chip", (UINT32)Staged
+        );
+      }
     }
   }
-  if (Check.AlreadyInstalled) {
-    LogPrint (Log, "firmware update: %s; nothing to write", Check.Why);
-  } else if (Check.Status != FW_UPDATE_SUCCESS) {
+  if (Pick.Status != FW_UPDATE_SUCCESS) {
     LogPrint (
-      Log, "firmware update refused, %s: %s", FwUpdateStatusName (Check.Status),
-      Check.Why
+      Log, "firmware update refused, %s: %s",
+      FwUpdateStatusName (Refused.Status), Refused.Why
     );
-    Record (Check.Version, Check.Status, Log);
+    Record (Refused.Version, Refused.Status, Log);
+  } else if (Pick.AlreadyInstalled) {
+    LogPrint (Log, "firmware update: %s; nothing to write", Pick.Why);
   } else if (MenuHostAction (Host, OPENABL_MENU_ACTION_BATTERY_OK) !=
              EFI_SUCCESS) {
     LogLine (
       Log, "firmware update: the battery is too low; staged for the next boot"
     );
-    Record (Check.Version, FW_UPDATE_ERROR_BATTERY, Log);
+    Record (Pick.Version, FW_UPDATE_ERROR_BATTERY, Log);
     Keep = TRUE;
   } else {
-    LogPrint (
-      Log, "firmware update: installing %s; don't power off", Check.Why
-    );
+    LogPrint (Log, "firmware update: installing %s; don't power off", Pick.Why);
     if (Install (
-          &Slots, BytesOf (Staged.Data, Staged.Len),
-          BytesOf (Installed.Data, Check.Old.Size), Log
+          &Slots, BytesOf (Best.Data, Best.Len),
+          BytesOf (Installed.Data, Pick.Old.Size), Log
         )) {
       Outcome = FW_UPDATE_WRITTEN;
     }
     Record (
-      Check.Version,
+      Pick.Version,
       Outcome == FW_UPDATE_WRITTEN ? FW_UPDATE_SUCCESS
                                    : FW_UPDATE_ERROR_UNSUCCESSFUL,
       Log
     );
   }
   if (!Keep) {
-    RemoveStaged (Fs, Path, Log);
+    RemoveStaged (Fs, Paths, Staged, Log);
   }
-  BufferFree (&Staged);
+  for (UINTN Index = 0; Index < Staged; Index++) {
+    FreePool (Paths[Index]);
+  }
+  BufferFree (&Best);
   BufferFree (&Installed);
-  FreePool (Sha256);
-  FreePool (Path);
   return Outcome;
 }

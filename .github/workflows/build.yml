@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Builds every chipset and uploads the images to the tag's release.
+# Builds every image and uploads them to the tag's release.
 name: Build
 
 on:
@@ -161,7 +161,7 @@ jobs:
           if [ "$RELEASE" = "$TAG" ]; then
             gh release view "$TAG" > /dev/null 2>&1 ||
               gh release create "$TAG" --verify-tag --title "OpenABL $TAG" \
-                --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
+                --notes "Flash the image for your chipset to abl_a and abl_b: MBN5 for SDM845, MBN6 for SM6115 and SM8250, MBN7 for the others. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
           else
             gh release view "$RELEASE" > /dev/null 2>&1 ||
               gh release create "$RELEASE" --prerelease --target "$COMMIT" --title "OpenABL $TAG debug" \

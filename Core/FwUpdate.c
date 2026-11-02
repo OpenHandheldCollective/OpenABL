@@ -150,7 +150,7 @@ FwUpdateCheck (
     Refuse (Out, FW_UPDATE_ERROR_FORMAT, "%s", AblImageResultName (Result));
     return;
   }
-  if (!Out->New.Chipset[0]) {
+  if (!Out->New.Name[0]) {
     Refuse (Out, FW_UPDATE_ERROR_FORMAT, "no image tag, not an OpenABL image");
     return;
   }
@@ -162,24 +162,30 @@ FwUpdateCheck (
     );
     return;
   }
+  if (!In->Chip) {
+    Refuse (Out, FW_UPDATE_ERROR_UNSUCCESSFUL, "this chip's id is unknown");
+    return;
+  }
+  if (!AblImageForChip (&Out->New, In->Chip)) {
+    Out->OtherDevice = TRUE;
+    Refuse (
+      Out, FW_UPDATE_ERROR_FORMAT, "%s isn't built for chip %u", Out->New.Name,
+      In->Chip
+    );
+    return;
+  }
   Result =
     AblImageRead (In->Installed.Ptr, In->Installed.Len, FALSE, &Out->Old, NULL);
-  if (Result != ABL_IMAGE_OK || !Out->Old.Chipset[0]) {
+  if (Result != ABL_IMAGE_OK || !Out->Old.Name[0]) {
     Refuse (
       Out, FW_UPDATE_ERROR_UNSUCCESSFUL, "the installed ABL: %s",
       Result != ABL_IMAGE_OK ? AblImageResultName (Result) : "no image tag"
     );
     return;
   }
-  if (!TextEqNoCase (TextOf (Out->New.Chipset), Out->Old.Chipset)) {
-    Refuse (
-      Out, FW_UPDATE_ERROR_FORMAT, "built for %s, not %s", Out->New.Chipset,
-      Out->Old.Chipset
-    );
-    return;
-  }
   Differs = AblImageMismatch (&Out->Old, &Out->New);
   if (Differs) {
+    Out->OtherDevice = TRUE;
     Refuse (
       Out, FW_UPDATE_ERROR_FORMAT,
       "%s differs from the installed ABL (MBN v%u vs v%u)", Differs,
@@ -201,7 +207,7 @@ FwUpdateCheck (
     return;
   }
   SPrint (
-    Out->Why, sizeof (Out->Why), "%s %s over %s, MBN v%u%s", Out->New.Chipset,
+    Out->Why, sizeof (Out->Why), "%s %s over %s, MBN v%u%s", Out->New.Name,
     Out->New.Version, Out->Old.Version, Out->New.MbnVersion,
     In->Force ? ", forced" : ""
   );

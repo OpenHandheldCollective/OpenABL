@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Packages a release's images into a .tar.gz archive (one folder per chipset
-# with the image and its .sha256) and uploads it to that release, or to the
+# Packages a release's images into a .tar.gz archive (one folder per image
+# with it and its .sha256) and uploads it to that release, or to the
 # debug-<tag> pre-release for a debug build.
 name: Package
 
@@ -56,12 +56,12 @@ jobs:
               *-debug.elf) [ -n "$SUFFIX" ] || continue ;;
               *) [ -z "$SUFFIX" ] || continue ;;
             esac
-            soc=${file#abl_signed-}
-            soc=${soc%.elf}
-            soc=${soc%-debug}
-            mkdir "$name/$soc"
-            cp "$elf" "$name/$soc/"
-            (cd "$name/$soc" && sha256sum "$file" > "$file.sha256")
+            image=${file#abl_signed-}
+            image=${image%.elf}
+            image=${image%-debug}
+            mkdir "$name/$image"
+            cp "$elf" "$name/$image/"
+            (cd "$name/$image" && sha256sum "$file" > "$file.sha256")
             found=$((found + 1))
           done
           [ "$found" -gt 0 ] || { echo "$RELEASE has no ${{ inputs.build }} images" >&2; exit 1; }

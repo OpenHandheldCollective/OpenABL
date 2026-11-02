@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Debug build of every chipset for each pull request.
+# Debug build of every image for each pull request.
 name: Pull request
 
 on:

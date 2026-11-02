@@ -13,7 +13,8 @@
             table size, 24/28 qcom sig/chain, 32/36 oem sig/chain, then the
             common metadata at 40: 48 sw id, 56 hash alg.
 
-  Tag: "OABLIMG1", chipset[16], version[16], NUL padded.
+  Tag: "OABLIMG1", name[16], version[16] (NUL padded), then an LE32 count
+  and that many LE32 ChipInfo ids.
 */
 
 #ifndef __CORE_ABL_IMAGE_H__
@@ -22,8 +23,9 @@
 #include "Base/OablBase.h"
 
 #define ABL_IMAGE_TAG_MAGIC "OABLIMG1"
-#define ABL_IMAGE_TAG_SIZE  40
+#define ABL_IMAGE_TAG_SIZE  44
 #define ABL_IMAGE_TEXT_MAX  16
+#define ABL_IMAGE_MAX_CHIPS 32
 
 typedef enum {
   ABL_IMAGE_OK,
@@ -49,8 +51,10 @@ typedef struct _ABL_IMAGE {
   // Bytes up to the end of the furthest segment.
   UINTN Size;
   // Empty if there's no tag.
-  CHAR8 Chipset[ABL_IMAGE_TEXT_MAX + 1];
-  CHAR8 Version[ABL_IMAGE_TEXT_MAX + 1];
+  CHAR8  Name[ABL_IMAGE_TEXT_MAX + 1];
+  CHAR8  Version[ABL_IMAGE_TEXT_MAX + 1];
+  UINT32 ChipCount;
+  UINT32 Chips[ABL_IMAGE_MAX_CHIPS];
 } ABL_IMAGE;
 
 // Data can run past the image, e.g. a whole partition.
@@ -65,6 +69,13 @@ AblImageRead (
 
 CONST CHAR8 *
 AblImageResultName (IN ABL_IMAGE_RESULT Result);
+
+// Whether the tag lists Chip.
+BOOLEAN
+AblImageForChip (
+  IN CONST ABL_IMAGE *Image,
+  IN UINT32           Chip
+);
 
 // NULL if XBL would load New the same way it loads Current, else what
 // differs.

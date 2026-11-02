@@ -50,8 +50,8 @@ DisplayHandoverBeforeExit (
 VOID
 DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL);
 
-// Forgets the last tree's say: the display then follows the build's default
-// at ExitBootServices, on, or off with park-display.
+// Forgets the last tree's say: the display then follows the chip's default
+// at ExitBootServices.
 VOID
 DisplayHandoverReset (VOID);
 

@@ -714,24 +714,39 @@ index 4064b49..00119ab 100644
    ArmInvalidateInstructionCache ();
  
 diff --git a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
-index 88e0117..b3c8b82 100644
+index 88e0117..04b8c66 100644
 --- a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
 +++ b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
-@@ -77,6 +77,7 @@
+@@ -77,6 +77,8 @@
  #include <Protocol/Print2.h>
  #include <Library/EarlyUsbInit.h>
  #include <Library/PartialGoods.h>
 +#include <Library/OpenAblMenu.h>
++#include <Protocol/EFIChipInfo.h>
  
  #include "AutoGen.h"
  #include "DeviceInfo.h"
-@@ -179,6 +180,45 @@ STATIC CONST CHAR8 *MovableNode = " movable_node";
+@@ -179,6 +181,58 @@ STATIC CONST CHAR8 *MovableNode = " movable_node";
  STATIC CONST CHAR8 *WarmResetArgs = " reboot=w";
  
  LIST_ENTRY *BootConfigListHead = NULL;
 +
-+#if defined (TARGET_SOC_SM6115)
-+/* OpenABL: no PMI632 for ChargerEx; the PON reason, as the stock ABL. */
++/* OpenABL: SM6115 has no PMI632 for ChargerEx, so off-mode charging comes
++ * from the PON reason, as in the stock ABL. */
++STATIC BOOLEAN
++IsSm6115 (VOID)
++{
++  EFI_CHIPINFO_PROTOCOL *ChipInfo;
++  EFIChipInfoIdType Id;
++
++  if (gBS->LocateProtocol (&gEfiChipInfoProtocolGuid, NULL,
++                           (VOID **)&ChipInfo) != EFI_SUCCESS ||
++      ChipInfo->GetChipId (ChipInfo, &Id) != EFI_SUCCESS) {
++    return FALSE;
++  }
++  return (UINT32)Id == 444 || (UINT32)Id == 467;
++}
++
 +STATIC EFI_STATUS
 +PonOffModeCharging (BOOLEAN *BatteryStatus)
 +{
@@ -766,23 +781,22 @@ index 88e0117..b3c8b82 100644
 +                   (PONReason.CBLPWR || PONReason.USB_CHG || PONReason.PON1);
 +  return EFI_SUCCESS;
 +}
-+#endif
 +
  EFI_STATUS
  TargetPauseForBatteryCharge (BOOLEAN *BatteryStatus)
  {
-@@ -194,6 +234,10 @@ TargetPauseForBatteryCharge (BOOLEAN *BatteryStatus)
+@@ -194,6 +248,10 @@ TargetPauseForBatteryCharge (BOOLEAN *BatteryStatus)
     * Serves only performance purposes, defaults to return zero*/
    *BatteryStatus = 0;
  
-+#if defined (TARGET_SOC_SM6115)
-+  return PonOffModeCharging (BatteryStatus);
-+#endif
++  if (IsSm6115 ()) {
++    return PonOffModeCharging (BatteryStatus);
++  }
 +
    Status = gBS->LocateProtocol (&gChargerExProtocolGuid, NULL,
                                  (VOID **)&ChgDetectProtocol);
    if (Status == EFI_NOT_FOUND) {
-@@ -658,6 +702,8 @@ STATIC
+@@ -658,6 +716,8 @@ STATIC
  EFI_STATUS
  GetMemoryLimit (VOID *fdt, CHAR8 *MemOffAmt)
  {
@@ -791,7 +805,7 @@ index 88e0117..b3c8b82 100644
    UINT64 DdrSize = 0;
    UINT64 MemLimit;
    UINT32 i = 0;
-@@ -930,7 +976,8 @@ UpdateCmdLineParams (UpdateCmdLineParamList *Param, CHAR8 **FinalCmdLine,
+@@ -930,7 +990,8 @@ UpdateCmdLineParams (UpdateCmdLineParamList *Param, CHAR8 **FinalCmdLine,
      if (Param->HeaderVersion <= BOOT_HEADER_VERSION_THREE) {
        Src = AndroidBootForceNormalBoot;
        AsciiStrCatS (Dst, MaxCmdLineLen, Src);
@@ -801,7 +815,7 @@ index 88e0117..b3c8b82 100644
        AsciiStrCatS (Dst, MaxCmdLineLen, Src);
      }
    }
-@@ -1531,6 +1578,23 @@ UpdateCmdLine (BootParamlist *BootParamlistPtr,
+@@ -1531,6 +1592,23 @@ UpdateCmdLine (BootParamlist *BootParamlistPtr,
    AddtoBootConfigList (BootConfigFlag, DisplayCmdLine, NULL,
                     BootConfigListHead, ParamLen, 0);
  
@@ -1178,7 +1192,7 @@ index b058b87..e6aff75 100644
    gQcomScmProtocolGuid =                { 0x77ed108d, 0x8524, 0x4b8b, { 0x9d, 0x2e, 0x34, 0x98, 0x7a, 0xec, 0xb9, 0xc1 } }
    # PlatformInfo
 diff --git a/QcomModulePkg/QcomModulePkg.dsc b/QcomModulePkg/QcomModulePkg.dsc
-index 395087e..97b00ae 100644
+index 395087e..306b080 100644
 --- a/QcomModulePkg/QcomModulePkg.dsc
 +++ b/QcomModulePkg/QcomModulePkg.dsc
 @@ -53,6 +53,9 @@
@@ -1220,17 +1234,7 @@ index 395087e..97b00ae 100644
    !endif
    !if $(ENABLE_LE_VARIANT) == 1
        GCC:*_*_*_CC_FLAGS = -DENABLE_LE_VARIANT
-@@ -214,6 +221,9 @@
-   !if $(DISABLE_KERNEL_PROTOCOL)
-       GCC:*_*_*_CC_FLAGS = -DDISABLE_KERNEL_PROTOCOL=$(DISABLE_KERNEL_PROTOCOL)
-   !endif
-+  !if $(TARGET_SOC_SM6115) == 1
-+      GCC:*_*_*_CC_FLAGS = -DTARGET_SOC_SM6115
-+  !endif
-   !if $(NAND_UBI_VOLUME_FLASHING_ENABLED)
-       GCC:*_*_*_CC_FLAGS = -DNAND_UBI_VOLUME_FLASHING_ENABLED
-   !endif
-@@ -232,7 +242,9 @@
+@@ -232,7 +239,9 @@
    !if $(AUTO_VIRT_ABL)
        GCC:*_*_*_CC_FLAGS = -DAUTO_VIRT_ABL
    !endif
@@ -1241,7 +1245,7 @@ index 395087e..97b00ae 100644
  
  [PcdsFixedAtBuild.common]
  
-@@ -244,7 +256,7 @@
+@@ -244,7 +253,7 @@
  # ASSERT_DEADLOOP_ENABLED    0x20
  
    gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x2f
@@ -1250,7 +1254,7 @@ index 395087e..97b00ae 100644
    gEfiMdePkgTokenSpaceGuid.PcdReportStatusCodePropertyMask|0x06
  
  ################################################################################
-@@ -279,4 +291,35 @@
+@@ -279,4 +288,35 @@
  			AesLib|QcomModulePkg/Library/aes/AesLib.inf
  			UbsanLib|QcomModulePkg/Library/UbsanLib/UbsanLib.inf
  			Lz4Lib|QcomModulePkg/Library/lz4/lib/Lz4Lib.inf
@@ -1350,7 +1354,7 @@ index 226f6fb..12d2be5 100755
  ################################################################################
  #
 diff --git a/makefile b/makefile
-index 8904640..3e01979 100644
+index 8904640..ef96bad 100644
 --- a/makefile
 +++ b/makefile
 @@ -22,7 +22,7 @@ ifeq ($(BUILD_NATIVE_AARCH64),true)
@@ -1386,7 +1390,7 @@ index 8904640..3e01979 100644
  ifeq ($(TARGET_ARCHITECTURE), arm)
  	LOAD_ADDRESS := 0X8F700000
  else
-@@ -229,6 +237,15 @@ else
+@@ -229,6 +237,13 @@ else
  	AUTO_VIRT_ABL := 0
  endif
  
@@ -1396,20 +1400,17 @@ index 8904640..3e01979 100644
 +ABL_USB_HOST_BUNDLED_STACK ?= 0
 +# The menu program (QcomModulePkg/Prebuilt/OpenAblMenu/openabl-menu.efi).
 +OPENABL_MENU ?= 0
-+# sm6115: off-mode charging from the PMIC power-on reason.
-+TARGET_SOC_SM6115 ?= 0
 +
  ifeq ($(DISABLE_KERNEL_PROTOCOL), 1)
  	DISABLE_KERNEL_PROTOCOL := 1
  else
-@@ -381,6 +398,10 @@ ABL_FV_IMG: $(EDK_TOOLS_PATH_MARK_FILE)
+@@ -381,6 +396,9 @@ ABL_FV_IMG: $(EDK_TOOLS_PATH_MARK_FILE)
  	-D REMOVE_CARVEOUT_REGION=$(REMOVE_CARVEOUT_REGION) \
  	-D QSPA_BOOTCONFIG_ENABLE=$(QSPA_BOOTCONFIG_ENABLE) \
  	-D AUTO_VIRT_ABL=$(AUTO_VIRT_ABL) \
 +	-D ABL_USB_HOST=$(ABL_USB_HOST) \
 +	-D ABL_USB_HOST_BUNDLED_STACK=$(ABL_USB_HOST_BUNDLED_STACK) \
 +	-D OPENABL_MENU=$(OPENABL_MENU) \
-+	-D TARGET_SOC_SM6115=$(TARGET_SOC_SM6115) \
  	-D DDR_SUPPORTS_SCT_CONFIG=$(DDR_SUPPORTS_SCT_CONFIG) \
  	-j build_modulepkg.log $*
  
