@@ -62,6 +62,14 @@ unzip -oq "$ZIPFILE" -d "$WORKDIR" || abort "Could not extract package"
 IMAGE="$WORKDIR/product/etc/openabl.img"
 ADDOND="$WORKDIR/addon.d/30-openabl.sh"
 
+# Another chip's image won't boot and would leave the device needing EDL.
+SOC_ID="$(cat /sys/devices/soc0/soc_id 2>/dev/null)"
+[ -n "$SOC_ID" ] || abort "Could not read this chip's id (/sys/devices/soc0/soc_id)"
+case " $(cat "$WORKDIR/openabl-chips" 2>/dev/null) " in
+  *" $SOC_ID "*) ;;
+  *) abort "This package isn't for this chip (soc_id $SOC_ID)" ;;
+esac
+
 ui_print "Resolving and mounting target partitions"
 umount "$SYSTEM_MNT" 2>/dev/null || true
 umount "$PRODUCT_MNT" 2>/dev/null || true

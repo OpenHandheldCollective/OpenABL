@@ -31,36 +31,56 @@ usage() {
   exit 1
 }
 
-# Each chipset's image. Chips signed with the same MBN version share one;
-# per-chip fixes check the id at runtime.
-image_of() {
+# Each chipset's image and ChipInfo ids (Linux's soc_id). Chips signed with
+# the same MBN version share an image; per-chip fixes check the id at
+# runtime.
+chipset() {
   case $1 in
-    sdm845) echo mbn5 ;;
-    sm6115 | sm8250) echo mbn6 ;;
-    sm4450 | sm6450 | sm7675 | sm7750 | sm8475 | sm8550 | sm8650 | sm8750) echo mbn7 ;;
-    mbn5 | mbn6 | mbn7) echo "$1" ;;
-    *) echo "unknown image or chipset $1" >&2; usage ;;
+    sdm845) OF=mbn5 CHIP_IDS=321,341 ;;
+    sm6115) OF=mbn6 CHIP_IDS=444,467 ;;
+    sm8250) OF=mbn6 CHIP_IDS=356 ;;
+    sm4450) OF=mbn7 CHIP_IDS=654 ;;
+    sm6450) OF=mbn7 CHIP_IDS=634 ;;
+    sm7675) OF=mbn7 CHIP_IDS=700 ;;
+    sm7750) OF=mbn7 CHIP_IDS=659,732 ;;
+    sm8475) OF=mbn7 CHIP_IDS=531 ;;
+    sm8550) OF=mbn7 CHIP_IDS=601,603 ;;
+    sm8650) OF=mbn7 CHIP_IDS=682 ;;
+    sm8750) OF=mbn7 CHIP_IDS=639,706 ;;
+    *) return 1 ;;
   esac
 }
 
-# Per-image settings, as in Qualcomm's make_abl.sh: signing version, the
-# ChipInfo ids of its chips (for the image tag), protected VM firmware,
-# whether XBL has the kernel protocol (SDM845's doesn't), whether to bundle
-# edk2's USB host stack (SM6115's XBL has none), and extra program features.
-image() {
+image_of() {
   case $1 in
-    # SDM845, SDA845.
-    mbn5) SIGN=-v5 IDS=321,341 PVMFW=false KERNEL_PROTOCOL=0 BUNDLED_USB=0
-      OWN=loader-quirks OWN_FULL="" ;;
-    # SM6115 and QCS6125, SM8250.
-    mbn6) SIGN=-v6 IDS=444,467,356 PVMFW=false KERNEL_PROTOCOL=1 BUNDLED_USB=1
-      OWN=loader-quirks OWN_FULL="" ;;
-    # SM4450, SM6450, SM7675, SM8475, SM8550 and QCS8550, SM8650, SM8750 and
-    # Q8750, and SM7750, which ran SM8750's image.
-    mbn7) SIGN=-v7 IDS=654,634,700,531,601,603,682,639,706,659,732 PVMFW=true KERNEL_PROTOCOL=1
-      BUNDLED_USB=0 OWN=sdcc-sm4450,sdcc-sm6450,sdcc-sm7675 OWN_FULL=sysfont ;;
+    mbn5 | mbn6 | mbn7) echo "$1" ;;
+    *) chipset "$1" || { echo "unknown image or chipset $1" >&2; usage; }; echo "$OF" ;;
   esac
 }
+
+# Per-image settings, as in Qualcomm's make_abl.sh: signing version,
+# protected VM firmware, whether XBL has the kernel protocol (SDM845's
+# doesn't), whether to bundle edk2's USB host stack (SM6115's XBL has none),
+# and extra program features. Also sets OWNERS (its chipsets) and IDS
+# (their ids).
+image() {
+  case $1 in
+    mbn5) SIGN=-v5 PVMFW=false KERNEL_PROTOCOL=0 BUNDLED_USB=0 OWN=loader-quirks OWN_FULL="" ;;
+    mbn6) SIGN=-v6 PVMFW=false KERNEL_PROTOCOL=1 BUNDLED_USB=1 OWN=loader-quirks OWN_FULL="" ;;
+    mbn7) SIGN=-v7 PVMFW=true KERNEL_PROTOCOL=1 BUNDLED_USB=0
+      OWN=sdcc-sm4450,sdcc-sm6450,sdcc-sm7675 OWN_FULL=sysfont ;;
+  esac
+  OWNERS="" IDS=""
+  for c in $CHIPSETS; do
+    chipset "$c"
+    if [ "$OF" = "$1" ]; then
+      OWNERS="${OWNERS:+$OWNERS }$c"
+      IDS="${IDS:+$IDS,}$CHIP_IDS"
+    fi
+  done
+}
+
+upper() { echo "$1" | tr a-z A-Z; }
 
 DEBUG=0 STANDARD_BOOT=1 CLEAN=0 ASKED=()
 while [ $# -gt 0 ]; do
@@ -129,6 +149,7 @@ for name in "${ASKED[@]}"; do
   SCRIPT+="echo \"Building the program for $name ($features)\"
 make -s -C /openabl FEATURES='$features' OBJ=build/obj-abl OUT=build/menu/$name || { echo \"ERROR: the program didn't build for $name.\"; exit 1; }
 build $name /openabl/build/menu/$name/openabl-menu.efi $SIGN $IDS$quoted || exit 1
+copies $name $OWNERS || exit 1
 "
 done
 
@@ -180,16 +201,43 @@ rm -f build/.silent
 
 echo "build: $((($(date +%s) - STARTED) / 60)) minutes"
 for name in "${ASKED[@]}"; do
-  elf=build/out/abl_signed-$(echo "$name" | tr a-z A-Z).elf
+  image "$name"
+  elf=build/out/abl_signed-$(upper "$name").elf
   if [ -f "$elf" ] && [ "$(mtime "$elf")" -ge "$STARTED" ]; then
     echo "  $elf ($(($(wc -c < "$elf") / 1024)) KiB) sha256 $(cut -d' ' -f1 "$elf.sha256")"
+    echo "    copied as $(for c in $OWNERS; do printf 'abl_signed-%s.elf ' "$(upper "$c")"; done)"
   else
     echo "  $name: not built"
   fi
 done
 [ "$status" = 0 ] || { echo "build: the build failed; see $LOG" >&2; exit 1; }
 
+# Every file with its chipsets and soc_ids, for distributions.
+MANIFEST=build/out/openabl-manifest.tsv
+{
+  echo "# OpenABL $VERSION. chip_ids are /sys/devices/soc0/soc_id values."
+  echo "# Each chipset's file is a copy of its MBN image."
+  printf 'file\tversion\tmbn\tchipsets\tchip_ids\tsha256\n'
+  for name in "${ASKED[@]}"; do
+    image "$name"
+    file=abl_signed-$(upper "$name").elf
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$file" "$VERSION" "${SIGN#-v}" \
+      "$(upper "${OWNERS// /,}")" "$IDS" "$(cut -d' ' -f1 "build/out/$file.sha256")"
+    for c in $OWNERS; do
+      chipset "$c"
+      file=abl_signed-$(upper "$c").elf
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$file" "$VERSION" "${SIGN#-v}" \
+        "$(upper "$c")" "$CHIP_IDS" "$(cut -d' ' -f1 "build/out/$file.sha256")"
+    done
+  done
+} > "$MANIFEST"
+echo "  $MANIFEST"
+
 for name in "${ASKED[@]}"; do
-  upper=$(echo "$name" | tr a-z A-Z)
-  Scripts/build-recovery-flashable.zip "build/out/abl_signed-$upper.elf" "build/out/openabl-recovery-flashable-$name.zip"
+  image "$name"
+  zip=build/out/openabl-recovery-flashable-$name.zip
+  Scripts/build-recovery-flashable.zip "build/out/abl_signed-$(upper "$name").elf" "$zip" "$IDS"
+  for c in $OWNERS; do
+    cp "$zip" "build/out/openabl-recovery-flashable-$c.zip"
+  done
 done

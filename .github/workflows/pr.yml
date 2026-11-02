@@ -56,6 +56,8 @@ jobs:
             cp "$addon" "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
+          sed "s/^\(abl_signed-[^\t]*\)\.elf\t/\1-debug.elf\t/" build/out/openabl-manifest.tsv > dist/openabl-manifest-debug.tsv
+          cp Linux/openabl-update dist/
 
       - uses: actions/upload-artifact@v7
         with:

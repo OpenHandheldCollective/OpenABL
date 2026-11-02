@@ -5,11 +5,14 @@
 
 # Stages OpenABL images on the ESP for OpenABL to install on the next boot
 # into Linux. Takes images or folders of them, like an unpacked release.
-# Booted through OpenABL, it only stages this chip's image.
+# Booted through OpenABL, it only stages this chip's image and only if it's
+# newer (unless --force), so it's fine to run after every package update.
 #
 #   openabl-update [--esp DIR] [--force] IMAGE.elf|DIR...
 #   openabl-update [--esp DIR] --cancel
 #   openabl-update --status
+#
+# Exits 0 if it staged an image or none is newer, 1 on errors, 2 on usage.
 
 set -eu
 
@@ -27,6 +30,14 @@ usage() {
 }
 
 pair() { echo "$(($1 >> 16)).$(($1 & 0xffff))"; }
+
+# MAJOR.MINOR as an ESRT version, empty if it isn't one.
+version_number() {
+  case $1 in
+    *[!0-9.]* | *.*.* | .* | *. | "") return 0 ;;
+    *.*) echo $(($(expr "${1%%.*}" + 0) << 16 | $(expr "${1#*.}" + 0))) ;;
+  esac
+}
 
 status_name() {
   case $1 in
@@ -124,25 +135,36 @@ if [ "$CANCEL" = 1 ]; then
   exit 0
 fi
 
-# Queues an image unless it's for another chip.
+# Queues an image unless it's a duplicate, for another chip, or not newer.
 add() {
+  sum=$(sha256sum "$1" | cut -d' ' -f1)
   if [ -f "$1.sha256" ]; then
-    [ "$(cut -d' ' -f1 "$1.sha256")" = "$(sha256sum "$1" | cut -d' ' -f1)" ] ||
-      die "$1 doesn't match $1.sha256"
+    [ "$(cut -d' ' -f1 "$1.sha256")" = "$sum" ] || die "$1 doesn't match $1.sha256"
   fi
   [ -n "$(chips "$1")" ] || die "$1 has no image tag (too old?)"
+  case " $SUMS " in
+    *" $sum "*) return 0 ;;
+  esac
+  SUMS="$SUMS $sum"
   if [ -n "$CHIP" ]; then
     case " $(chips "$1") " in
       *" $CHIP "*) ;;
       *) return 0 ;;
     esac
+    version=$(version_number "$(tag "$1" 16)")
+    if [ "$FORCE" = 0 ] && [ -n "$version" ] && [ "$version" -le "$INSTALLED" ]; then
+      OLDER=1
+      return 0
+    fi
   fi
   IMAGES="$IMAGES$1
 "
 }
 
 CHIP=$(chip)
-IMAGES=""
+INSTALLED=0
+[ -z "$CHIP" ] || INSTALLED=$(cat "$ESRT/fw_version")
+IMAGES="" SUMS="" OLDER=0
 for arg in "$@"; do
   if [ -d "$arg" ]; then
     found=""
@@ -161,6 +183,12 @@ for arg in "$@"; do
     add "$arg"
   fi
 done
+if [ -z "$IMAGES" ] && [ "$OLDER" = 1 ]; then
+  rm -f "$DIR"/*.elf "$DIR"/*.elf.sha256 "$DIR"/force
+  sync
+  echo "openabl-update: OpenABL $(pair "$INSTALLED") is installed and no image is newer; nothing staged"
+  exit 0
+fi
 [ -n "$IMAGES" ] || die "none of the images is built for this chip ($CHIP)"
 
 mkdir -p "$DIR"
