@@ -55,12 +55,57 @@ find_block() {
   done
 }
 
+# Little-endian unsigned integer: file, offset, size (1, 2 or 4).
+le() {
+  od -An -tu"$3" -j "$2" -N "$3" "$1" 2>/dev/null | tr -d ' \n'
+}
+
+# Prints an ABL's ELF class, machine and MBN version, or nothing if it isn't
+# a signed ELF. Only the low half of 64-bit offsets is read.
+abl_format() {
+  [ "$(dd if="$1" bs=1 skip=1 count=3 2>/dev/null)" = ELF ] || return 0
+  class=$(le "$1" 4 1)
+  machine=$(le "$1" 18 2)
+  case $class in
+    2) phoff=$(le "$1" 32 4) entsize=$(le "$1" 54 2) count=$(le "$1" 56 2) flags=4 offset=8 min=56 ;;
+    1) phoff=$(le "$1" 28 4) entsize=$(le "$1" 42 2) count=$(le "$1" 44 2) flags=24 offset=4 min=32 ;;
+    *) return 0 ;;
+  esac
+  [ "${entsize:-0}" -ge "$min" ] || return 0
+  i=0
+  while [ "$i" -lt "${count:-0}" ] && [ "$i" -lt 64 ]; do
+    header=$((${phoff:-0} + i * entsize))
+    type=$(le "$1" $((header + flags)) 4)
+    if [ $((${type:-0} >> 24 & 7)) = 2 ]; then
+      segment=$(le "$1" $((header + offset)) 4)
+      echo "$class $machine $(le "$1" $((${segment:-0} + 4)) 4)"
+      return 0
+    fi
+    i=$((i + 1))
+  done
+}
+
 rm -rf "$WORKDIR"
 mkdir -p "$WORKDIR" || abort "Could not create temporary directory"
 unzip -oq "$ZIPFILE" -d "$WORKDIR" || abort "Could not extract package"
 
 IMAGE="$WORKDIR/product/etc/openabl.img"
 ADDOND="$WORKDIR/addon.d/30-openabl.sh"
+
+# XBL won't load an ABL with a different MBN version than the installed one,
+# and the device would then need EDL.
+INSTALLED="/dev/block/by-name/abl$(getprop ro.boot.slot_suffix)"
+[ -e "$INSTALLED" ] || INSTALLED=/dev/block/by-name/abl_a
+NEW_FORMAT="$(abl_format "$IMAGE")"
+OLD_FORMAT="$(abl_format "$INSTALLED")"
+[ -n "$NEW_FORMAT" ] || abort "The package's image isn't a signed ABL"
+[ -n "$OLD_FORMAT" ] || abort "Could not read the installed ABL ($INSTALLED)"
+if [ "$NEW_FORMAT" != "$OLD_FORMAT" ]; then
+  ui_print "Installed ABL: ELF class, machine, MBN $OLD_FORMAT"
+  ui_print "This package:  ELF class, machine, MBN $NEW_FORMAT"
+  abort "This package isn't for this device (MBN v${NEW_FORMAT##* }, installed v${OLD_FORMAT##* })"
+fi
+ui_print "MBN v${NEW_FORMAT##* }, as the installed ABL"
 
 ui_print "Resolving and mounting target partitions"
 umount "$SYSTEM_MNT" 2>/dev/null || true

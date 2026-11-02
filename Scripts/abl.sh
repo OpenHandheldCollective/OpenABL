@@ -50,3 +50,12 @@ build() {
   (cd /out && sha256sum "$out" > "$out.sha256")
   echo "SUCCESS: $out"
 }
+
+# copies IMAGE CHIPSET...: a copy of the image under each chipset's name.
+copies() {
+  from=abl_signed-$(echo "$1" | tr a-z A-Z).elf; shift
+  for chip in "$@"; do
+    to=abl_signed-$(echo "$chip" | tr a-z A-Z).elf
+    cp "/out/$from" "/out/$to" && (cd /out && sha256sum "$to" > "$to.sha256") || return 1
+  done
+}

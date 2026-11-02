@@ -163,10 +163,14 @@ Silicon use Docker Desktop or OrbStack.
 
 Give one or more images (`mbn5`, `mbn6`, `mbn7`), chipsets, which build the
 image they take, or `all`. Images are written to
-`build/out/abl_signed-<IMAGE>.elf` with a `.sha256` file next to each. The
-build also writes `build/out/openabl-recovery-flashable-<image>.zip`: a
-recovery-flashable Android addon that writes ABL to both slots and sets up a
-persistence addon.d script to re-flash the opposite slot after an OTA update.
+`build/out/abl_signed-<IMAGE>.elf` with a `.sha256` file next to each, and
+copied as `abl_signed-<CHIPSET>.elf` for each of the image's chipsets;
+`build/out/openabl-manifest.tsv` lists them all. The build also writes
+`build/out/openabl-recovery-flashable-<image>.zip`, copied for each
+chipset: a recovery-flashable Android addon that checks the installed ABL
+has the image's MBN version, writes ABL to both slots and sets up a
+persistence addon.d script to re-flash the opposite slot after an OTA
+update.
 
 The full log is in `build/abl-build.log`. The version, MAJOR.MINOR, is in
 `VERSION`; the menu, fastboot's `version-bootloader` and Linux's ESRT report
@@ -204,7 +208,8 @@ GitHub Actions (`.github/workflows/build.yml`) builds every image when a
 `openabl-<TAG>-source.tar.xz`: this repository and the sources it fetches,
 which `./build.sh` builds without fetching them again. Run it by hand to
 build a tag. Each build also uploads `openabl-<TAG>.tar.gz` with a folder per
-image holding it and its `.sha256`; the Package workflow makes that
+image or chipset holding it and its `.sha256`, `openabl-manifest.tsv` and
+`openabl-update`; the Package workflow makes that
 archive for an existing release. CI keeps the sources it fetches in the
 `sources` pre-release and fetches them again only after a pin in
 `Scripts/fetch.sh` changes.
@@ -219,10 +224,12 @@ openabl-update openabl-v1.4/
 
 `Linux/openabl-update` takes images, or the folder from a release's
 `openabl-<TAG>.tar.gz`, and copies them with their `.sha256` to
-`\openabl\update\` on the ESP. On the next boot into Linux, OpenABL
-checks each staged image against the ABL in the active slot and installs
-the newest that passes. XBL won't fall back to the other slot, so an image is only written
-if:
+`\openabl\update\` on the ESP. The chipset copies in a release are the
+same files as the MBN images, so each is only copied once. Booted through
+OpenABL, it only copies images newer than the installed version. On the
+next boot into Linux, OpenABL checks each staged image against the ABL
+in the active slot and installs the newest that passes. XBL won't fall back
+to the other slot, so an image is only written if:
 
 - its SHA-256 matches the `.sha256`
 - its segment hashes check out and it fits in `abl`
@@ -248,6 +255,28 @@ log).
 
 Only images with the image tag can be installed this way, so the first one
 has to be flashed with fastboot.
+
+## For distributions
+
+Each release has an image per MBN version and, for anything that fetches
+images by chipset, a copy of it under each chipset's name:
+`abl_signed-SM8550.elf` is `abl_signed-MBN7.elf`. The release's
+`openabl-<TAG>.tar.gz` has a folder for each, as before, with
+`openabl-manifest.tsv` and `openabl-update` next to them.
+
+`openabl-manifest.tsv` lists each file with its version, MBN version,
+chipsets, chip ids and SHA-256. The chip ids are ChipInfo ids, the same
+numbers as Linux's `/sys/devices/soc0/soc_id`, so a device's image is the
+row listing its `soc_id`.
+
+To keep OpenABL up to date from the OS, install the release's folder (say
+to `/usr/share/openabl`) and run `openabl-update /usr/share/openabl` after
+each package update. It stages the images only if they are newer than the
+installed one, and exits 0 when there is nothing to do; OpenABL then
+installs the one that matches the installed ABL. Run from an image build,
+with `--esp` and no ESRT, it stages them without the version check. The
+first install still needs fastboot, the recovery package (which refuses an
+installed ABL of another MBN version) or the distribution's own tooling.
 
 ## Future direction
 

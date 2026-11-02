@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Packages a release's images into a .tar.gz archive (one folder per image
-# with it and its .sha256) and uploads it to that release.
+# Packages a release's images into a .tar.gz archive (a folder per image
+# and chipset, plus the manifest and openabl-update) and uploads it to that
+# release.
 name: Package
 
 on:
@@ -49,6 +50,11 @@ jobs:
             found=$((found + 1))
           done
           [ "$found" -gt 0 ] || { echo "$TAG has no images" >&2; exit 1; }
+          # Older releases have neither.
+          if gh release download "$TAG" --pattern "openabl-manifest.tsv" --dir images; then
+            cp "images/openabl-manifest.tsv" "$name/openabl-manifest.tsv"
+          fi
+          [ ! -f Linux/openabl-update ] || cp Linux/openabl-update "$name/"
           cp -R LICENSE LICENSES.md LICENSES "$name/"
           cp Assets/*-OFL.txt "$name/LICENSES/"
           tar -czf "$name.tar.gz" "$name"

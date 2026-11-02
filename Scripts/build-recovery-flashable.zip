@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Package a signed OpenABL image as a recovery-flashable Android addon.
+# Package a signed OpenABL image as a recovery-flashable Android addon:
+#
+#   build-recovery-flashable.zip IMAGE OUTPUT
+#
+# It installs only over an ABL with the same MBN version.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
