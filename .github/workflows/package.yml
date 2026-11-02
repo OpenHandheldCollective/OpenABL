@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Packages a release's images into a .tar.gz archive (one folder per chipset
-# with the image and its .sha256) and uploads it to that release.
+# Packages a release's images into a .tar.gz archive (one folder per image
+# with it and its .sha256) and uploads it to that release.
 name: Package
 
 on:
@@ -41,11 +41,11 @@ jobs:
           gh release download "$TAG" --pattern 'abl_signed-*.elf' --dir images
           for elf in images/abl_signed-*.elf; do
             file=$(basename "$elf")
-            soc=${file#abl_signed-}
-            soc=${soc%.elf}
-            mkdir "$name/$soc"
-            cp "$elf" "$name/$soc/"
-            (cd "$name/$soc" && sha256sum "$file" > "$file.sha256")
+            image=${file#abl_signed-}
+            image=${image%.elf}
+            mkdir "$name/$image"
+            cp "$elf" "$name/$image/"
+            (cd "$name/$image" && sha256sum "$file" > "$file.sha256")
             found=$((found + 1))
           done
           [ "$found" -gt 0 ] || { echo "$TAG has no images" >&2; exit 1; }

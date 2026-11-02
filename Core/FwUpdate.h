@@ -56,8 +56,10 @@ typedef struct _FW_UPDATE_INPUT {
 typedef struct _FW_UPDATE_CHECK {
   UINT32 Status;
   // major << 16 | minor
-  UINT32    Version;
-  BOOLEAN   AlreadyInstalled;
+  UINT32  Version;
+  BOOLEAN AlreadyInstalled;
+  // Another MBN version or signed differently, so XBL wouldn't load it.
+  BOOLEAN   OtherDevice;
   ABL_IMAGE New;
   ABL_IMAGE Old;
   CHAR8     Why[96];

@@ -15,8 +15,16 @@ in its firmware volume and starts it instead of its own fastboot menu.
 
 The main menu and the boot entries, rendered by the simulator (`make sim`).
 
-Supported chipsets: SDM845, SM4450, SM6115, SM6450, SM7675, SM8250, SM8475,
-SM8550, SM8650 and SM8750.
+Supported chipsets, and the image each takes:
+
+| Image | Chipsets |
+|---|---|
+| `abl_signed-MBN5.elf` | SDM845 |
+| `abl_signed-MBN6.elf` | SM6115, SM8250 |
+| `abl_signed-MBN7.elf` | SM4450, SM6450, SM7675, SM7750, SM8475, SM8550, SM8650, SM8750 |
+
+Chips whose stock ABL is signed with the same MBN version take the same
+image; OpenABL checks which chip it's on when it starts.
 
 ## Using it
 
@@ -24,11 +32,11 @@ Flash the image for your chipset to the ABL partition (both slots on A/B
 devices):
 
 ```bash
-fastboot flash abl_a abl_signed-SM8550.elf
+fastboot flash abl_a abl_signed-MBN7.elf
 ```
 
 ```bash
-fastboot flash abl_b abl_signed-SM8550.elf
+fastboot flash abl_b abl_signed-MBN7.elf
 ```
 
 At power-on:
@@ -150,12 +158,13 @@ Requires git and Docker. The build runs in an amd64 container, so on Apple
 Silicon use Docker Desktop or OrbStack.
 
 ```bash
-./build.sh sm8550
+./build.sh mbn7
 ```
 
-Give one or more chipsets, or `all`. Images are written to
-`build/out/abl_signed-<CHIPSET>.elf` with a `.sha256` file next to each. The
-build also writes `build/out/openabl-recovery-flashable-<chipset>.zip`: a
+Give one or more images (`mbn5`, `mbn6`, `mbn7`), chipsets, which build the
+image they take, or `all`. Images are written to
+`build/out/abl_signed-<IMAGE>.elf` with a `.sha256` file next to each. The
+build also writes `build/out/openabl-recovery-flashable-<image>.zip`: a
 recovery-flashable Android addon that writes ABL to both slots and sets up a
 persistence addon.d script to re-flash the opposite slot after an OTA update.
 
@@ -166,13 +175,13 @@ it.
 | Option | |
 |---|---|
 | `--no-standard-boot` | Leave out standard boot (Linux then boots only from the default boot file) |
-| `--clean` | Build each chipset from scratch |
+| `--clean` | Build each image from scratch |
 
 The first build downloads Qualcomm's ABL source (tianocore edk2 from
 CodeLinaro, tag `KERNEL.PLATFORM.3.0.r23-02400-kernel.0`), applies
 `Abl/openabl.patch` and adds the files under `Abl/QcomModulePkg`, and
-downloads microui and qtestsign, all into `build/`. The first build of a
-chipset takes about ten minutes; later builds only recompile what changed.
+downloads microui and qtestsign, all into `build/`. The first build of an
+image takes about ten minutes; later builds only recompile what changed.
 
 To build only the menu program (`build/menu/openabl-menu.efi`) with your own
 clang and lld-link, fetch the sources with `Scripts/fetch.sh` and run make.
@@ -190,12 +199,12 @@ translate it, and add its symbol to that list. Strings left out show in English.
 The simulator's `--lang` accepts a symbol (`En`, `Es`, `Fr`, `Ru`, `Uk`, `Ja`,
 `ZhHans`, `Ko`).
 
-GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
+GitHub Actions (`.github/workflows/build.yml`) builds every image when a
 `v*` tag is pushed and uploads the images to that tag's release, with
 `openabl-<TAG>-source.tar.xz`: this repository and the sources it fetches,
 which `./build.sh` builds without fetching them again. Run it by hand to
 build a tag. Each build also uploads `openabl-<TAG>.tar.gz` with a folder per
-chipset holding its image and `.sha256`; the Package workflow makes that
+image holding it and its `.sha256`; the Package workflow makes that
 archive for an existing release. CI keeps the sources it fetches in the
 `sources` pre-release and fetches them again only after a pin in
 `Scripts/fetch.sh` changes.
@@ -205,20 +214,21 @@ archive for an existing release. CI keeps the sources it fetches in the
 OpenABL can be updated from Linux, without fastboot:
 
 ```bash
-openabl-update abl_signed-SM8550.elf
+openabl-update openabl-v1.4/
 ```
 
-`Linux/openabl-update` copies the image and its `.sha256` to
-`\openabl\update\` on the ESP. On the next boot into Linux, OpenABL checks
-it against the ABL in the active slot. XBL won't fall back to the other
-slot, so the image is only written if:
+`Linux/openabl-update` takes images, or the folder from a release's
+`openabl-<TAG>.tar.gz`, and copies them with their `.sha256` to
+`\openabl\update\` on the ESP. On the next boot into Linux, OpenABL
+checks each staged image against the ABL in the active slot and installs
+the newest that passes. XBL won't fall back to the other slot, so an image is only written
+if:
 
 - its SHA-256 matches the `.sha256`
 - its segment hashes check out and it fits in `abl`
-- it's for the same chipset and a newer version (`--force` skips the
-  version check)
-- the ELF type, MBN version, software id and kind of signature match the
-  installed ABL
+- it's a newer version (`--force` skips the version check)
+- its ELF type, MBN version, software id and kind of signature match the
+  installed ABL, so it's the right image for this device
 - the battery is charged enough to flash
 
 The inactive slot is written first, then the active one, each read back and
