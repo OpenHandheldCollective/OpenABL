@@ -394,6 +394,9 @@ MenuBootSplash (
   } else {
     PanelRotation = Ctx->Rotation % 360;
   }
+  if (Ctx->ModelRotation != ROTATION_NONE) {
+    QcomClearPanelTurn ();
+  }
   QcomFirmwarePanelRotation (PanelW, PanelH, &FirmwareRotation);
   Splash.Degrees = (UINT16)((PanelRotation + FirmwareRotation) % 360);
   LogicalSize (

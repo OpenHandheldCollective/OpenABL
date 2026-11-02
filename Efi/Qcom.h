@@ -129,14 +129,20 @@ QcomReadDeviceState (
 );
 
 // Finds how XBL rotates the picture on a Width x Height framebuffer, in
-// degrees, from its panel XMLs. FALSE off Qualcomm firmware or if no panel
-// has that size.
+// degrees, from its panel XMLs (0 after QcomClearPanelTurn). FALSE off
+// Qualcomm firmware or if no panel has that size.
 BOOLEAN
 QcomFirmwarePanelRotation (
   IN UINTN    Width,
   IN UINTN    Height,
   OUT UINT16 *Out
 );
+
+// Stops XBL turning the panel 180 degrees (PanelOrientation), so the
+// framebuffer lines up with the panel as Linux drives it. Stays off for the
+// rest of the boot. FALSE on Display Utils older than 0x20002.
+BOOLEAN
+QcomClearPanelTurn (VOID);
 
 // Panel XMLs, pointing into XBL's memory.
 typedef struct _QCOM_XMLS OABL_VEC (OABL_BYTES) QCOM_XMLS;

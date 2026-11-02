@@ -340,6 +340,38 @@ QcomReadDeviceState (
   return TRUE;
 }
 
+// Not in the ABL's EFIDisplayUtils.h; Display Utils has it from 0x20002.
+#define DISPLAY_UTILS_ORIENTATION          6
+#define DISPLAY_UTILS_ORIENTATION_REVISION 0x20002
+
+typedef struct _DISPLAY_UTILS_ORIENTATION_PARAMS {
+  BOOLEAN Inverted;
+} DISPLAY_UTILS_ORIENTATION_PARAMS;
+
+STATIC BOOLEAN mPanelTurnAsked;
+STATIC BOOLEAN mPanelTurnCleared;
+
+BOOLEAN
+QcomClearPanelTurn (VOID)
+{
+  DISPLAY_UTILS_ORIENTATION_PARAMS Params = {.Inverted = FALSE};
+  EfiQcomDisplayUtilsProtocol     *DisplayUtils;
+
+  if (mPanelTurnAsked) {
+    return mPanelTurnCleared;
+  }
+  mPanelTurnAsked = TRUE;
+  DisplayUtils    = Open (&gQcomDisplayUtilsProtocolGuid);
+  mPanelTurnCleared =
+    DisplayUtils &&
+    DisplayUtils->Revision >= DISPLAY_UTILS_ORIENTATION_REVISION &&
+    DisplayUtils->DisplayUtilsSetProperty (
+      (EFI_DISPLAY_UTILS_PROPERTY_TYPE)DISPLAY_UTILS_ORIENTATION, &Params,
+      sizeof (Params)
+    ) == EFI_SUCCESS;
+  return mPanelTurnCleared;
+}
+
 BOOLEAN
 QcomFirmwarePanelRotation (
   IN UINTN    Width,
@@ -350,6 +382,10 @@ QcomFirmwarePanelRotation (
   QCOM_XMLS Xmls;
   BOOLEAN   Ok;
 
+  if (mPanelTurnCleared) {
+    *Out = 0;
+    return TRUE;
+  }
   if (!QcomPanelXmls (&Xmls)) {
     return FALSE;
   }

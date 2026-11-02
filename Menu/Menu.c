@@ -662,6 +662,25 @@ LearnModelRotation (IN OUT MENU_STATE *M)
   ModelsFree (&Found);
 }
 
+// The devicetree's rotation is for the panel as Linux drives it, so stop
+// XBL turning it. Only asked once, as it can't be undone.
+STATIC VOID
+ClearPanelTurnForModel (IN OUT APP *A)
+{
+  STATIC BOOLEAN Asked;
+
+  if (Asked || A->Settings.ModelRotation == ROTATION_NONE) {
+    return;
+  }
+  Asked = TRUE;
+  if (QcomClearPanelTurn ()) {
+    AppSetFirmwareRotation (A, 0);
+    MenuLog ("XBL's panel turn is off, so the devicetree's rotation holds");
+  } else {
+    MenuLog ("XBL can't stop turning the panel; adding its turn instead");
+  }
+}
+
 // Builds the model list for the UI, and saves the selected model's rotation
 // for the next start. Caller frees *Out.
 STATIC EFI_STATUS
@@ -1533,6 +1552,7 @@ RunMenu (
       MenuLog ("XBL turns the panel by %u\xc2\xb0", FirmwareRotation);
     }
   }
+  ClearPanelTurnForModel (&mApp);
 #ifdef OABL_DEBUG
   {
     EXPERIMENTS Switches = Experiments ();
@@ -1590,6 +1610,8 @@ RunMenu (
         Pend (&Pending, Tick);
       }
     }
+    // Picking a model can give a rotation.
+    ClearPanelTurnForModel (&mApp);
     Want = AppDesiredRotation (&mApp);
     if (Want != Rotation) {
       MenuLog ("rotation -> %u", Want);
