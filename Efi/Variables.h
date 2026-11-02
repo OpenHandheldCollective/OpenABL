@@ -6,9 +6,11 @@
 /**
   Variables - OpenABL's settings, kept in the misc partition.
 
-  Core/Settings has the names and encodings, Core/SettingsStore the layout in
-  the last 4 KiB of misc. Every device keeps its settings there, so they
-  don't depend on XBL's variable services or on devinfo.
+  This is only the storage. Core/Settings has the names and encodings, and
+  is the only module that reads or writes settings through it.
+  Core/SettingsStore has the layout in the last 4 KiB of misc. Every device
+  keeps its settings there, so they don't depend on XBL's variable services
+  or on devinfo.
 
   The store is read once into memory. Gets and puts work on that copy, and
   VariablesFlush writes it back, so a put is kept only once it is flushed.
@@ -52,6 +54,15 @@ VariablesPeek (
   OUT UINTN      *Length
 );
 
+// TRUE if Name holds the Length bytes at Data, from the copy in memory
+// without allocating. Length 0 matches a missing setting.
+BOOLEAN
+VariablesHolds (
+  IN CONST CHAR8 *Name,
+  IN CONST UINT8 *Data OPTIONAL,
+  IN UINTN        Length
+);
+
 // Sets a setting, without flushing. Length 0 deletes it, and deleting a
 // missing setting succeeds. EFI_INVALID_PARAMETER for a name the store
 // can't hold and EFI_OUT_OF_RESOURCES when the store is full.
@@ -66,6 +77,11 @@ VariablesPut (
 // when there was nothing to write, EFI_NOT_FOUND if misc couldn't be read.
 EFI_STATUS
 VariablesFlush (VOID);
+
+// Drops what was put since the last flush, after a failed one, by reading
+// misc again. Without misc the puts stay: they only last this boot anyway.
+VOID
+VariablesDiscard (VOID);
 
 // Once, when misc held no store of this version: carries the device model
 // over from another version's store, else from an older loader

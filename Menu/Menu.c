@@ -23,7 +23,6 @@
 #include "Efi/Models.h"
 #include "Efi/Qcom.h"
 #include "Efi/Quirks.h"
-#include "Efi/Variables.h"
 #include "Efi/SysInfo.h"
 #include "Efi/Uninstall.h"
 #include "Efi/UsbHost.h"
@@ -38,129 +37,6 @@
 extern CONST UINT8 gOablAssetFont[];
 extern CONST UINTN gOablAssetFontSize;
 
-// Which model the cached DeviceModelRotation belongs to.
-#define KEY_ROTATION_FOR SETTINGS_KEY_MODEL_ROTATION_FOR
-#define NONE_U16         0xFFFFu
-
-// Settings variables
-
-BOOLEAN
-MenuVarGet (
-  IN CONST CHAR8  *Name,
-  OUT OABL_BUFFER *Out
-)
-{
-  return VariablesGet (Name, Out);
-}
-
-EFI_STATUS
-MenuVarPut (
-  IN CONST CHAR8 *Name,
-  IN CONST UINT8 *Data OPTIONAL,
-  IN UINTN        Size
-)
-{
-  return VariablesPut (Name, Data, Size);
-}
-
-BOOLEAN
-MenuVarIs (
-  IN CONST CHAR8 *Name,
-  IN UINT8        Value
-)
-{
-  OABL_BUFFER Stored = {0};
-  BOOLEAN     Is =
-    MenuVarGet (Name, &Stored) && Stored.Len == 1 && Stored.Data[0] == Value;
-
-  BufferFree (&Stored);
-  return Is;
-}
-
-// Like MenuVarPut, but only logs a failure.
-STATIC VOID
-VarSet (
-  IN CONST CHAR8 *Name,
-  IN CONST UINT8 *Data,
-  IN UINTN        Size
-)
-{
-  EFI_STATUS Status = MenuVarPut (Name, Data, Size);
-
-  if (EFI_ERROR (Status)) {
-    MenuLog ("setting %s failed: %s", Name, MENU_STATUS (Status));
-  }
-}
-
-VOID
-MenuFlush (VOID)
-{
-  EFI_STATUS Status = VariablesFlush ();
-
-  if (EFI_ERROR (Status)) {
-    MenuLog ("saving the settings to misc: %s", MENU_STATUS (Status));
-  }
-}
-
-// The settings Save stores. MenuSavePrefs saves the display preferences.
-STATIC CONST CHAR8 *CONST mAblKeys[7] = {
-  SETTINGS_KEY_BOOT_MODE,        SETTINGS_KEY_ABL_MODE,
-  SETTINGS_KEY_ALT_VOLUME_UP,    SETTINGS_KEY_BOOT_SOURCE,
-  SETTINGS_KEY_OFFMODE_CHARGING, SETTINGS_KEY_MODEL,
-  SETTINGS_KEY_CUSTOM_LOGO,
-};
-
-STATIC BOOLEAN
-AblKey (IN CONST CHAR8 *Key)
-{
-  for (UINTN Index = 0; Index < sizeof (mAblKeys) / sizeof (*mAblKeys);
-       Index++) {
-    if (AsciiStrEq (Key, mAblKeys[Index])) {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-// Formats a setting's value for the log.
-STATIC VOID
-Shown (
-  IN CONST CHAR8 *Key,
-  IN CONST UINT8 *Value,
-  IN UINTN        Size,
-  OUT CHAR8      *Out,
-  IN UINTN        OutSize
-)
-{
-  if (AsciiStrEq (Key, SETTINGS_KEY_MODEL)) {
-    CHAR8 *Text;
-    if (!Size) {
-      AsciiStrCopy (Out, OutSize, "none");
-      return;
-    }
-    Text = Utf8Lossy (Value, Size);
-    SPrint (Out, OutSize, "\"%s\"", Text ? Text : "");
-    FreePool (Text);
-    return;
-  }
-  if (Size) {
-    SPrint (Out, OutSize, "%u", Value[0]);
-  } else {
-    AsciiStrCopy (Out, OutSize, "");
-  }
-}
-
-STATIC BOOLEAN
-StoredSettingGet (
-  IN VOID         *Context OPTIONAL,
-  IN CONST CHAR8  *Name,
-  OUT OABL_BUFFER *Out
-)
-{
-  (VOID)Context;
-  return MenuVarGet (Name, Out);
-}
-
 // Reads and deletes BootFailure, why the boot before a restart into
 // fastboot found nothing. Never returns NO_USB, which would make the menu
 // restart for it again.
@@ -170,114 +46,19 @@ CarriedResult (VOID)
   OABL_BUFFER Stored = {0};
   UINT8       Result;
 
-  if (!MenuVarGet (SETTINGS_KEY_BOOT_FAILURE, &Stored) || Stored.Len != 1) {
+  if (!SettingsFlagGet (SETTINGS_FLAG_BOOT_FAILURE, &Stored) ||
+      Stored.Len != 1) {
     BufferFree (&Stored);
     return MENU_START_RESULT_NONE;
   }
   Result = Stored.Data[0];
   BufferFree (&Stored);
-  MenuVarPut (SETTINGS_KEY_BOOT_FAILURE, NULL, 0);
-  MenuFlush ();
+  SettingsFlagSet (SETTINGS_FLAG_BOOT_FAILURE, NULL, 0);
   MenuLog ("the boot before the restart: %u", Result);
   return Result >= MENU_START_RESULT_NOTHING &&
              Result <= MENU_START_RESULT_RETURNED
            ? Result
            : MENU_START_RESULT_NONE;
-}
-
-VOID
-MenuStoredSettings (
-  IN CONST MENU_HOST_STATE *State,
-  IN CONST SETTINGS_CAPS   *Caps,
-  OUT SETTINGS             *Out
-)
-{
-  SETTINGS Defaults;
-
-  SettingsDefault (&Defaults);
-  SettingsFromVars (&Defaults, StoredSettingGet, NULL, Out);
-  // An ABL built without USB host reads the USB boot source as Auto.
-  if (Out->BootSource == BOOT_SOURCE_USB && !Caps->UsbHost) {
-    Out->BootSource = BOOT_SOURCE_AUTO;
-  }
-  // The charger screen setting is Qualcomm's devinfo flag.
-  Out->OffmodeCharging = State->OffmodeCharging != 0;
-}
-
-// Reads a two-byte little-endian variable. Fails if it isn't two bytes.
-STATIC BOOLEAN
-Word (
-  IN CONST CHAR8 *Name,
-  OUT UINT16     *Out
-)
-{
-  OABL_BUFFER Stored = {0};
-  BOOLEAN     Ok     = MenuVarGet (Name, &Stored) && Stored.Len == 2;
-
-  if (Ok) {
-    *Out = ReadLe16 (Stored.Data);
-  }
-  BufferFree (&Stored);
-  return Ok;
-}
-
-VOID
-MenuLoadPrefs (
-  IN CONST CHAR8 *Model,
-  OUT UINT16     *Rotation,
-  OUT UINT16     *ModelRotation,
-  OUT UINT8      *Language
-)
-{
-  OABL_BUFFER Owner  = {0};
-  OABL_BUFFER Stored = {0};
-  UINT16      Degrees;
-
-  *Rotation =
-    Word (SETTINGS_KEY_ROTATION, &Degrees) &&
-        (Degrees == 0 || Degrees == 90 || Degrees == 180 || Degrees == 270)
-      ? Degrees
-      : ROTATION_AUTO;
-  *ModelRotation = ROTATION_NONE;
-  if (Model[0] && MenuVarGet (KEY_ROTATION_FOR, &Owner) &&
-      Utf8Valid (Owner.Data, Owner.Len) &&
-      TextEq (
-        (OABL_TEXT){(CONST CHAR8 *)Owner.Data, Owner.Len}, TextOf (Model)
-      ) &&
-      Word (SETTINGS_KEY_MODEL_ROTATION, &Degrees) && Degrees != NONE_U16 &&
-      Degrees % 90 == 0) {
-    *ModelRotation = Degrees;
-  }
-  BufferFree (&Owner);
-  *Language = MenuVarGet (SETTINGS_KEY_LANGUAGE, &Stored) &&
-                  Stored.Len <= SETTINGS_MAX_LANGUAGE_LEN
-                ? SettingsLanguageFromKey (Stored.Data, Stored.Len)
-                : SETTINGS_LANGUAGES;
-  if (*Language >= SETTINGS_LANGUAGES) {
-    *Language = LANG_EN;
-  }
-  BufferFree (&Stored);
-}
-
-VOID
-MenuSavePrefs (IN CONST SETTINGS *Settings)
-{
-  UINT8        Bytes[2];
-  CONST CHAR8 *Key;
-
-  WriteLe16 (
-    Bytes, Settings->Rotation == ROTATION_AUTO ? NONE_U16 : Settings->Rotation
-  );
-  VarSet (SETTINGS_KEY_ROTATION, Bytes, 2);
-  VarSet (
-    KEY_ROTATION_FOR, (CONST UINT8 *)Settings->Model,
-    AsciiStrLen (Settings->Model)
-  );
-  WriteLe16 (Bytes, Settings->ModelRotation);
-  VarSet (SETTINGS_KEY_MODEL_ROTATION, Bytes, 2);
-  Key = SettingsLanguageKey (Settings->Language);
-  VarSet (SETTINGS_KEY_LANGUAGE, (CONST UINT8 *)Key, AsciiStrLen (Key));
-  MenuFlush ();
 }
 
 SETTINGS_CAPS
@@ -366,11 +147,7 @@ MenuNew (
   }
   *M          = (MENU_STATE){.Host = *Host, .StartModels = StartModels};
   M->Caps     = MenuCapsOf (&State);
-  MenuStoredSettings (&State, &M->Caps, &M->Stored);
-  MenuLoadPrefs (
-    M->Stored.Model, &M->Stored.Rotation, &M->Stored.ModelRotation,
-    &M->Stored.Language
-  );
+  M->Stored   = State.Settings;
   LangSet (M->Stored.Language);
   Version = MenuHostText (State.Version, sizeof (State.Version));
   AsciiStrCopy (M->AblVersion, sizeof (M->AblVersion), Version ? Version : "");
@@ -381,103 +158,25 @@ MenuNew (
   return EFI_SUCCESS;
 }
 
-// Reads the settings and the ABL's state again, keeping the display
-// preferences.
-STATIC EFI_STATUS
-Refresh (IN OUT MENU_STATE *M)
-{
-  MENU_HOST_STATE State;
-  SETTINGS        Base;
-  EFI_STATUS      Status = MenuHostState (&M->Host, &State);
-
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-  M->Caps     = MenuCapsOf (&State);
-  MenuStoredSettings (&State, &M->Caps, &Base);
-  Base.ModelRotation = AsciiStrEq (Base.Model, M->Stored.Model)
-                         ? M->Stored.ModelRotation
-                         : ROTATION_NONE;
-  Base.Rotation      = M->Stored.Rotation;
-  Base.Language      = M->Stored.Language;
-  M->Stored          = Base;
-  return EFI_SUCCESS;
-}
-
-// Stores the changed settings and the display preferences, then checks
-// what the variables actually hold. Returns an error message, or NULL.
+// Saves Want, and keeps what is stored afterwards. Caps stay: a save
+// doesn't change them, and the uninstall updates CfwOnInternal itself.
+// Returns an error message, or NULL.
 STATIC CONST CHAR8 *
 Save (
   IN OUT MENU_STATE *M,
   IN CONST SETTINGS *Want
 )
 {
-  SETTINGS_VAR Changes[SETTINGS_VARS];
-  UINTN        Count = SettingsChangedVars (&M->Stored, Want, Changes);
-  UINTN        Kept  = 0;
-  CHAR8        Text[MODEL_LEN + 8];
-
-  for (UINTN Index = 0; Index < Count; Index++) {
-    if (AblKey (Changes[Index].Name)) {
-      Changes[Kept++] = Changes[Index];
-    }
-  }
-  Count = Kept;
-  for (UINTN Index = 0; Index < Count; Index++) {
-    CONST CHAR8 *Key   = Changes[Index].Name;
-    CONST UINT8 *Value = Changes[Index].Value;
-    UINTN        Len   = Changes[Index].Len;
-    EFI_STATUS   Status;
-
-    // The charger screen is Qualcomm's devinfo flag.
-    if (AsciiStrEq (Key, SETTINGS_KEY_OFFMODE_CHARGING)) {
-      UINT32 Action = Len && Value[0] == 1
-                        ? OPENABL_MENU_ACTION_CHARGER_SCREEN_ON
-                        : OPENABL_MENU_ACTION_CHARGER_SCREEN_OFF;
-      Status        = MenuHostAction (&M->Host, Action);
-      if (EFI_ERROR (Status)) {
-        MenuLog ("setting %s failed: %s", Key, MENU_STATUS (Status));
-        Refresh (M);
-        return gStrings->AblSettingFailed;
-      }
-      Shown (Key, Value, Len, Text, sizeof (Text));
-      MenuLog ("set %s = %s (devinfo)", Key, Text);
-      continue;
-    }
-    Status = MenuVarPut (Key, Value, Len);
-    if (EFI_ERROR (Status)) {
-      MenuLog ("setting %s failed: %s", Key, MENU_STATUS (Status));
-      Refresh (M);
-      return AsciiStrEq (Key, SETTINGS_KEY_MODEL) ? gStrings->AblModelFailed
-                                                  : gStrings->AblSettingFailed;
-    }
-    // Show or hide the ABL's log right away.
-    if (AsciiStrEq (Key, SETTINGS_KEY_ABL_MODE)) {
-      if (Len && Value[0] == 1) {
-        AblConsoleShow ();
-      } else {
-        AblConsoleHide ();
-      }
-    }
-    Shown (Key, Value, Len, Text, sizeof (Text));
-    MenuLog ("set %s = %s", Key, Text);
-  }
-  // MenuSavePrefs also flushes the settings written above.
-  M->Stored.Rotation = Want->Rotation;
-  AsciiStrCopy (M->Stored.Model, sizeof (M->Stored.Model), Want->Model);
-  M->Stored.ModelRotation = Want->ModelRotation;
-  M->Stored.Language      = Want->Language;
-  MenuSavePrefs (Want);
-  if (EFI_ERROR (Refresh (M))) {
+  switch (SettingsSave (&M->Host, Want, &M->Stored)) {
+  case SETTINGS_SAVED:
+    return NULL;
+  case SETTINGS_MODEL_NOT_SAVED:
+    return gStrings->AblModelFailed;
+  case SETTINGS_NO_ABL:
     return gStrings->AblNotAnswering;
+  default:
+    return gStrings->AblSettingFailed;
   }
-  Count = SettingsChangedVars (&M->Stored, Want, Changes);
-  for (UINTN Index = 0; Index < Count; Index++) {
-    if (AblKey (Changes[Index].Name)) {
-      return gStrings->AblSettingFailed;
-    }
-  }
-  return NULL;
 }
 
 STATIC BOOLEAN
@@ -500,7 +199,7 @@ UsbLive (IN CONST MENU_STATE *M)
 {
   USB_HOST_BOARD Board;
 
-  return M->Caps.UsbHost && MenuVarIs (SETTINGS_KEY_USB_HOST_LIVE, 1) &&
+  return M->Caps.UsbHost && M->Stored.UsbHostLive &&
          ChipBoard (&Board);
 }
 
@@ -527,12 +226,10 @@ RestartToScan (IN MENU_STATE *M)
   STATIC CONST UINT8 One = 1;
   EFI_STATUS         Status;
 
-  Status = MenuVarPut (SETTINGS_KEY_SHOW_MODEL_MENU, &One, 1);
+  Status = SettingsFlagSet (SETTINGS_FLAG_SHOW_MODEL_MENU, &One, 1);
   if (EFI_ERROR (Status)) {
-    MenuLog ("setting ShowModelMenu failed: %s", MENU_STATUS (Status));
     return Status;
   }
-  MenuFlush ();
   MenuLog ("set ShowModelMenu = 1");
   return Act (M, OPENABL_MENU_ACTION_START);
 }
@@ -620,28 +317,19 @@ RotationOfModel (IN CONST SCANNED_MODEL *Model OPTIONAL)
 // Looks up the selected model's panel rotation the first time the menu runs
 // with it, so Auto is right from the first screen. The portrait panel guess
 // suits only some devices. The result is saved even when the devicetree has
-// none, so this only repeats if the scan failed (USB boot source).
+// none, so this only repeats if the scan failed (USB boot source) or didn't
+// find the model.
 STATIC VOID
 LearnModelRotation (IN OUT MENU_STATE *M)
 {
-  SCANNED_MODELS Found;
-  EFI_STATUS     Status;
-  CHAR8          Text[8];
+  SCANNED_MODELS       Found;
+  CONST SCANNED_MODEL *Model;
+  SETTINGS             Want;
+  EFI_STATUS           Status;
+  CHAR8                Text[8];
 
-  if (!M->Stored.Model[0]) {
+  if (!M->Stored.Model[0] || M->Stored.ModelRotationKnown) {
     return;
-  }
-  {
-    OABL_BUFFER Owner = {0};
-    BOOLEAN     Same  = MenuVarGet (KEY_ROTATION_FOR, &Owner) &&
-                        TextEq (
-                          (OABL_TEXT){(CONST CHAR8 *)Owner.Data, Owner.Len},
-                          TextOf (M->Stored.Model)
-                        );
-    BufferFree (&Owner);
-    if (Same) {
-      return;
-    }
   }
   Status = FindModels (M, FALSE, &Found);
   if (EFI_ERROR (Status)) {
@@ -650,14 +338,22 @@ LearnModelRotation (IN OUT MENU_STATE *M)
     );
     return;
   }
-  M->Stored.ModelRotation =
-    RotationOfModel (ModelNamed (&Found, M->Stored.Model));
-  MenuSavePrefs (&M->Stored);
-  if (M->Stored.ModelRotation == ROTATION_NONE) {
+  // Not found, say with the card out: try again at the next start.
+  Model = ModelNamed (&Found, M->Stored.Model);
+  if (!Model) {
+    MenuLog ("panel rotation of %s: the model wasn't found", M->Stored.Model);
+    ModelsFree (&Found);
+    return;
+  }
+  Want                    = M->Stored;
+  Want.ModelRotation      = RotationOfModel (Model);
+  Want.ModelRotationKnown = TRUE;
+  if (Want.ModelRotation == ROTATION_NONE) {
     AsciiStrCopy (Text, sizeof (Text), "none");
   } else {
-    AsciiStrFromU64 (Text, sizeof (Text), M->Stored.ModelRotation);
+    AsciiStrFromU64 (Text, sizeof (Text), Want.ModelRotation);
   }
+  Save (M, &Want);
   MenuLog ("panel rotation of %s: %s", M->Stored.Model, Text);
   ModelsFree (&Found);
 }
@@ -679,9 +375,12 @@ Scan (
     return Status;
   }
   Selected = M->Stored.Model[0] ? ModelNamed (&Found, M->Stored.Model) : NULL;
-  if (Selected && M->Stored.ModelRotation != RotationOfModel (Selected)) {
-    M->Stored.ModelRotation = RotationOfModel (Selected);
-    MenuSavePrefs (&M->Stored);
+  if (Selected && (!M->Stored.ModelRotationKnown ||
+                   M->Stored.ModelRotation != RotationOfModel (Selected))) {
+    SETTINGS Want           = M->Stored;
+    Want.ModelRotation      = RotationOfModel (Selected);
+    Want.ModelRotationKnown = TRUE;
+    Save (M, &Want);
   }
   *Count = Found.Count;
   *Out   = AllocateZeroArray (Found.Count ? Found.Count : 1, sizeof (**Out));
@@ -821,8 +520,7 @@ PickEntry (IN UINTN Index)
   BufferAppendLe16 (&Pick, (UINT16)Dev->Len);
   BufferAppend (&Pick, Dev->Data, Dev->Len);
   BufferAppend (&Pick, mEntryIds[Index], AsciiStrLen (mEntryIds[Index]));
-  Status = MenuVarPut (MENU_PICK_VAR, Pick.Data, Pick.Len);
-  MenuFlush ();
+  Status = SettingsFlagSet (SETTINGS_FLAG_BOOT_ENTRY_ONCE, Pick.Data, Pick.Len);
   BufferFree (&Pick);
   MenuLog ("Boot entries: %s (%s)", mEntryIds[Index], MENU_STATUS (Status));
 }
@@ -1113,54 +811,6 @@ LogLines (
   return Count;
 }
 
-// Debug section
-
-#ifdef OABL_DEBUG
-// Reads the Debug section's switches. A missing variable means the build's
-// default.
-STATIC EXPERIMENTS
-Experiments (VOID)
-{
-  OABL_BUFFER Stored = {0};
-  UINT8       Quiesce =
-    MenuVarGet (SETTINGS_KEY_DISPLAY_QUIESCE, &Stored) && Stored.Len
-      ? Stored.Data[0]
-      : 0;
-
-  BufferFree (&Stored);
-  return (EXPERIMENTS){
-    .UsbLive       = MenuVarIs (SETTINGS_KEY_USB_HOST_LIVE, 1),
-    .Quiesce       = Quiesce & 1,
-    .PanelLinesOff = (Quiesce & 2) != 0,
-  };
-}
-
-// Stores and flushes the Debug section's switches.
-STATIC EFI_STATUS
-SaveExperiments (IN EXPERIMENTS Want)
-{
-  STATIC CONST UINT8 One     = 1;
-  UINT8              Quiesce = (UINT8)(Want.Quiesce | Want.PanelLinesOff << 1);
-  EFI_STATUS         Status =
-    MenuVarPut (SETTINGS_KEY_USB_HOST_LIVE, &One, Want.UsbLive ? 1 : 0);
-
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-  Status = MenuVarPut (SETTINGS_KEY_DISPLAY_QUIESCE, &Quiesce, 1);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-  MenuFlush ();
-  MenuLog (
-    "experiments: live USB host %s, display parked %s, panel lines off %s",
-    Want.UsbLive ? "on" : "off", Want.Quiesce ? "on" : "off",
-    Want.PanelLinesOff ? "on" : "off"
-  );
-  return EFI_SUCCESS;
-}
-#endif
-
 // Commands
 
 // Returns TRUE if Start Linux may boot without a restart. Only from
@@ -1173,8 +823,8 @@ MayStartHere (IN MENU_STATE *M)
   BOOLEAN         Ok;
 
   Ok = gFastbootUp && !EFI_ERROR (MenuHostState (&M->Host, &State)) &&
-       State.BootMode == 0 && !State.AltVolumeBoot &&
-       (State.BootSource != MENU_HOST_BOOT_SOURCE_USB ||
+       !State.StartAndroid && !State.AltVolumeBoot &&
+       (State.Settings.BootSource != BOOT_SOURCE_USB ||
         (State.Flags & OPENABL_MENU_STATE_USB_HOST));
   MenuLog ("Start Linux in this boot: %s", Ok ? "yes" : "no, a restart");
   return Ok;
@@ -1217,8 +867,7 @@ RunCommand (
     Status  = Act (M, OPENABL_MENU_ACTION_START);
 #ifdef OABL_STANDARD_BOOT
     // The restart didn't happen: don't leave the pick for a later Start.
-    MenuVarPut (MENU_PICK_VAR, NULL, 0);
-    MenuFlush ();
+    SettingsFlagSet (SETTINGS_FLAG_BOOT_ENTRY_ONCE, NULL, 0);
 #endif
     Args[0] = MENU_STATUS (Status);
     LangFill (Why, sizeof (Why), gStrings->AblRestartFailed, Args, 1);
@@ -1230,7 +879,6 @@ RunCommand (
     SETTINGS     Was     = M->Stored;
     CONST CHAR8 *Failure = Save (M, &Want);
     AppSetSettings (&mApp, &M->Stored);
-    AppSetCaps (&mApp, &M->Caps);
 #ifdef OABL_STANDARD_BOOT
     // Only these change what Start would try.
     if (M->Stored.BootMode != Was.BootMode ||
@@ -1345,21 +993,6 @@ RunCommand (
   case COMMAND_OPEN_MENU:
     M->OpenMenu = TRUE;
     return TRUE;
-  case COMMAND_SAVE_EXPERIMENTS: {
-#ifdef OABL_DEBUG
-    EXPERIMENTS Want = Command.Experiments;
-    EXPERIMENTS Now;
-    BOOLEAN     Ok = SaveExperiments (Want) == EFI_SUCCESS;
-
-    Now = Experiments ();
-    AppSetExperiments (&mApp, &Now);
-    if (!Ok || Now.UsbLive != Want.UsbLive || Now.Quiesce != Want.Quiesce ||
-        Now.PanelLinesOff != Want.PanelLinesOff) {
-      AppOnFailed (&mApp, gStrings->AblSettingFailed);
-    }
-#endif
-    break;
-  }
   case COMMAND_LOG: {
     OABL_BUFFER Raw   = {0};
     CHAR8     **Lines = AllocateZeroArray (LOG_LINES, sizeof (*Lines));
@@ -1533,12 +1166,6 @@ RunMenu (
       MenuLog ("XBL turns the panel by %u\xc2\xb0", FirmwareRotation);
     }
   }
-#ifdef OABL_DEBUG
-  {
-    EXPERIMENTS Switches = Experiments ();
-    AppSetExperiments (&mApp, &Switches);
-  }
-#endif
   if (BootPicker) {
     if (!mApp.EntryCount) {
       MenuLog ("Boot entries: nothing to pick from, booting");
@@ -1603,7 +1230,6 @@ RunMenu (
     ViewRun ();
     if (M.RestartAt && ClockNowMs () >= M.RestartAt) {
       MenuLog ("restarting into recovery");
-      MenuFlush ();
       Act (&M, OPENABL_MENU_ACTION_RECOVERY);
       // The ABL reads misc's boot-recovery on any restart.
       gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);

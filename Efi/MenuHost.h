@@ -23,6 +23,7 @@
 #include <Protocol/OpenAblMenuHost.h>
 
 #include "Core/BootDecision.h"
+#include "Core/Settings.h"
 
 // Why the last Start Linux came back. Kept across a restart, so the values
 // stay.
@@ -36,30 +37,22 @@
 // Android's start came back.
 #define MENU_START_RESULT_ANDROID_FAILED 0x80u
 
-// devinfo boot source codes (the ABL's BOOT_SOURCE_*).
-#define MENU_HOST_BOOT_SOURCE_INTERNAL 0u
-#define MENU_HOST_BOOT_SOURCE_AUTO     1u
-#define MENU_HOST_BOOT_SOURCE_USB      2u
-#define MENU_HOST_BOOT_SOURCE_SDCARD   3u
-
 // Returns an OPENABL_MENU_ACTION_* name for the log, or "?".
 CONST CHAR8 *
 MenuHostActionName (IN UINT32 Action);
 
-// The ABL's state, and the settings the menu decides from it.
+// The ABL's state, the settings, and what the boot decides from them.
 typedef struct _MENU_HOST_STATE {
-  UINT8  OffmodeCharging; // Qualcomm's charger screen flag
-  UINT8  Flags;           // OPENABL_MENU_STATE_*
-  UINT8  Entry;           // OPENABL_MENU_ENTRY_*
-  UINT16 Key;             // the key held at the start, a SCAN_* code
-  CHAR8  Version[32];     // the ABL's version
-  // 1 boots Android.
-  UINT8 BootMode;
-  // 1 verbose.
-  UINT8 AblMode;
-  UINT8 AltVolumeUp;
-  // MENU_HOST_BOOT_SOURCE_*
-  UINT8 BootSource;
+  UINT8  Flags;       // OPENABL_MENU_STATE_*
+  UINT8  Entry;       // OPENABL_MENU_ENTRY_*
+  UINT16 Key;         // the key held at the start, a SCAN_* code
+  CHAR8  Version[32]; // the ABL's version
+  // SettingsLoad's, with the charger screen from devinfo. A USB boot source
+  // reads as Auto when the ABL has no USB host.
+  SETTINGS Settings;
+  // Android boots: the setting says so, it is a charger boot, or Volume Up
+  // or Home was held.
+  BOOLEAN StartAndroid;
   // Alternative Volume Up held: any external drive boots.
   BOOLEAN AltVolumeBoot;
 } MENU_HOST_STATE;

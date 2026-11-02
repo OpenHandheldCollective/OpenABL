@@ -85,23 +85,6 @@ QuirksPrepareStorage (
 UINT32
 QuirksChipId (VOID);
 
-// The settings Qualcomm's code in the ABL reads, one byte each, 0 when
-// unset.
-typedef struct _QUIRKS_ABL_SETTINGS {
-  // 0 Linux, 1 Android.
-  UINT8 BootMode;
-  // 0 silent, 1 verbose.
-  UINT8 AblMode;
-  UINT8 AltVolumeUp;
-  // MENU_HOST_BOOT_SOURCE_* (devinfo's numbering).
-  UINT8 BootSource;
-  // 0, 1 or QUIRKS_SETTING_UNSET.
-  UINT8 OffmodeCharging;
-} QUIRKS_ABL_SETTINGS;
-
-// OffmodeCharging when the setting isn't set; devinfo's value applies.
-#define QUIRKS_SETTING_UNSET 0xFFu
-
 // Sets the entry point Run calls. Call before QuirksInstallProtocol.
 VOID
 QuirksSetRun (IN OPENABL_STORAGE_RUN Run);
@@ -118,14 +101,6 @@ QuirksToAbl (
 // NULL.
 LOG_SINK
 QuirksAblLog (IN OPENABL_STORAGE_LOG Log OPTIONAL);
-
-// Reads the settings the way the ABL reads them. A variable that
-// isn't one byte counts as unset. Switches are 1 when set and nonzero. The
-// boot source is mapped from the settings' numbering (Auto 0, Internal 1,
-// SD card 2, USB 3) to devinfo's, Auto when unset. The charger screen is 0,
-// 1 or QUIRKS_SETTING_UNSET.
-QUIRKS_ABL_SETTINGS
-QuirksAblSettings (VOID);
 
 // Installs the ABL's storage protocol (OPENABL_STORAGE_PROTOCOL) on a new
 // handle for the rest of boot services, so the menu must stay loaded. Chip

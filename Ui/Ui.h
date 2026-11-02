@@ -46,13 +46,6 @@ typedef enum {
   REBOOT_OTHER_SLOT,
 } REBOOT_TARGET;
 
-// Switches in the Debug section, which only debug builds have.
-typedef struct _EXPERIMENTS {
-  BOOLEAN UsbLive;
-  BOOLEAN Quiesce;
-  BOOLEAN PanelLinesOff;
-} EXPERIMENTS;
-
 typedef enum {
   COMMAND_NONE,
   COMMAND_BOOT,       // try everything bootable, in order
@@ -64,8 +57,7 @@ typedef enum {
   COMMAND_UNINSTALL_CFW,
   COMMAND_DEVICE_INFO,
   COMMAND_LOG,
-  COMMAND_SAVE_EXPERIMENTS, // saves Experiments
-  COMMAND_OPEN_MENU,        // leave Boot entries before a boot for the menu
+  COMMAND_OPEN_MENU, // leave Boot entries before a boot for the menu
 } COMMAND_KIND;
 
 // Work for the platform. Run it after the next frame, so the screen
@@ -73,7 +65,6 @@ typedef enum {
 typedef struct _COMMAND {
   COMMAND_KIND Kind;
   INT32        Arg;
-  EXPERIMENTS  Experiments;
 } COMMAND;
 
 typedef enum {
@@ -281,8 +272,7 @@ typedef struct _APP {
   ITEM         LinesFrom;
   LIST_STATE   InfoList;
 
-  EXPERIMENTS Experiments;
-  INT32       Booting; // the entry picked from the list, or -1
+  INT32 Booting; // the entry picked from the list, or -1
 
   CHAR8   Toast[160];
   UINT64  ToastUntil; // 0 for no toast
@@ -381,12 +371,6 @@ VOID
 AppSetFirmwareRotation (
   IN OUT APP *A,
   IN UINT16   Degrees
-);
-
-VOID
-AppSetExperiments (
-  IN OUT APP           *A,
-  IN CONST EXPERIMENTS *Experiments
 );
 
 // Lists from the platform are copied, up to MAX_ENTRIES, MAX_MODELS and

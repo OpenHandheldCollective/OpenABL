@@ -11,8 +11,8 @@
 
 #include "Base/Memory.h"
 #include "Base/Text.h"
+#include "Core/Settings.h"
 #include "Efi/Abl.h"
-#include "Efi/Quirks.h"
 #include "Efi/UsbHost.h"
 
 BOOLEAN gMenuHostChargerBoot;
@@ -80,26 +80,30 @@ MenuHostLocate (OUT MENU_HOST *Out)
   return TRUE;
 }
 
-// Android boots if the setting says so, on a charger boot, or if Volume Up
-// or Home was held on a boot that isn't fastboot's. A USB boot source falls
-// back to Auto when the ABL has no USB host. The alternative Volume Up boot
-// applies when it is on and Volume Up or Home was held.
+// Reads the settings, with the ABL's charger screen flag. A USB boot
+// source falls back to Auto when the ABL has no USB host. Then decides
+// whether Android boots, and whether the alternative Volume Up boot applies
+// (it is on and Volume Up or Home was held).
 STATIC VOID
-OwnSettings (IN OUT MENU_HOST_STATE *State)
+OwnSettings (
+  IN OUT MENU_HOST_STATE *State,
+  IN BOOLEAN              OffmodeCharging
+)
 {
-  QUIRKS_ABL_SETTINGS Settings = QuirksAblSettings ();
-  BOOT_DECISION_START Start    = MenuHostStateStart (State);
+  SETTINGS           *Settings = &State->Settings;
+  BOOT_DECISION_START Start;
 
-  State->BootMode =
-    BootDecisionAndroid (&Start, Settings.BootMode != 0, gMenuHostChargerBoot);
-  State->AblMode     = Settings.AblMode;
-  State->AltVolumeUp = Settings.AltVolumeUp;
-  State->BootSource  = Settings.BootSource == MENU_HOST_BOOT_SOURCE_USB &&
-                           !(State->Flags & OPENABL_MENU_STATE_USB_HOST)
-                         ? MENU_HOST_BOOT_SOURCE_AUTO
-                         : Settings.BootSource;
-  State->AltVolumeBoot =
-    BootDecisionAltBoot (&Start, Settings.AltVolumeUp != 0);
+  SettingsLoad (Settings);
+  Settings->OffmodeCharging = OffmodeCharging;
+  if (Settings->BootSource == BOOT_SOURCE_USB &&
+      !(State->Flags & OPENABL_MENU_STATE_USB_HOST)) {
+    Settings->BootSource = BOOT_SOURCE_AUTO;
+  }
+  Start               = MenuHostStateStart (State);
+  State->StartAndroid = BootDecisionAndroid (
+    &Start, Settings->BootMode == BOOT_MODE_ANDROID, gMenuHostChargerBoot
+  );
+  State->AltVolumeBoot = BootDecisionAltBoot (&Start, Settings->AltVolumeUp);
 }
 
 EFI_STATUS
@@ -115,12 +119,11 @@ MenuHostState (
   if (Status != EFI_SUCCESS) {
     return Status;
   }
-  Out->OffmodeCharging = Abl.OffmodeCharging;
-  Out->Flags           = Abl.Flags;
-  Out->Entry           = Abl.Entry;
-  Out->Key             = Abl.Key;
+  Out->Flags = Abl.Flags;
+  Out->Entry = Abl.Entry;
+  Out->Key   = Abl.Key;
   CopyMem (Out->Version, Abl.Version, sizeof (Out->Version));
-  OwnSettings (Out);
+  OwnSettings (Out, Abl.OffmodeCharging != 0);
   return EFI_SUCCESS;
 }
 

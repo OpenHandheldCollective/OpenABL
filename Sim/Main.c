@@ -523,7 +523,8 @@ Render (
   SettingsDefault (&Settings);
   Settings.Rotation = (UINT16)Degrees;
   AsciiStrCopy (Settings.Model, sizeof (Settings.Model), "Retroid Pocket 5");
-  Settings.ModelRotation = 270;
+  Settings.ModelRotation      = 270;
+  Settings.ModelRotationKnown = TRUE;
   MakeApp (&mApp, &Settings);
   AppStart (&mApp, Now);
   mScreens[Screen].Setup (&mApp, Now);

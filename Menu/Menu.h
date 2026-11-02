@@ -7,7 +7,8 @@
   Menu - declarations shared by the OpenABL menu.
 
   Main.c is the entry point and runs the boot, Menu.c is the menu itself,
-  and BootSplash.c draws the boot splash.
+  and BootSplash.c draws the boot splash. The settings are read and saved
+  in Core/Settings.
 */
 
 #ifndef __MENU_MENU_H__
@@ -59,59 +60,9 @@ MenuStatus (
 // MenuStatus into a buffer that lasts as long as the enclosing block.
 #define MENU_STATUS(Status) MenuStatus ((Status), (CHAR8[MENU_STATUS_SIZE]){0})
 
-// Reads a settings variable. Returns FALSE if unset. Caller frees Out.
-BOOLEAN
-MenuVarGet (
-  IN CONST CHAR8  *Name,
-  OUT OABL_BUFFER *Out
-);
-
-// Writes a settings variable without flushing. An empty value deletes it,
-// and deleting a missing variable is not an error.
-EFI_STATUS
-MenuVarPut (
-  IN CONST CHAR8 *Name,
-  IN CONST UINT8 *Data OPTIONAL,
-  IN UINTN        Size
-);
-
-// Returns TRUE if Name holds the single byte Value.
-BOOLEAN
-MenuVarIs (
-  IN CONST CHAR8 *Name,
-  IN UINT8        Value
-);
-
-// Writes the changed settings to misc, logging a failure.
-VOID
-MenuFlush (VOID);
-
 // Returns what the ABL supports, and whether Linux is on internal storage.
 SETTINGS_CAPS
 MenuCapsOf (IN CONST MENU_HOST_STATE *State);
-
-// Reads the stored settings. Defaults fill in bad or missing ones.
-VOID
-MenuStoredSettings (
-  IN CONST MENU_HOST_STATE *State,
-  IN CONST SETTINGS_CAPS   *Caps,
-  OUT SETTINGS             *Out
-);
-
-// Reads the rotation choice, Model's cached panel rotation if saved, and
-// the language.
-VOID
-MenuLoadPrefs (
-  IN CONST CHAR8 *Model,
-  OUT UINT16     *Rotation,
-  OUT UINT16     *ModelRotation,
-  OUT UINT8      *Language
-);
-
-// Saves the rotation choice, the model and its panel rotation, and the
-// language, and flushes.
-VOID
-MenuSavePrefs (IN CONST SETTINGS *Settings);
 
 typedef enum {
   MENU_END_LEFT,       // the ABL asked the menu to leave
@@ -154,10 +105,8 @@ MenuLiveUsbHostUp (IN CONST MENU_HOST *Host);
 EFI_STATUS
 MenuLiveUsbHostDown (IN CONST MENU_HOST *Host);
 
-// What Boot entries picked for the next Start, kept across a restart: the
-// drive's device path length (Le16), the path, then the entry's id. Start
-// takes it and clears it.
-#define MENU_PICK_VAR          "BootEntryOnce"
+// The entry id Boot entries uses for a drive's default file
+// (\EFI\BOOT\BOOT*.EFI), in a SETTINGS_FLAG_BOOT_ENTRY_ONCE pick.
 #define MENU_PICK_DEFAULT_FILE "openabl-default-file"
 
 // What booting needs from the ABL's state and the settings.
@@ -173,6 +122,8 @@ typedef struct _MENU_BOOT_CONTEXT {
   BOOLEAN VmEnabled;
   // Display preferences, for the splash's orientation.
   UINT16 Rotation, ModelRotation;
+  // Draw the splash, or keep the manufacturer's logo.
+  BOOLEAN CustomLogo;
   // The ABL's version, or the program's without one.
   CHAR8 Version[16];
 } MENU_BOOT_CONTEXT;

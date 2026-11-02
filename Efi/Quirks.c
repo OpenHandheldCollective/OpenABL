@@ -23,7 +23,6 @@
 #include "Base/Print.h"
 #include "Base/Text.h"
 #include "Core/KernelCmdLine.h"
-#include "Core/Settings.h"
 #include "Efi/Abl.h"
 #include "Efi/Dxe.h"
 #include "Efi/MenuHost.h"
@@ -31,7 +30,6 @@
 #include "Efi/Qcom.h"
 #include "Efi/Uninstall.h"
 #include "Efi/UsbHost.h"
-#include "Efi/Variables.h"
 
 #ifdef OABL_SYSFONT
 #include "Efi/SysFont.h"
@@ -1826,61 +1824,6 @@ PAndroidParams (
   Status = Give (Buffer.Data, Buffer.Len, Out, Size);
   BufferFree (&Buffer);
   return Status;
-}
-
-// Reads the one-byte setting Key. FALSE if it isn't one byte.
-STATIC BOOLEAN
-SettingByte (
-  IN CONST CHAR8 *Key,
-  OUT UINT8      *Out
-)
-{
-  OABL_BUFFER Buffer = {0};
-  BOOLEAN     Ok     = FALSE;
-
-  if (VariablesGet (Key, &Buffer)) {
-    if (Buffer.Len == 1) {
-      *Out = Buffer.Data[0];
-      Ok   = TRUE;
-    }
-    BufferFree (&Buffer);
-  }
-  return Ok;
-}
-
-// Returns 1 if the one-byte setting Key is set and nonzero, else 0.
-STATIC UINT8
-SettingOn (IN CONST CHAR8 *Key)
-{
-  UINT8 Value;
-
-  return SettingByte (Key, &Value) && Value != 0 ? 1 : 0;
-}
-
-QUIRKS_ABL_SETTINGS
-QuirksAblSettings (VOID)
-{
-  QUIRKS_ABL_SETTINGS Settings = {0};
-  UINT8               Value;
-  // Mapped from the settings' numbering (Auto 0, Internal 1, SD card 2,
-  // USB 3) to devinfo's.
-  UINT8 BootSource;
-
-  if (SettingByte (SETTINGS_KEY_BOOT_SOURCE, &Value)) {
-    BootSource = Value == 1 ? 0 : Value == 2 ? 3 : Value == 3 ? 2 : 1;
-  } else {
-    BootSource = 1;
-  }
-  Settings.BootMode    = SettingOn (SETTINGS_KEY_BOOT_MODE);
-  Settings.AblMode     = SettingOn (SETTINGS_KEY_ABL_MODE);
-  Settings.AltVolumeUp = SettingOn (SETTINGS_KEY_ALT_VOLUME_UP);
-  Settings.BootSource  = BootSource;
-  if (SettingByte (SETTINGS_KEY_OFFMODE_CHARGING, &Value)) {
-    Settings.OffmodeCharging = Value != 0 ? 1 : 0;
-  } else {
-    Settings.OffmodeCharging = QUIRKS_SETTING_UNSET;
-  }
-  return Settings;
 }
 
 STATIC VOID EFIAPI

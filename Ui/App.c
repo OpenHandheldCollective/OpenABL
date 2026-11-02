@@ -128,16 +128,6 @@ AppSetFirmwareRotation (
 }
 
 VOID
-AppSetExperiments (
-  IN OUT APP           *A,
-  IN CONST EXPERIMENTS *Experiments
-)
-{
-  A->Experiments = *Experiments;
-  A->Dirty       = TRUE;
-}
-
-VOID
 AppSetEntries (
   IN OUT APP          *A,
   IN CONST ENTRY_VIEW *Entries,
@@ -775,9 +765,9 @@ AppItemView (
   case ITEM_USB_LIVE:
   case ITEM_QUIESCE:
   case ITEM_PANEL_LINES: {
-    BOOLEAN On  = Item == ITEM_USB_LIVE  ? A->Experiments.UsbLive
-                  : Item == ITEM_QUIESCE ? A->Experiments.Quiesce
-                                         : A->Experiments.PanelLinesOff;
+    BOOLEAN On  = Item == ITEM_USB_LIVE  ? A->Settings.UsbHostLive
+                  : Item == ITEM_QUIESCE ? A->Settings.DisplayOff
+                                         : A->Settings.PanelLinesOff;
     View->Icon  = Item == ITEM_USB_LIVE  ? ICON_USB
                   : Item == ITEM_QUIESCE ? ICON_MONITOR_OFF
                                          : ICON_PLUG;
@@ -804,8 +794,7 @@ Activate (
   IN ITEM     Item
 )
 {
-  SETTINGS    *Settings    = &A->Settings;
-  EXPERIMENTS *Experiments = &A->Experiments;
+  SETTINGS *Settings = &A->Settings;
 
   switch (Item) {
   case ITEM_START:
@@ -870,16 +859,14 @@ Activate (
   case ITEM_USB_LIVE:
   case ITEM_QUIESCE:
   case ITEM_PANEL_LINES: {
-    COMMAND Save = Command (COMMAND_SAVE_EXPERIMENTS, 0);
     if (Item == ITEM_USB_LIVE) {
-      Experiments->UsbLive = !Experiments->UsbLive;
+      Settings->UsbHostLive = !Settings->UsbHostLive;
     } else if (Item == ITEM_QUIESCE) {
-      Experiments->Quiesce = !Experiments->Quiesce;
+      Settings->DisplayOff = !Settings->DisplayOff;
     } else {
-      Experiments->PanelLinesOff = !Experiments->PanelLinesOff;
+      Settings->PanelLinesOff = !Settings->PanelLinesOff;
     }
-    Save.Experiments = *Experiments;
-    return Save;
+    return Command (COMMAND_SAVE_SETTINGS, 0);
   }
   case ITEM_POWER_OFF:
     return Command (COMMAND_POWER_OFF, 0);
@@ -976,8 +963,9 @@ ModelsInput (
   case INPUT_SELECT:
     if (Focus == 0) {
       // No model, so the OS gets the firmware's devicetree untouched.
-      A->Settings.Model[0]      = 0;
-      A->Settings.ModelRotation = ROTATION_NONE;
+      A->Settings.Model[0]           = 0;
+      A->Settings.ModelRotation      = ROTATION_NONE;
+      A->Settings.ModelRotationKnown = FALSE;
       LeaveModels (A);
       ShowToast (A, gStrings->ToastFirmwareDt);
       return Command (COMMAND_SAVE_SETTINGS, 0);
@@ -988,7 +976,8 @@ ModelsInput (
       CHAR8        Message[160];
 
       AsciiStrCopy (A->Settings.Model, sizeof (A->Settings.Model), Model->Name);
-      A->Settings.ModelRotation = Model->Rotation;
+      A->Settings.ModelRotation      = Model->Rotation;
+      A->Settings.ModelRotationKnown = TRUE;
       LeaveModels (A);
       LangFill (Message, sizeof (Message), gStrings->ToastModelSet, &Arg, 1);
       ShowToast (A, Message);

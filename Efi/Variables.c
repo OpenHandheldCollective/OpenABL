@@ -211,8 +211,8 @@ VariablesPeek (
   return TRUE;
 }
 
-EFI_STATUS
-VariablesPut (
+BOOLEAN
+VariablesHolds (
   IN CONST CHAR8 *Name,
   IN CONST UINT8 *Data OPTIONAL,
   IN UINTN        Length
@@ -222,14 +222,25 @@ VariablesPut (
   BOOLEAN    Found;
 
   VariablesLoad (LOG_QUIET);
+  Found = SettingsStoreGet (mStore.Store, Name, &Old);
+  return Length == 0 ? !Found
+                     : Found && Old.Len == Length &&
+                         CompareMem (Old.Ptr, Data, Length) == 0;
+}
+
+EFI_STATUS
+VariablesPut (
+  IN CONST CHAR8 *Name,
+  IN CONST UINT8 *Data OPTIONAL,
+  IN UINTN        Length
+)
+{
+  VariablesLoad (LOG_QUIET);
   if (!SettingsStoreNameValid (Name)) {
     return EFI_INVALID_PARAMETER;
   }
-  Found = SettingsStoreGet (mStore.Store, Name, &Old);
   // Nothing to change, so nothing to write.
-  if (Length == 0 ? !Found
-                  : Found && Old.Len == Length &&
-                      CompareMem (Old.Ptr, Data, Length) == 0) {
+  if (VariablesHolds (Name, Data, Length)) {
     return EFI_SUCCESS;
   }
   if (!SettingsStoreSet (mStore.Store, Name, Data, Length)) {
@@ -264,6 +275,19 @@ VariablesFlush (VOID)
   }
   mStore.Dirty = FALSE;
   return EFI_SUCCESS;
+}
+
+VOID
+VariablesDiscard (VOID)
+{
+  if (!mStore.Loaded || !mStore.Dirty) {
+    return;
+  }
+  mStore.Loaded = FALSE;
+  mStore.Ready  = FALSE;
+  mStore.Dirty  = FALSE;
+  LogLine (mLog, "settings: what wasn't written is dropped");
+  VariablesLoad (mLog);
 }
 
 VOID

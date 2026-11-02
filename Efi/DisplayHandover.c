@@ -17,7 +17,6 @@
 #include "Base/Text.h"
 #include "Core/Panel.h"
 #include "Core/Settings.h"
-#include "Efi/Variables.h"
 
 #define LINE_SIZE 160
 
@@ -44,24 +43,6 @@ Say (
   VSPrint (Line + PrefixLength, sizeof (Line) - PrefixLength, Format, Args);
   va_end (Args);
   Log (Line);
-}
-
-UINT8
-DisplayHandoverQuiesceSetting (VOID)
-{
-  UINT8   Bytes[8];
-  UINTN   Length;
-  BOOLEAN Stored =
-    VariablesPeek (
-      SETTINGS_KEY_DISPLAY_QUIESCE, Bytes, sizeof (Bytes), &Length
-    ) &&
-    Length;
-  UINT8 Byte = Stored ? Bytes[0] : 0;
-
-#ifndef OABL_DISPLAY_QUIESCE
-  Byte &= (UINT8)~(DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF);
-#endif
-  return Byte;
 }
 
 // Names the statuses the steps meet. Others print as "error N" in Buffer.
@@ -235,26 +216,16 @@ STATIC CONST PANEL_LINES *
 LinesForModel (IN OPENABL_STORAGE_LOG Log OPTIONAL)
 {
   CONST PANEL_LINES *Lines;
-  CHAR8              Model[SETTINGS_MAX_MODEL_LEN + 1];
-  UINTN              Length;
+  SETTINGS           Settings;
 
-  if (!VariablesPeek (
-        SETTINGS_KEY_MODEL, (UINT8 *)Model, SETTINGS_MAX_MODEL_LEN, &Length
-      )) {
+  SettingsLoad (&Settings);
+  if (!Settings.Model[0]) {
     Say (Log, "panel lines: no device model set");
     return NULL;
   }
-  // Treat invalid UTF-8 as no model, and strip trailing NULs.
-  if (!Utf8Valid ((CONST UINT8 *)Model, Length)) {
-    Length = 0;
-  }
-  while (Length && Model[Length - 1] == 0) {
-    Length--;
-  }
-  Model[Length] = 0;
-  Lines         = PanelLinesForModel (Model);
+  Lines = PanelLinesForModel (Settings.Model);
   if (!Lines) {
-    Say (Log, "panel lines: none known for \"%s\"", Model);
+    Say (Log, "panel lines: none known for \"%s\"", Settings.Model);
   }
   return Lines;
 }
@@ -377,10 +348,17 @@ DisplayHandoverBeforeExit (
   IN OPENABL_STORAGE_LOG Log OPTIONAL
 )
 {
-  // The setting overrides the tree: a requested display-off must happen.
-  UINT8   Quiesce = DisplayHandoverQuiesceSetting ();
-  BOOLEAN Forced =
-    (Quiesce & (DISPLAY_HANDOVER_QUIESCE | DISPLAY_HANDOVER_LINES_OFF)) != 0;
+  BOOLEAN Forced = FALSE;
+
+  // The settings override the tree: a requested display-off must happen.
+  // Without OABL_DISPLAY_QUIESCE they read as off, and SettingsLoad reads
+  // them as off without OABL_DEBUG.
+#ifdef OABL_DISPLAY_QUIESCE
+  SETTINGS Settings;
+
+  SettingsLoad (&Settings);
+  Forced = Settings.DisplayOff || Settings.PanelLinesOff;
+#endif
 
   if (KeepAlive && !Forced) {
     Say (Log, "the devicetree keeps the splash: the display stays on");
@@ -391,13 +369,13 @@ DisplayHandoverBeforeExit (
   // kernel's panel reset later. The supplies go last because the display
   // power-off leaves them on.
 #ifdef OABL_DISPLAY_QUIESCE
-  if (Quiesce & DISPLAY_HANDOVER_LINES_OFF) {
+  if (Settings.PanelLinesOff) {
     DisplayHandoverBacklightOff (Log);
   }
 #endif
   DisplayHandoverQuiesce (Log);
 #ifdef OABL_DISPLAY_QUIESCE
-  if (Quiesce & DISPLAY_HANDOVER_LINES_OFF) {
+  if (Settings.PanelLinesOff) {
     DisplayHandoverSuppliesOff (Log);
   }
 #endif
@@ -465,7 +443,7 @@ DisplayHandoverArm (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   }
   // Read the settings now: at ExitBootServices only the copy in memory is
   // read.
-  VariablesLoad (LOG_QUIET);
+  SettingsPreload ();
   mPower = LocateProtocol (&gEfiDisplayPowerStateProtocolGuid);
   if (!mPower) {
     Say (Log, "arm: no display power protocol");
