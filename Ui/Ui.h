@@ -140,6 +140,8 @@ typedef enum {
   ITEM_USB_LIVE,
   ITEM_QUIESCE,
   ITEM_PANEL_LINES,
+  ITEM_BOOT_LOG,
+  ITEM_SD_DIAGNOSTICS,
   ITEM_POWER_OFF,
 } ITEM;
 
@@ -233,7 +235,6 @@ typedef struct _APP {
   DEVICE_INFO   Info;
   SCHEME        Scheme;
   CONST CHAR8  *Version;
-  BOOLEAN       Debug; // show the Debug section
   // The panel's size in pixels, before any rotation.
   UINT32 PhysicalW, PhysicalH;
   UINT16 FirmwareRotation;

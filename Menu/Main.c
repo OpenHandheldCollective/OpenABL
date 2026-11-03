@@ -265,6 +265,7 @@ StandardBoot (
     .AfterReturn     = ReturnedToMenu,
   };
   BOOTER     Booter;
+  SETTINGS   Settings;
   CHAR8     *Why = NULL;
   EFI_STATUS Status;
 
@@ -282,6 +283,11 @@ StandardBoot (
     CHAR8 *Description = BooterDescribe (&Booter, &Booter.Plan.Items[Index]);
     MenuLog ("plan %llu: %s", (UINT64)Index, Description ? Description : "");
     FreePool (Description);
+  }
+  SettingsLoad (&Settings);
+  if (Settings.BootLog) {
+    // The boot's steps on screen too, to see where one stops.
+    SerialToScreen ();
   }
   switch (BooterBoot (&Booter, &BootHost, FALSE, 0, &Why)) {
   case BOOT_FAILURE_OK:
@@ -938,7 +944,7 @@ Early (IN CONST MENU_HOST *Host)
     AblConsoleShow ();
   }
   Chip    = QuirksChipId ();
-  Patched = QuirksSdccUhs (Chip, gMenuEfiLog);
+  Patched = QuirksSdccUhs (Chip, Settings.SdDiagnostics, gMenuEfiLog);
   MenuLog ("early: %u SdccDxe site(s) patched", Patched);
   if (!Resident ()) {
     MenuLog (

@@ -86,6 +86,8 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *DbgUsbLive;
   CONST CHAR8 *DbgQuiesce;
   CONST CHAR8 *DbgPanelLines;
+  CONST CHAR8 *DbgBootLog;
+  CONST CHAR8 *DbgSdDiagnostics;
   CONST CHAR8 *InfoChip;
   CONST CHAR8 *InfoPlatform;
   CONST CHAR8 *InfoPmic;

@@ -103,8 +103,6 @@ DisplayHandoverQuiesce (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   PowerOff (Log);
 }
 
-#ifdef OABL_DISPLAY_QUIESCE
-
 // XBL's TLMM and SPMI protocols. The ABL's tree has no headers for them.
 
 STATIC EFI_GUID mTlmmGuid = {0xad9aec18,
@@ -340,25 +338,18 @@ DisplayHandoverSuppliesOff (IN OPENABL_STORAGE_LOG Log OPTIONAL)
   }
 }
 
-#endif // OABL_DISPLAY_QUIESCE
-
 VOID
 DisplayHandoverBeforeExit (
   IN BOOLEAN             KeepAlive,
   IN OPENABL_STORAGE_LOG Log OPTIONAL
 )
 {
-  BOOLEAN Forced = FALSE;
+  SETTINGS Settings;
+  BOOLEAN  Forced;
 
   // The settings override the tree: a requested display-off must happen.
-  // Without OABL_DISPLAY_QUIESCE they read as off, and SettingsLoad reads
-  // them as off without OABL_DEBUG.
-#ifdef OABL_DISPLAY_QUIESCE
-  SETTINGS Settings;
-
   SettingsLoad (&Settings);
   Forced = Settings.DisplayOff || Settings.PanelLinesOff;
-#endif
 
   if (KeepAlive && !Forced) {
     Say (Log, "the devicetree keeps the splash: the display stays on");
@@ -368,17 +359,13 @@ DisplayHandoverBeforeExit (
   // turning the backlight off shows as a flash on an LCD, and so does the
   // kernel's panel reset later. The supplies go last because the display
   // power-off leaves them on.
-#ifdef OABL_DISPLAY_QUIESCE
   if (Settings.PanelLinesOff) {
     DisplayHandoverBacklightOff (Log);
   }
-#endif
   DisplayHandoverQuiesce (Log);
-#ifdef OABL_DISPLAY_QUIESCE
   if (Settings.PanelLinesOff) {
     DisplayHandoverSuppliesOff (Log);
   }
-#endif
 }
 
 // What the last tree seen said, if one was.

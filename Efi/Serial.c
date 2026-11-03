@@ -32,7 +32,6 @@ Port (VOID)
   return SerialIo;
 }
 
-#ifdef OABL_DEBUG
 // Also on the text console, once SerialToScreen turned it on.
 STATIC BOOLEAN mToScreen;
 
@@ -40,6 +39,12 @@ VOID
 SerialToScreen (VOID)
 {
   mToScreen = TRUE;
+}
+
+BOOLEAN
+SerialOnScreen (VOID)
+{
+  return mToScreen;
 }
 
 STATIC VOID
@@ -58,7 +63,6 @@ ToScreen (IN CONST OABL_STRING *Line)
   Wide[Length] = 0;
   gST->ConOut->OutputString (gST->ConOut, Wide);
 }
-#endif
 
 // Writes Line and "\r\n" to the serial port, then frees Line.
 STATIC VOID
@@ -72,9 +76,7 @@ Emit (IN OUT OABL_STRING *Line)
     Size = Line->Len;
     SerialIo->Write (SerialIo, &Size, Line->Str);
   }
-#ifdef OABL_DEBUG
   ToScreen (Line);
-#endif
   StringFree (Line);
 }
 

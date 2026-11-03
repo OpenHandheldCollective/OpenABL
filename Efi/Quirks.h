@@ -29,12 +29,13 @@
 // becomes four seconds. Then signals card detection again, and puts the second back.
 // The OABL_SDCC_* builds patch more SdccDxe words, and the G2 Gen 2 also gets
 // its SD command line pull-up. On SM4450 a card that detection leaves
-// holding DAT low is power-cycled and detected again. With
-// OABL_SD_DIAGNOSTICS the SD slot is logged before and after. Returns the
-// number of S18R sites patched.
+// holding DAT low is power-cycled and detected again. With Diagnostics the
+// SD slot is logged before and after. Returns the number of S18R sites
+// patched.
 UINT32
 QuirksSdccUhs (
   IN UINT32   Chip,
+  IN BOOLEAN  Diagnostics,
   IN LOG_SINK Log
 );
 

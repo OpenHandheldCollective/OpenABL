@@ -18,8 +18,6 @@
 #   park-display      set the display on before the boot, and off at
 #                     ExitBootServices when no devicetree was seen, as
 #                     LinuxLoader did on these chips (SM8650, SM8750)
-#   debug             Debug section in the menu (adds sd-diagnostics and
-#                     display-quiesce)
 #
 # The menu has every language in Ui/Lang/, one file each (listed in
 # Ui/Lang/Languages.h). Its CJK face is made at build time from
@@ -48,11 +46,9 @@ FEATURES ?= standard-boot,sysfont,card-logo,sdcc-sm4450,sdcc-sm6450,sdcc-sm7675,
 OUT      ?= build/menu
 
 KNOWN := standard-boot sysfont card-logo sdcc-sm4450 sdcc-sm6450 sdcc-sm7675 \
-	sd-diagnostics display-quiesce loader-quirks park-display \
-	debug
+	loader-quirks park-display
 comma := ,
 LIST := $(subst $(comma), ,$(FEATURES))
-LIST += $(if $(filter debug,$(LIST)),sd-diagnostics display-quiesce)
 UNKNOWN := $(filter-out $(KNOWN),$(LIST))
 ifneq ($(UNKNOWN),)
 $(error unknown FEATURES: $(UNKNOWN) (known: $(KNOWN)))

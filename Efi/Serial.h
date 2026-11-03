@@ -35,11 +35,14 @@ SerialVWriteLine (
   IN va_list      Args
 );
 
-#ifdef OABL_DEBUG
-// From now on, also writes the lines to the text console (debug builds).
+// From now on, also writes the lines to the text console (the Debug
+// section's boot log).
 VOID
 SerialToScreen (VOID);
-#endif
+
+// Returns TRUE once SerialToScreen was called.
+BOOLEAN
+SerialOnScreen (VOID);
 
 // Writes "[oabl] " and the text as one line.
 VOID

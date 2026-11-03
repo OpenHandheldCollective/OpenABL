@@ -539,15 +539,15 @@ AppRows (
   if (SettingsModelVisible (Settings)) {
     ADD_ITEM (ITEM_MODEL);
   }
-  // Experiments, in debug builds only.
-  if (A->Debug) {
-    ADD_HEADER (gStrings->SectionDebug);
-    if (Caps->UsbHost) {
-      ADD_ITEM (ITEM_USB_LIVE);
-    }
-    ADD_ITEM (ITEM_QUIESCE);
-    ADD_ITEM (ITEM_PANEL_LINES);
+  // Experiments and diagnostics, all off by default.
+  ADD_HEADER (gStrings->SectionDebug);
+  if (Caps->UsbHost) {
+    ADD_ITEM (ITEM_USB_LIVE);
   }
+  ADD_ITEM (ITEM_QUIESCE);
+  ADD_ITEM (ITEM_PANEL_LINES);
+  ADD_ITEM (ITEM_BOOT_LOG);
+  ADD_ITEM (ITEM_SD_DIAGNOSTICS);
   ADD_HEADER (gStrings->SectionSystem);
   if (Caps->Log) {
     ADD_ITEM (ITEM_LOG);
@@ -764,16 +764,38 @@ AppItemView (
     break;
   case ITEM_USB_LIVE:
   case ITEM_QUIESCE:
-  case ITEM_PANEL_LINES: {
-    BOOLEAN On  = Item == ITEM_USB_LIVE  ? A->Settings.UsbHostLive
-                  : Item == ITEM_QUIESCE ? A->Settings.DisplayOff
-                                         : A->Settings.PanelLinesOff;
-    View->Icon  = Item == ITEM_USB_LIVE  ? ICON_USB
-                  : Item == ITEM_QUIESCE ? ICON_MONITOR_OFF
-                                         : ICON_PLUG;
-    View->Label = Item == ITEM_USB_LIVE  ? gStrings->DbgUsbLive
-                  : Item == ITEM_QUIESCE ? gStrings->DbgQuiesce
-                                         : gStrings->DbgPanelLines;
+  case ITEM_PANEL_LINES:
+  case ITEM_BOOT_LOG:
+  case ITEM_SD_DIAGNOSTICS: {
+    BOOLEAN On;
+
+    switch (Item) {
+    case ITEM_USB_LIVE:
+      On          = A->Settings.UsbHostLive;
+      View->Icon  = ICON_USB;
+      View->Label = gStrings->DbgUsbLive;
+      break;
+    case ITEM_QUIESCE:
+      On          = A->Settings.DisplayOff;
+      View->Icon  = ICON_MONITOR_OFF;
+      View->Label = gStrings->DbgQuiesce;
+      break;
+    case ITEM_PANEL_LINES:
+      On          = A->Settings.PanelLinesOff;
+      View->Icon  = ICON_PLUG;
+      View->Label = gStrings->DbgPanelLines;
+      break;
+    case ITEM_BOOT_LOG:
+      On          = A->Settings.BootLog;
+      View->Icon  = ICON_TERMINAL;
+      View->Label = gStrings->DbgBootLog;
+      break;
+    default:
+      On          = A->Settings.SdDiagnostics;
+      View->Icon  = ICON_SD_CARD;
+      View->Label = gStrings->DbgSdDiagnostics;
+      break;
+    }
     AsciiStrCopy (Value, Cap, On ? gStrings->On : gStrings->Off);
     break;
   }
@@ -857,17 +879,20 @@ Activate (
   case ITEM_LOG:
     return Command (COMMAND_LOG, 0);
   case ITEM_USB_LIVE:
-  case ITEM_QUIESCE:
-  case ITEM_PANEL_LINES: {
-    if (Item == ITEM_USB_LIVE) {
-      Settings->UsbHostLive = !Settings->UsbHostLive;
-    } else if (Item == ITEM_QUIESCE) {
-      Settings->DisplayOff = !Settings->DisplayOff;
-    } else {
-      Settings->PanelLinesOff = !Settings->PanelLinesOff;
-    }
+    Settings->UsbHostLive = !Settings->UsbHostLive;
     return Command (COMMAND_SAVE_SETTINGS, 0);
-  }
+  case ITEM_QUIESCE:
+    Settings->DisplayOff = !Settings->DisplayOff;
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_PANEL_LINES:
+    Settings->PanelLinesOff = !Settings->PanelLinesOff;
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_BOOT_LOG:
+    Settings->BootLog = !Settings->BootLog;
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_SD_DIAGNOSTICS:
+    Settings->SdDiagnostics = !Settings->SdDiagnostics;
+    return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_POWER_OFF:
     return Command (COMMAND_POWER_OFF, 0);
   }

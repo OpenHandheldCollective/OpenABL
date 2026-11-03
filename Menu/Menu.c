@@ -1156,9 +1156,6 @@ RunMenu (
 #ifdef OABL_STANDARD_BOOT
   FillEntries (&M, &mApp);
 #endif
-#ifdef OABL_DEBUG
-  mApp.Debug = TRUE;
-#endif
   AppSetPhysicalSize (&mApp, (UINT32)PanelW, (UINT32)PanelH);
   if (QcomFirmwarePanelRotation (PanelW, PanelH, &FirmwareRotation)) {
     AppSetFirmwareRotation (&mApp, FirmwareRotation);

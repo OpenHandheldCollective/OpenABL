@@ -396,11 +396,11 @@ Run (
   }
   SerialLog ("starting %s", What);
   HostCheckpoint (Host, "starting an image");
-#ifndef OABL_DEBUG
-  if (gST->ConOut) {
+  // With the boot log on screen, its last lines stay to show where a boot
+  // stopped.
+  if (gST->ConOut && !SerialOnScreen ()) {
     gST->ConOut->ClearScreen (gST->ConOut);
   }
-#endif
   Status = gBS->StartImage (Image, &ExitSize, &ExitData);
   // The caller of StartImage frees the exit data.
   if (ExitData) {
@@ -702,10 +702,6 @@ BooterBoot (
   if (Why) {
     *Why = NULL;
   }
-#ifdef OABL_DEBUG
-  // The boot's steps on screen too, to see where one stops.
-  SerialToScreen ();
-#endif
   if (HasOnly) {
     First = Only;
     End   = Only < Booter->Plan.Count ? Only + 1 : Only;

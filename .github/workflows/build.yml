@@ -12,11 +12,6 @@ on:
       tag:
         description: Tag to build
         required: true
-      build:
-        description: Build
-        type: choice
-        options: [release, debug]
-        default: release
 
 permissions:
   contents: read
@@ -28,19 +23,13 @@ jobs:
     timeout-minutes: 240
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
-      SUFFIX: ${{ inputs.build == 'debug' && '-debug' || '' }}
     outputs:
       fetched: ${{ steps.sources.outputs.fetched }}
-      commit: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
           persist-credentials: false
-
-      - name: Note the commit
-        id: commit
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # The fetched sources are kept in the "sources" release, one file per set
       # of pins in Scripts/fetch.sh, so they are fetched only after a pin changes.
@@ -60,7 +49,7 @@ jobs:
           fi
 
       - name: Build
-        run: ./build.sh all ${{ inputs.build == 'debug' && '--debug' || '' }}
+        run: ./build.sh all
 
       - name: Keep the log
         if: failure()
@@ -103,12 +92,12 @@ jobs:
       - name: Collect the images
         run: |
           for elf in build/out/abl_signed-*.elf; do
-            name=$(basename "$elf" .elf)$SUFFIX.elf
+            name=$(basename "$elf")
             cp "$elf" "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
           for addon in build/out/openabl-recovery-flashable-*.zip; do
-            name=$(basename "$addon" .zip)$SUFFIX.zip
+            name=$(basename "$addon")
             cp "$addon" "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
@@ -127,9 +116,6 @@ jobs:
       contents: write
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
-      # Debug builds go to a pre-release of their own.
-      RELEASE: ${{ inputs.build == 'debug' && format('debug-{0}', inputs.tag) || inputs.tag || github.ref_name }}
-      COMMIT: ${{ needs.build.outputs.commit }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -158,16 +144,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if [ "$RELEASE" = "$TAG" ]; then
-            gh release view "$TAG" > /dev/null 2>&1 ||
-              gh release create "$TAG" --verify-tag --title "OpenABL $TAG" \
-                --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
-          else
-            gh release view "$RELEASE" > /dev/null 2>&1 ||
-              gh release create "$RELEASE" --prerelease --target "$COMMIT" --title "OpenABL $TAG debug" \
-                --notes "Debug build of $TAG, unreleased: for testing only."
-          fi
-          gh release upload "$RELEASE" dist/* --clobber
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --verify-tag --title "OpenABL $TAG" \
+              --notes "Flash the image for your chipset to abl_a and abl_b. The source archive holds this repository and the sources it builds with; ./build.sh builds it without fetching them again."
+          gh release upload "$TAG" dist/* --clobber
 
   package:
     needs: release
@@ -176,4 +156,3 @@ jobs:
     uses: ./.github/workflows/package.yml
     with:
       tag: ${{ inputs.tag || github.ref_name }}
-      build: ${{ inputs.build || 'release' }}

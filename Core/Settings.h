@@ -77,19 +77,23 @@ typedef struct _SETTINGS {
   // The menu's language, a LANG_ID from Ui/Lang.h. Stored as its Symbol.
   UINT8 Language;
 
-  // The Debug section's switches, read as off by other builds.
+  // The Debug section's switches, all off by default.
 
   // Experimental: start USB host in the same boot as fastboot instead of
   // restarting. On the glink SoCs XBL died when a drive was attached after
   // the gadget had run.
   BOOLEAN UsbHostLive;
   // Turn the display off through XBL's display power protocol at
-  // ExitBootServices, even when the devicetree keeps the splash. Needs
-  // OABL_DISPLAY_QUIESCE.
+  // ExitBootServices, even when the devicetree keeps the splash.
   BOOLEAN DisplayOff;
   // Turn the panel lines off around that: the backlight before the
-  // display, the supplies after it. Needs OABL_DISPLAY_QUIESCE.
+  // display, the supplies after it.
   BOOLEAN PanelLinesOff;
+  // The boot's log lines also go to the screen, which isn't cleared before
+  // the image starts, to see where a boot stops.
+  BOOLEAN BootLog;
+  // Log the SD slot's state before and after the SdccDxe patches.
+  BOOLEAN SdDiagnostics;
 } SETTINGS;
 
 // Names in misc's store
@@ -107,6 +111,8 @@ typedef struct _SETTINGS {
 #define SETTINGS_KEY_USB_HOST_LIVE      "UsbHostLive"
 #define SETTINGS_KEY_DISPLAY_OFF        "DisplayOff"
 #define SETTINGS_KEY_PANEL_LINES_OFF    "PanelLinesOff"
+#define SETTINGS_KEY_BOOT_LOG           "BootLog"
+#define SETTINGS_KEY_SD_DIAGNOSTICS     "SdDiagnostics"
 
 // The menu's one-off flags: each is set for the next boot and cleared once
 // used.

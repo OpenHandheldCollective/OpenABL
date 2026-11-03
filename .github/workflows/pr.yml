@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Debug build of every chipset for each pull request.
+# Build of every chipset for each pull request.
 name: Pull request
 
 on:
@@ -34,7 +34,7 @@ jobs:
           fi
 
       - name: Build
-        run: ./build.sh all --debug
+        run: ./build.sh all
 
       - name: Keep the log
         if: failure()
@@ -47,19 +47,19 @@ jobs:
         run: |
           mkdir dist
           for elf in build/out/abl_signed-*.elf; do
-            name=$(basename "$elf" .elf)-debug.elf
+            name=$(basename "$elf")
             cp "$elf" "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
           for addon in build/out/openabl-recovery-flashable-*.zip; do
-            name=$(basename "$addon" .zip)-debug.zip
+            name=$(basename "$addon")
             cp "$addon" "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
 
       - uses: actions/upload-artifact@v7
         with:
-          name: openabl-debug-pr${{ github.event.pull_request.number }}
+          name: openabl-pr${{ github.event.pull_request.number }}
           path: dist
           retention-days: 14
           compression-level: 0

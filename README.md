@@ -58,6 +58,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Display rotation | Auto (from the device model) or fixed at 0, 90, 180 or 270 degrees. |
 | Custom boot logo | Replaces the manufacturer's logo at boot with the pictures in a `\logo` folder (see below), or the OpenABL wordmark if there are none. Off by default. |
 | Device model | Selects the devicetree Linux boots with, from the `.dtb` files in `\boot\grub`, `\dtbs`, `\dtbs\qcom`, `\dtb` or `\dtb\qcom` on the boot source's drives. A boot entry's own devicetree takes precedence. *Firmware default* uses the firmware's own. |
+| Debug | Developer switches, all off by default: *Live USB host* (start USB host without a restart, where supported), *Park display* and *Panel lines off* (switch the display, or also its backlight and supplies, off at hand-over), *Boot log on screen* (show the boot's steps on screen and leave them there when the image starts), and *SD card diagnostics* (log the SD slot's state around the SD card fixes). |
 | Log | Shows the ABL's and the menu's log. |
 | Device info | Shows the chip, platform, PMICs, memory, storage, panel and firmware versions. |
 | Uninstall CFW | Removes a Linux install from internal storage, after a confirmation. Shown only when one is installed. |
@@ -159,7 +160,6 @@ it.
 | Option | |
 |---|---|
 | `--no-standard-boot` | Leave out standard boot (Linux then boots only from the default boot file) |
-| `--debug` | Debug build, with a Debug section in the menu |
 | `--clean` | Build each chipset from scratch |
 
 The first build downloads Qualcomm's ABL source (tianocore edk2 from
@@ -187,9 +187,7 @@ GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
 `v*` tag is pushed and uploads the images to that tag's release, with
 `openabl-<TAG>-source.tar.xz`: this repository and the sources it fetches,
 which `./build.sh` builds without fetching them again. Run it by hand to
-pick a tag and a release or debug build; a debug build goes to its own
-`debug-<TAG>` pre-release, and its images end in `-debug.elf`. Each build
-also uploads `openabl-<TAG>.tar.gz` (or `-debug.tar.gz`) with a folder per
+build a tag. Each build also uploads `openabl-<TAG>.tar.gz` with a folder per
 chipset holding its image and `.sha256`; the Package workflow makes that
 archive for an existing release. CI keeps the sources it fetches in the
 `sources` pre-release and fetches them again only after a pin in

@@ -466,32 +466,31 @@ typedef struct {
   UINT16 Offset;
   UINT8  Size;
   UINT8  Max;
-  // A Debug section switch, which only debug builds read.
-  BOOLEAN Debug;
 } STORED_SETTING;
 
-#define BYTE_SETTING(Key, Field, Max, Debug)                              \
+#define BYTE_SETTING(Key, Field, Max)                                     \
   {SETTINGS_KEY_##Key, FORMAT_BYTE, __builtin_offsetof (SETTINGS, Field), \
-   sizeof (((SETTINGS *)0)->Field), (Max), (Debug)}
-#define OTHER_SETTING(Key, Format) \
-  {SETTINGS_KEY_##Key, (Format), 0, 0, 0, FALSE}
+   sizeof (((SETTINGS *)0)->Field), (Max)}
+#define OTHER_SETTING(Key, Format) {SETTINGS_KEY_##Key, (Format), 0, 0, 0}
 
 // Every setting kept in misc. Model must come before the rotation entries,
 // which depend on it.
 STATIC CONST STORED_SETTING mStoredSettings[] = {
-  BYTE_SETTING (BOOT_MODE, BootMode, BOOT_MODE_ANDROID, FALSE),
-  BYTE_SETTING (ABL_MODE, AblMode, ABL_MODE_VERBOSE, FALSE),
-  BYTE_SETTING (ALT_VOLUME_UP, AltVolumeUp, 1, FALSE),
-  BYTE_SETTING (BOOT_SOURCE, BootSource, BOOT_SOURCE_USB, FALSE),
+  BYTE_SETTING (BOOT_MODE, BootMode, BOOT_MODE_ANDROID),
+  BYTE_SETTING (ABL_MODE, AblMode, ABL_MODE_VERBOSE),
+  BYTE_SETTING (ALT_VOLUME_UP, AltVolumeUp, 1),
+  BYTE_SETTING (BOOT_SOURCE, BootSource, BOOT_SOURCE_USB),
   OTHER_SETTING (ROTATION, FORMAT_ROTATION),
   OTHER_SETTING (MODEL, FORMAT_MODEL),
   OTHER_SETTING (MODEL_ROTATION_FOR, FORMAT_MODEL_ROTATION_FOR),
   OTHER_SETTING (MODEL_ROTATION, FORMAT_MODEL_ROTATION),
-  BYTE_SETTING (CUSTOM_LOGO, CustomLogo, 1, FALSE),
+  BYTE_SETTING (CUSTOM_LOGO, CustomLogo, 1),
   OTHER_SETTING (LANGUAGE, FORMAT_LANGUAGE),
-  BYTE_SETTING (USB_HOST_LIVE, UsbHostLive, 1, TRUE),
-  BYTE_SETTING (DISPLAY_OFF, DisplayOff, 1, TRUE),
-  BYTE_SETTING (PANEL_LINES_OFF, PanelLinesOff, 1, TRUE),
+  BYTE_SETTING (USB_HOST_LIVE, UsbHostLive, 1),
+  BYTE_SETTING (DISPLAY_OFF, DisplayOff, 1),
+  BYTE_SETTING (PANEL_LINES_OFF, PanelLinesOff, 1),
+  BYTE_SETTING (BOOT_LOG, BootLog, 1),
+  BYTE_SETTING (SD_DIAGNOSTICS, SdDiagnostics, 1),
 };
 
 #define STORED_SETTINGS_COUNT \
@@ -741,11 +740,6 @@ SettingsLoad (OUT SETTINGS *Out)
   for (UINTN Index = 0; Index < STORED_SETTINGS_COUNT; Index++) {
     CONST STORED_SETTING *Setting = &mStoredSettings[Index];
 
-#ifndef OABL_DEBUG
-    if (Setting->Debug) {
-      continue;
-    }
-#endif
     if (StoreFind (Setting->Key, &Stored)) {
       DecodeSetting (Setting, &Stored, Out);
     }
