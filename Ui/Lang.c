@@ -58,7 +58,9 @@ LangName (IN UINT8 Lang)
 UINT8
 LangFromSymbol (IN CONST CHAR8 *Symbol)
 {
-  return SettingsLanguageFromKey ((CONST UINT8 *)Symbol, AsciiStrLen (Symbol));
+  return SettingsLanguageFromSymbol (
+    (CONST UINT8 *)Symbol, AsciiStrLen (Symbol)
+  );
 }
 
 VOID

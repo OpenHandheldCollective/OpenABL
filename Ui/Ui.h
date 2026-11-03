@@ -157,7 +157,7 @@ typedef struct _ROW {
 typedef struct _ITEM_VIEW {
   ICON         Icon;
   CONST CHAR8 *Label;
-  CHAR8        Value[MODEL_LEN + 16]; // "" for none
+  CHAR8        Value[SETTINGS_MAX_MODEL_LEN + 16]; // "" for none
   TONE         Tone;
   TRAILING     Trailing;
 } ITEM_VIEW;
@@ -196,7 +196,7 @@ typedef struct _LIST_STATE {
 #define MAX_CFW_PARTS 8
 
 typedef struct _MODEL {
-  CHAR8  Name[MODEL_LEN];
+  CHAR8  Name[SETTINGS_MAX_MODEL_LEN];
   UINT16 Rotation;   // or ROTATION_NONE
   CHAR8  Source[64]; // where the devicetree was found
 } MODEL;

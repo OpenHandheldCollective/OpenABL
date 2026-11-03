@@ -4,7 +4,7 @@
  */
 
 /**
-  SettingsStore - named variables in the last 4 KiB of the misc partition.
+  SettingsStore - named entries in the last 4 KiB of the misc partition.
 */
 
 #include "Core/SettingsStore.h"

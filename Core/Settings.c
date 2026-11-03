@@ -4,8 +4,8 @@
  */
 
 /**
-  Settings - Loader settings, the rules for changing them, and reading and
-  saving them on the device.
+  Settings - the loader's settings, the rules for changing them, and
+  reading and saving them on the device.
 */
 
 #include "Core/Settings.h"
@@ -15,27 +15,30 @@
 
 // Languages
 
-#define SETTINGS_LANGUAGE_KEY(Id, Symbol) #Symbol,
+// Longest stored language, in bytes.
+#define MAX_LANGUAGE_LEN 16
 
-// In LANG_LIST order, so a LANG_ID indexes it.
-STATIC CONST CHAR8 *CONST mLanguageKeys[SETTINGS_LANGUAGES] = {
-  LANG_LIST (SETTINGS_LANGUAGE_KEY)};
+#define LANGUAGE_SYMBOL(Id, Symbol) #Symbol,
 
-#define SETTINGS_LANGUAGE_FITS(Id, Symbol) \
-  _Static_assert (sizeof (#Symbol) - 1 <= SETTINGS_MAX_LANGUAGE_LEN, #Symbol);
-LANG_LIST (SETTINGS_LANGUAGE_FITS)
+// Each language's Symbol, in LANG_LIST order, so a LANG_ID indexes it.
+STATIC CONST CHAR8 *CONST mLanguageSymbols[SETTINGS_LANGUAGES] = {
+  LANG_LIST (LANGUAGE_SYMBOL)};
+
+#define LANGUAGE_SYMBOL_FITS(Id, Symbol) \
+  _Static_assert (sizeof (#Symbol) - 1 <= MAX_LANGUAGE_LEN, #Symbol);
+LANG_LIST (LANGUAGE_SYMBOL_FITS)
 
 UINT8
-SettingsLanguageFromKey (
-  IN CONST UINT8 *Key,
+SettingsLanguageFromSymbol (
+  IN CONST UINT8 *Symbol,
   IN UINTN        Len
 )
 {
   for (UINT8 Lang = 0; Lang < SETTINGS_LANGUAGES; Lang++) {
-    CONST CHAR8 *Have  = mLanguageKeys[Lang];
+    CONST CHAR8 *Have  = mLanguageSymbols[Lang];
     UINTN        Index = 0;
 
-    while (Index < Len && Have[Index] && Have[Index] == (CHAR8)Key[Index]) {
+    while (Index < Len && Have[Index] && Have[Index] == (CHAR8)Symbol[Index]) {
       Index++;
     }
     if (Index == Len && Have[Len] == 0) {
@@ -47,19 +50,12 @@ SettingsLanguageFromKey (
 
 // English, wherever LANG_LIST puts it.
 STATIC UINT8
-SettingsLanguageEnglish (VOID)
+LanguageEnglish (VOID)
 {
-  return SettingsLanguageFromKey ((CONST UINT8 *)"En", 2);
+  return SettingsLanguageFromSymbol ((CONST UINT8 *)"En", 2);
 }
 
-CONST CHAR8 *
-SettingsLanguageKey (IN UINT8 Lang)
-{
-  if (Lang >= SETTINGS_LANGUAGES) {
-    Lang = SettingsLanguageEnglish ();
-  }
-  return mLanguageKeys[Lang];
-}
+// Rules
 
 VOID
 SettingsDefault (OUT SETTINGS *Settings)
@@ -70,7 +66,7 @@ SettingsDefault (OUT SETTINGS *Settings)
     .BootSource    = BOOT_SOURCE_AUTO,
     .Rotation      = ROTATION_AUTO,
     .ModelRotation = ROTATION_NONE,
-    .Language      = SettingsLanguageEnglish (),
+    .Language      = LanguageEnglish (),
   };
 }
 
@@ -82,11 +78,11 @@ SettingsToggleBootMode (
 {
   if (Settings->BootMode == BOOT_MODE_LINUX) {
     Settings->BootMode = BOOT_MODE_ANDROID;
-  } else {
-    Settings->BootMode = BOOT_MODE_LINUX;
-    if (Settings->BootSource == BOOT_SOURCE_INTERNAL && !Caps->CfwOnInternal) {
-      Settings->BootSource = BOOT_SOURCE_SD;
-    }
+    return;
+  }
+  Settings->BootMode = BOOT_MODE_LINUX;
+  if (Settings->BootSource == BOOT_SOURCE_INTERNAL && !Caps->CfwOnInternal) {
+    Settings->BootSource = BOOT_SOURCE_SD;
   }
 }
 
@@ -132,355 +128,634 @@ SettingsModelVisible (IN CONST SETTINGS *Settings)
   return Settings->BootMode != BOOT_MODE_ANDROID;
 }
 
+// TRUE for 0, 90, 180 or 270.
+STATIC BOOLEAN
+IsQuarterTurn (IN UINT16 Rotation)
+{
+  return Rotation < 360 && Rotation % 90 == 0;
+}
+
 VOID
 SettingsNextRotation (IN OUT SETTINGS *Settings)
 {
-  switch (Settings->Rotation) {
-  case ROTATION_AUTO:
+  UINT16 Rotation = Settings->Rotation;
+
+  if (Rotation == ROTATION_AUTO) {
     Settings->Rotation = 0;
-    break;
-  case 0:
-    Settings->Rotation = 90;
-    break;
-  case 90:
-    Settings->Rotation = 180;
-    break;
-  case 180:
-    Settings->Rotation = 270;
-    break;
-  default:
+  } else if (IsQuarterTurn (Rotation) && Rotation < 270) {
+    Settings->Rotation = Rotation + 90;
+  } else {
     Settings->Rotation = ROTATION_AUTO;
-    break;
   }
 }
 
 UINT16
 SettingsEffectiveRotation (IN CONST SETTINGS *Settings)
 {
-  if (Settings->Rotation == ROTATION_AUTO) {
-    return Settings->ModelRotation == ROTATION_NONE
-             ? 0
-             : Settings->ModelRotation % 360;
+  if (Settings->Rotation != ROTATION_AUTO) {
+    return Settings->Rotation % 360;
   }
-  return Settings->Rotation % 360;
+  if (Settings->ModelRotation == ROTATION_NONE) {
+    return 0;
+  }
+  return Settings->ModelRotation % 360;
 }
-
-// Reading and saving, on the device
 
 #ifdef OABL_UEFI
 
 #include "Base/Memory.h"
 #include "Base/Print.h"
+#include "Core/SettingsStore.h"
 #include "Efi/Abl.h"
 #include "Efi/MenuHost.h"
-#include "Efi/Variables.h"
+#include "Efi/MigrateModel.h"
+#include "Efi/Uninstall.h"
 
 #define STATUS_TEXT(Status) StatusText ((Status), (CHAR8[STATUS_TEXT_SIZE]){0})
 
 STATIC LOG_SINK mLog;
 
-// A setting's variable. An empty value deletes it.
-typedef struct _SETTINGS_VAR {
-  CONST CHAR8 *Name;
-  UINT8        Value[SETTINGS_MAX_MODEL_LEN];
-  UINTN        Len;
-} SETTINGS_VAR;
+// The store in misc, read once into a static copy that finds and puts
+// work on, so nothing allocates once it is read.
 
-_Static_assert (
-  SETTINGS_MAX_LANGUAGE_LEN <= SETTINGS_MAX_MODEL_LEN, "a language fits Value"
-);
+STATIC struct {
+  // misc was read, and Data is its copy.
+  BOOLEAN                Loaded;
+  // Data is a valid store: misc's, or an empty one while misc can't be
+  // read.
+  BOOLEAN                Ready;
+  // A put changed Data since the last write.
+  BOOLEAN                Dirty;
+  // Data is a new store, not yet set up and written.
+  BOOLEAN                Fresh;
+  // A load failed, and was logged.
+  BOOLEAN                Missed;
+  EFI_BLOCK_IO_PROTOCOL *BlockIo;
+  // The first block of misc's last 4 KiB.
+  UINT64                 Lba;
+  UINT8                  Data[SETTINGS_STORE_SIZE];
+} mStore;
 
-// Where ToVars puts each setting's variable. SETTINGS_VARS counts them.
-enum {
-  VAR_BOOT_MODE,
-  VAR_ABL_MODE,
-  VAR_ALT_VOLUME_UP,
-  VAR_BOOT_SOURCE,
-  VAR_ROTATION,
-  VAR_MODEL,
-  VAR_MODEL_ROTATION,
-  VAR_MODEL_ROTATION_FOR,
-  VAR_CUSTOM_LOGO,
-  VAR_LANGUAGE,
-  VAR_USB_HOST_LIVE,
-  VAR_DISPLAY_OFF,
-  VAR_PANEL_LINES_OFF,
-  SETTINGS_VARS
-};
-
-STATIC VOID
-Put (
-  OUT SETTINGS_VAR *Var,
-  IN CONST CHAR8   *Name,
-  IN CONST VOID    *Data,
-  IN UINTN          Size
-)
-{
-  Var->Name = Name;
-  Var->Len  = Size;
-  CopyMem (Var->Value, Data, Size);
-}
-
-STATIC VOID
-PutU8 (
-  OUT SETTINGS_VAR *Var,
-  IN CONST CHAR8   *Name,
-  IN UINT8          Value
-)
-{
-  Put (Var, Name, &Value, 1);
-}
-
-STATIC VOID
-PutLe16 (
-  OUT SETTINGS_VAR *Var,
-  IN CONST CHAR8   *Name,
-  IN UINT16         Value
-)
-{
-  UINT8 Bytes[2];
-
-  WriteLe16 (Bytes, Value);
-  Put (Var, Name, Bytes, 2);
-}
-
-// Converts the settings to the variables that store them, the charger
-// screen aside, each at its VAR_ index. Codes are the enum values;
-// ROTATION_AUTO and ROTATION_NONE are 0xFFFF.
-STATIC VOID
-ToVars (
-  IN CONST SETTINGS *Settings,
-  OUT SETTINGS_VAR   Out[SETTINGS_VARS]
-)
-{
-  UINTN        ModelLen = 0;
-  CONST CHAR8 *Language = SettingsLanguageKey (Settings->Language);
-
-  while (ModelLen < SETTINGS_MAX_MODEL_LEN && Settings->Model[ModelLen]) {
-    ModelLen++;
-  }
-  PutU8 (
-    &Out[VAR_BOOT_MODE], SETTINGS_KEY_BOOT_MODE, (UINT8)Settings->BootMode
-  );
-  PutU8 (&Out[VAR_ABL_MODE], SETTINGS_KEY_ABL_MODE, (UINT8)Settings->AblMode);
-  PutU8 (
-    &Out[VAR_ALT_VOLUME_UP], SETTINGS_KEY_ALT_VOLUME_UP, Settings->AltVolumeUp
-  );
-  PutU8 (
-    &Out[VAR_BOOT_SOURCE], SETTINGS_KEY_BOOT_SOURCE,
-    (UINT8)Settings->BootSource
-  );
-  PutLe16 (&Out[VAR_ROTATION], SETTINGS_KEY_ROTATION, Settings->Rotation);
-  Put (&Out[VAR_MODEL], SETTINGS_KEY_MODEL, Settings->Model, ModelLen);
-  PutLe16 (
-    &Out[VAR_MODEL_ROTATION], SETTINGS_KEY_MODEL_ROTATION,
-    Settings->ModelRotation
-  );
-  // Which model ModelRotation was looked up for, once it was.
-  Put (
-    &Out[VAR_MODEL_ROTATION_FOR], SETTINGS_KEY_MODEL_ROTATION_FOR,
-    Settings->Model, Settings->ModelRotationKnown ? ModelLen : 0
-  );
-  PutU8 (&Out[VAR_CUSTOM_LOGO], SETTINGS_KEY_CUSTOM_LOGO, Settings->CustomLogo);
-  Put (
-    &Out[VAR_LANGUAGE], SETTINGS_KEY_LANGUAGE, Language, AsciiStrLen (Language)
-  );
-  PutU8 (
-    &Out[VAR_USB_HOST_LIVE], SETTINGS_KEY_USB_HOST_LIVE, Settings->UsbHostLive
-  );
-  PutU8 (&Out[VAR_DISPLAY_OFF], SETTINGS_KEY_DISPLAY_OFF, Settings->DisplayOff);
-  PutU8 (
-    &Out[VAR_PANEL_LINES_OFF], SETTINGS_KEY_PANEL_LINES_OFF,
-    Settings->PanelLinesOff
-  );
-}
-
-// Reads a variable that must be Size bytes long, from the copy in memory,
-// so it doesn't allocate. Reads misc first if nothing has yet.
+// Finds misc's last 4 KiB. FALSE if there is no single misc or no room.
 STATIC BOOLEAN
-GetExact (
-  IN CONST CHAR8 *Name,
-  IN UINTN        Size,
-  OUT UINT8      *Out
-)
+StoreLocate (VOID)
 {
-  UINTN Length;
+  EFI_BLOCK_IO_PROTOCOL *BlockIo;
+  UINT64                 First;
+  UINT64                 Last;
+  UINTN                  BlockSize;
 
-  VariablesLoad (LOG_QUIET);
-  return VariablesPeek (Name, Out, Size, &Length) && Length == Size;
-}
-
-STATIC BOOLEAN
-Byte (
-  IN CONST CHAR8 *Name,
-  OUT UINT8      *Value
-)
-{
-  return GetExact (Name, 1, Value);
-}
-
-STATIC BOOLEAN
-Word (
-  IN CONST CHAR8 *Name,
-  OUT UINT16     *Value
-)
-{
-  UINT8 Bytes[2];
-
-  if (!GetExact (Name, 2, Bytes)) {
+  if (!UninstallFindMisc (&BlockIo, &First, &Last, mLog)) {
+    if (!mStore.Missed) {
+      LogLine (mLog, "settings: no single misc partition");
+    }
     return FALSE;
   }
-  *Value = ReadLe16 (Bytes);
+  BlockSize = BlockIo->Media->BlockSize;
+  if (BlockSize == 0 || BlockSize > SETTINGS_STORE_SIZE ||
+      SETTINGS_STORE_SIZE % BlockSize != 0 || Last < First ||
+      Last - First + 1 < SETTINGS_STORE_SIZE / BlockSize) {
+    if (!mStore.Missed) {
+      LogPrint (
+        mLog, "settings: misc is %llu blocks of %llu bytes: no room",
+        Last < First ? 0 : Last - First + 1, (UINT64)BlockSize
+      );
+    }
+    return FALSE;
+  }
+  mStore.BlockIo = BlockIo;
+  mStore.Lba     = Last + 1 - SETTINGS_STORE_SIZE / BlockSize;
   return TRUE;
 }
+
+// Logs a device model carried over into a new store.
+STATIC VOID
+LogMigratedModel (
+  IN CONST UINT8 *Model,
+  IN UINTN        Length,
+  IN CONST CHAR8 *From
+)
+{
+  CHAR8 Text[SETTINGS_MAX_MODEL_LEN + 1];
+
+  for (UINTN Index = 0; Index < Length; Index++) {
+    Text[Index] = Model[Index] ? (CHAR8)Model[Index] : '?';
+  }
+  Text[Length] = '\0';
+  LogPrint (
+    mLog, "settings: device model \"%s\" migrated from %s", Text, From
+  );
+}
+
+// Puts any device model an older loader stored into the copy. FALSE if it
+// didn't fit.
+STATIC BOOLEAN
+StoreMigrateModel (VOID)
+{
+  UINT8        Model[SETTINGS_MAX_MODEL_LEN];
+  UINTN        Length;
+  CONST CHAR8 *From;
+
+  if (!MigrateModel (Model, &Length, &From)) {
+    return TRUE;
+  }
+  if (!SettingsStoreSet (mStore.Data, SETTINGS_KEY_MODEL, Model, Length)) {
+    return FALSE;
+  }
+  LogMigratedModel (Model, Length, From);
+  return TRUE;
+}
+
+// Without misc, an empty store holding any model an older loader stored,
+// so the settings can still be changed for this boot. It is never written.
+STATIC VOID
+StoreUseEmpty (VOID)
+{
+  if (mStore.Ready) {
+    return;
+  }
+  SettingsStoreFormat (mStore.Data);
+  StoreMigrateModel ();
+  mStore.Ready = TRUE;
+}
+
+// Reads the store from misc if it isn't read yet, replacing anything that
+// isn't a valid store, and logs to Log from now on. FALSE if misc can't be
+// read; after that only a call with a Log tries again, so quiet loads don't
+// rescan the disks.
+STATIC BOOLEAN
+StoreLoad (IN LOG_SINK Log)
+{
+  OABL_BUFFER          Raw = {0};
+  OABL_BYTES           Model;
+  SETTINGS_STORE_STATE State;
+
+  if (Log.Fn) {
+    mLog = Log;
+  }
+  if (mStore.Loaded) {
+    return TRUE;
+  }
+  // Reading misc after a put would lose what was put.
+  if ((mStore.Missed && !Log.Fn) || mStore.Dirty) {
+    StoreUseEmpty ();
+    return FALSE;
+  }
+  if (!StoreLocate ()) {
+    mStore.Missed = TRUE;
+    StoreUseEmpty ();
+    return FALSE;
+  }
+  if (!UninstallRead (mStore.BlockIo, mStore.Lba, SETTINGS_STORE_SIZE, &Raw) ||
+      Raw.Len != SETTINGS_STORE_SIZE) {
+    if (!mStore.Missed) {
+      LogLine (mLog, "settings: reading misc failed");
+    }
+    mStore.Missed = TRUE;
+    BufferFree (&Raw);
+    StoreUseEmpty ();
+    return FALSE;
+  }
+  CopyMem (mStore.Data, Raw.Data, SETTINGS_STORE_SIZE);
+  BufferFree (&Raw);
+  State         = SettingsStoreOpen (mStore.Data);
+  mStore.Loaded = TRUE;
+  mStore.Ready  = TRUE;
+  mStore.Fresh  = State != SETTINGS_STORE_FOUND;
+  switch (State) {
+  case SETTINGS_STORE_FOUND:
+    break;
+  case SETTINGS_STORE_BLANK:
+    LogLine (mLog, "settings: none in misc yet");
+    break;
+  case SETTINGS_STORE_OTHER_VERSION:
+    LogLine (mLog, "settings: misc has another version's settings: replaced");
+    if (SettingsStoreGet (mStore.Data, SETTINGS_KEY_MODEL, &Model)) {
+      LogMigratedModel (Model.Ptr, Model.Len, "the other version's settings");
+    }
+    break;
+  case SETTINGS_STORE_DAMAGED:
+    LogLine (mLog, "settings: misc's store is damaged: replaced");
+    break;
+  default:
+    LogLine (mLog, "settings: the end of misc held other data: replaced");
+    break;
+  }
+  return TRUE;
+}
+
+// Finds entry Name. Value points into the copy.
+STATIC BOOLEAN
+StoreFind (
+  IN CONST CHAR8 *Name,
+  OUT OABL_BYTES *Value
+)
+{
+  StoreLoad (LOG_QUIET);
+  return SettingsStoreGet (mStore.Data, Name, Value);
+}
+
+// TRUE if entry Name holds Data. Length 0 matches a missing entry.
+STATIC BOOLEAN
+StoreHolds (
+  IN CONST CHAR8 *Name,
+  IN CONST UINT8 *Data OPTIONAL,
+  IN UINTN        Length
+)
+{
+  OABL_BYTES Held;
+  BOOLEAN    Found = StoreFind (Name, &Held);
+
+  if (Length == 0) {
+    return !Found;
+  }
+  return Found && Held.Len == Length &&
+         CompareMem (Held.Ptr, Data, Length) == 0;
+}
+
+// Sets entry Name in the copy, without writing it. Length 0 deletes it.
+STATIC EFI_STATUS
+StorePut (
+  IN CONST CHAR8 *Name,
+  IN CONST UINT8 *Data OPTIONAL,
+  IN UINTN        Length
+)
+{
+  StoreLoad (LOG_QUIET);
+  if (!SettingsStoreNameValid (Name)) {
+    return EFI_INVALID_PARAMETER;
+  }
+  if (StoreHolds (Name, Data, Length)) {
+    return EFI_SUCCESS;
+  }
+  if (!SettingsStoreSet (mStore.Data, Name, Data, Length)) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+  mStore.Dirty = TRUE;
+  return EFI_SUCCESS;
+}
+
+// Writes the copy to misc if a put changed it.
+STATIC EFI_STATUS
+StoreWrite (VOID)
+{
+  EFI_STATUS Status;
+
+  if (!mStore.Dirty) {
+    return EFI_SUCCESS;
+  }
+  // Never write over a misc that couldn't be read: it may hold settings.
+  if (!mStore.Loaded) {
+    return EFI_NOT_FOUND;
+  }
+  SettingsStoreSeal (mStore.Data);
+  Status = UninstallWrite (
+    mStore.BlockIo, mStore.Lba, mStore.Data, SETTINGS_STORE_SIZE
+  );
+  if (Status == EFI_SUCCESS) {
+    Status = mStore.BlockIo->FlushBlocks (mStore.BlockIo);
+  }
+  if (Status != EFI_SUCCESS) {
+    LogPrint (mLog, "settings: writing misc failed: %s", STATUS_TEXT (Status));
+    return Status;
+  }
+  mStore.Dirty = FALSE;
+  return EFI_SUCCESS;
+}
+
+// Writes the copy, and if that fails drops what was put by reading misc
+// again, so the settings match misc.
+STATIC EFI_STATUS
+StoreCommit (VOID)
+{
+  EFI_STATUS Status = StoreWrite ();
+
+  if (!EFI_ERROR (Status) || !mStore.Loaded || !mStore.Dirty) {
+    return Status;
+  }
+  mStore.Loaded = FALSE;
+  mStore.Ready  = FALSE;
+  mStore.Dirty  = FALSE;
+  LogLine (mLog, "settings: what wasn't written is dropped");
+  StoreLoad (mLog);
+  return Status;
+}
+
+// How each setting is stored
+
+typedef enum {
+  // A BOOLEAN or an enum field: one byte, 0 to Max.
+  FORMAT_BYTE,
+  // Rotation: Le16, ROTATION_AUTO or a quarter turn.
+  FORMAT_ROTATION,
+  // Model: UTF-8, no NUL.
+  FORMAT_MODEL,
+  // The Model that ModelRotation was looked up for, once it was.
+  FORMAT_MODEL_ROTATION_FOR,
+  // ModelRotation: Le16, ROTATION_NONE or degrees clockwise. It counts
+  // only for the model it was looked up for.
+  FORMAT_MODEL_ROTATION,
+  // Language: its Symbol from LANG_LIST.
+  FORMAT_LANGUAGE,
+} STORED_FORMAT;
+
+typedef struct {
+  CONST CHAR8  *Key;
+  STORED_FORMAT Format;
+  // FORMAT_BYTE only: the field, its size and its largest value.
+  UINT16 Offset;
+  UINT8  Size;
+  UINT8  Max;
+  // A Debug section switch, which only debug builds read.
+  BOOLEAN Debug;
+} STORED_SETTING;
+
+#define BYTE_SETTING(Key, Field, Max, Debug)                              \
+  {SETTINGS_KEY_##Key, FORMAT_BYTE, __builtin_offsetof (SETTINGS, Field), \
+   sizeof (((SETTINGS *)0)->Field), (Max), (Debug)}
+#define OTHER_SETTING(Key, Format) \
+  {SETTINGS_KEY_##Key, (Format), 0, 0, 0, FALSE}
+
+// Every setting kept in misc. Model must come before the rotation entries,
+// which depend on it.
+STATIC CONST STORED_SETTING mStoredSettings[] = {
+  BYTE_SETTING (BOOT_MODE, BootMode, BOOT_MODE_ANDROID, FALSE),
+  BYTE_SETTING (ABL_MODE, AblMode, ABL_MODE_VERBOSE, FALSE),
+  BYTE_SETTING (ALT_VOLUME_UP, AltVolumeUp, 1, FALSE),
+  BYTE_SETTING (BOOT_SOURCE, BootSource, BOOT_SOURCE_USB, FALSE),
+  OTHER_SETTING (ROTATION, FORMAT_ROTATION),
+  OTHER_SETTING (MODEL, FORMAT_MODEL),
+  OTHER_SETTING (MODEL_ROTATION_FOR, FORMAT_MODEL_ROTATION_FOR),
+  OTHER_SETTING (MODEL_ROTATION, FORMAT_MODEL_ROTATION),
+  BYTE_SETTING (CUSTOM_LOGO, CustomLogo, 1, FALSE),
+  OTHER_SETTING (LANGUAGE, FORMAT_LANGUAGE),
+  BYTE_SETTING (USB_HOST_LIVE, UsbHostLive, 1, TRUE),
+  BYTE_SETTING (DISPLAY_OFF, DisplayOff, 1, TRUE),
+  BYTE_SETTING (PANEL_LINES_OFF, PanelLinesOff, 1, TRUE),
+};
+
+#define STORED_SETTINGS_COUNT \
+  (sizeof (mStoredSettings) / sizeof (mStoredSettings[0]))
+
+_Static_assert (sizeof (BOOLEAN) == 1, "BOOLEAN is a byte");
+_Static_assert (
+  sizeof (BOOT_MODE) == 4 && sizeof (ABL_MODE) == 4 &&
+    sizeof (BOOT_SOURCE) == 4,
+  "enums are 4 bytes"
+);
+
+// A value as stored. Empty deletes the entry.
+typedef struct {
+  UINT8 Bytes[SETTINGS_MAX_MODEL_LEN];
+  UINTN Len;
+} STORED_VALUE;
+
+_Static_assert (
+  MAX_LANGUAGE_LEN <= SETTINGS_MAX_MODEL_LEN, "a language fits STORED_VALUE"
+);
+
+STATIC UINT32
+ReadByteField (
+  IN CONST STORED_SETTING *Setting,
+  IN CONST SETTINGS       *Settings
+)
+{
+  CONST VOID *Field = (CONST UINT8 *)Settings + Setting->Offset;
+
+  return Setting->Size == 1 ? *(CONST UINT8 *)Field : *(CONST UINT32 *)Field;
+}
+
+STATIC VOID
+WriteByteField (
+  IN CONST STORED_SETTING *Setting,
+  IN OUT SETTINGS         *Settings,
+  IN UINT8                 Value
+)
+{
+  VOID *Field = (UINT8 *)Settings + Setting->Offset;
+
+  if (Setting->Size == 1) {
+    *(UINT8 *)Field = Value;
+  } else {
+    *(UINT32 *)Field = Value;
+  }
+}
+
+STATIC VOID
+SetValueBytes (
+  OUT STORED_VALUE *Value,
+  IN CONST VOID    *Data,
+  IN UINTN          Len
+)
+{
+  CopyMem (Value->Bytes, Data, Len);
+  Value->Len = Len;
+}
+
+STATIC VOID
+SetValueLe16 (
+  OUT STORED_VALUE *Value,
+  IN UINT16         Word
+)
+{
+  WriteLe16 (Value->Bytes, Word);
+  Value->Len = 2;
+}
+
+STATIC VOID
+EncodeSetting (
+  IN CONST STORED_SETTING *Setting,
+  IN CONST SETTINGS       *Settings,
+  OUT STORED_VALUE        *Value
+)
+{
+  UINTN        ModelLen = AsciiStrLen (Settings->Model);
+  CONST CHAR8 *Symbol;
+
+  switch (Setting->Format) {
+  case FORMAT_BYTE:
+    Value->Bytes[0] = (UINT8)ReadByteField (Setting, Settings);
+    Value->Len      = 1;
+    break;
+  case FORMAT_ROTATION:
+    SetValueLe16 (Value, Settings->Rotation);
+    break;
+  case FORMAT_MODEL:
+    SetValueBytes (Value, Settings->Model, ModelLen);
+    break;
+  case FORMAT_MODEL_ROTATION_FOR:
+    SetValueBytes (
+      Value, Settings->Model, Settings->ModelRotationKnown ? ModelLen : 0
+    );
+    break;
+  case FORMAT_MODEL_ROTATION:
+    SetValueLe16 (Value, Settings->ModelRotation);
+    break;
+  case FORMAT_LANGUAGE:
+    // An unknown language is stored as English.
+    Symbol = mLanguageSymbols[Settings->Language < SETTINGS_LANGUAGES
+                                ? Settings->Language
+                                : LanguageEnglish ()];
+    SetValueBytes (Value, Symbol, AsciiStrLen (Symbol));
+    break;
+  }
+}
+
+// A bad stored value leaves the field as it is.
+STATIC VOID
+DecodeSetting (
+  IN CONST STORED_SETTING *Setting,
+  IN CONST OABL_BYTES     *Stored,
+  IN OUT SETTINGS         *Settings
+)
+{
+  UINT16 Word = Stored->Len == 2 ? ReadLe16 (Stored->Ptr) : 0;
+  UINT8  Language;
+
+  switch (Setting->Format) {
+  case FORMAT_BYTE:
+    if (Stored->Len == 1 && Stored->Ptr[0] <= Setting->Max) {
+      WriteByteField (Setting, Settings, Stored->Ptr[0]);
+    }
+    break;
+  case FORMAT_ROTATION:
+    if (Stored->Len == 2 && (Word == ROTATION_AUTO || IsQuarterTurn (Word))) {
+      Settings->Rotation = Word;
+    }
+    break;
+  case FORMAT_MODEL:
+    // Invalid UTF-8 clears the model.
+    if (Stored->Len <= SETTINGS_MAX_MODEL_LEN &&
+        Utf8Valid (Stored->Ptr, Stored->Len)) {
+      CopyMem (Settings->Model, Stored->Ptr, Stored->Len);
+      Settings->Model[Stored->Len] = 0;
+    }
+    break;
+  case FORMAT_MODEL_ROTATION_FOR:
+    Settings->ModelRotationKnown =
+      Settings->Model[0] &&
+      TextEq (
+        (OABL_TEXT){(CONST CHAR8 *)Stored->Ptr, Stored->Len},
+        TextOf (Settings->Model)
+      );
+    break;
+  case FORMAT_MODEL_ROTATION:
+    if (Settings->ModelRotationKnown && Stored->Len == 2) {
+      Settings->ModelRotation = Word == ROTATION_NONE || Word % 90 != 0
+                                  ? ROTATION_NONE
+                                  : Word % 360;
+    }
+    break;
+  case FORMAT_LANGUAGE:
+    Language = SettingsLanguageFromSymbol (Stored->Ptr, Stored->Len);
+    if (Language < SETTINGS_LANGUAGES) {
+      Settings->Language = Language;
+    }
+    break;
+  }
+}
+
+STATIC BOOLEAN
+StoredValuesEqual (
+  IN CONST STORED_VALUE *A,
+  IN CONST STORED_VALUE *B
+)
+{
+  return A->Len == B->Len &&
+         (A->Len == 0 || CompareMem (A->Bytes, B->Bytes, A->Len) == 0);
+}
+
+// Formats a stored value for the log.
+STATIC VOID
+FormatStoredValue (
+  IN CONST STORED_SETTING *Setting,
+  IN CONST STORED_VALUE   *Value,
+  OUT CHAR8               *Out,
+  IN UINTN                 OutSize
+)
+{
+  CHAR8 *Text;
+
+  if (Value->Len == 0) {
+    AsciiStrCopy (Out, OutSize, "default (deleted)");
+    return;
+  }
+  switch (Setting->Format) {
+  case FORMAT_BYTE:
+    SPrint (Out, OutSize, "%u", Value->Bytes[0]);
+    break;
+  case FORMAT_ROTATION:
+  case FORMAT_MODEL_ROTATION:
+    SPrint (Out, OutSize, "%u", ReadLe16 (Value->Bytes));
+    break;
+  default:
+    Text = Utf8Lossy (Value->Bytes, Value->Len);
+    SPrint (Out, OutSize, "\"%s\"", Text ? Text : "");
+    FreePool (Text);
+    break;
+  }
+}
+
+// Reading and saving
 
 VOID
 SettingsSetUp (IN LOG_SINK Log)
 {
-  mLog = Log;
-  VariablesSetUp (Log);
+  OABL_BYTES Held;
+  EFI_STATUS Status;
+
+  if (!StoreLoad (Log) || !mStore.Fresh) {
+    return;
+  }
+  // Write the new store even with no model to carry over, so the next boot
+  // finds it.
+  mStore.Dirty = TRUE;
+  if (!SettingsStoreGet (mStore.Data, SETTINGS_KEY_MODEL, &Held) &&
+      !StoreMigrateModel ()) {
+    Status = EFI_OUT_OF_RESOURCES;
+  } else {
+    Status = StoreWrite ();
+  }
+  if (Status != EFI_SUCCESS) {
+    LogPrint (
+      mLog, "settings: setting up misc failed: %s", STATUS_TEXT (Status)
+    );
+    return;
+  }
+  mStore.Fresh = FALSE;
+  LogLine (mLog, "settings: set up in misc");
 }
 
-// TRUE if the stored panel rotation was looked up for Model.
-STATIC BOOLEAN
-RotationFor (IN CONST CHAR8 *Model)
+VOID
+SettingsPreload (VOID)
 {
-  UINT8 Owner[SETTINGS_MAX_MODEL_LEN];
-  UINTN Length;
-
-  return Model[0] &&
-         VariablesPeek (
-           SETTINGS_KEY_MODEL_ROTATION_FOR, Owner, sizeof (Owner), &Length
-         ) &&
-         TextEq ((OABL_TEXT){(CONST CHAR8 *)Owner, Length}, TextOf (Model));
+  StoreLoad (LOG_QUIET);
 }
 
 VOID
 SettingsLoad (OUT SETTINGS *Out)
 {
-  SETTINGS Settings;
-  UINT8    Model[SETTINGS_MAX_MODEL_LEN];
-  UINT8    Language[SETTINGS_MAX_LANGUAGE_LEN];
-  UINTN    Length;
-  UINT8    Byte8;
-  UINT16   Word16;
+  OABL_BYTES Stored;
 
-  // Read misc if it isn't read yet. The rest reads the copy in memory
-  // without allocating, so this works at ExitBootServices.
-  VariablesLoad (LOG_QUIET);
-  SettingsDefault (&Settings);
-  // A model that is too long is ignored. Invalid UTF-8 clears the model.
-  if (VariablesPeek (SETTINGS_KEY_MODEL, Model, sizeof (Model), &Length)) {
-    if (!Utf8Valid (Model, Length)) {
-      Length = 0;
+  SettingsDefault (Out);
+  for (UINTN Index = 0; Index < STORED_SETTINGS_COUNT; Index++) {
+    CONST STORED_SETTING *Setting = &mStoredSettings[Index];
+
+#ifndef OABL_DEBUG
+    if (Setting->Debug) {
+      continue;
     }
-    CopyMem (Settings.Model, Model, Length);
-    Settings.Model[Length] = 0;
-  }
-  if (Byte (SETTINGS_KEY_BOOT_MODE, &Byte8) && Byte8 <= 1) {
-    Settings.BootMode = Byte8 ? BOOT_MODE_ANDROID : BOOT_MODE_LINUX;
-  }
-  if (Byte (SETTINGS_KEY_ABL_MODE, &Byte8) && Byte8 <= 1) {
-    Settings.AblMode = Byte8 ? ABL_MODE_VERBOSE : ABL_MODE_SILENT;
-  }
-  if (Byte (SETTINGS_KEY_ALT_VOLUME_UP, &Byte8) && Byte8 <= 1) {
-    Settings.AltVolumeUp = Byte8 == 1;
-  }
-  // Stored as the enum value: Auto 0, Internal 1, SD card 2, USB 3.
-  if (Byte (SETTINGS_KEY_BOOT_SOURCE, &Byte8) && Byte8 <= BOOT_SOURCE_USB) {
-    Settings.BootSource = (BOOT_SOURCE)Byte8;
-  }
-  if (Word (SETTINGS_KEY_ROTATION, &Word16) &&
-      (Word16 == ROTATION_AUTO || Word16 == 0 || Word16 == 90 ||
-       Word16 == 180 || Word16 == 270)) {
-    Settings.Rotation = Word16;
-  }
-  // The panel rotation counts only for the model it was looked up for.
-  // Missing, it is ROTATION_NONE, the default.
-  Settings.ModelRotationKnown = RotationFor (Settings.Model);
-  if (Settings.ModelRotationKnown &&
-      Word (SETTINGS_KEY_MODEL_ROTATION, &Word16)) {
-    Settings.ModelRotation = Word16 == ROTATION_NONE || Word16 % 90 != 0
-                               ? ROTATION_NONE
-                               : Word16 % 360;
-  }
-  if (Byte (SETTINGS_KEY_CUSTOM_LOGO, &Byte8) && Byte8 <= 1) {
-    Settings.CustomLogo = Byte8 == 1;
-  }
-  if (VariablesPeek (
-        SETTINGS_KEY_LANGUAGE, Language, sizeof (Language), &Length
-      )) {
-    Byte8 = SettingsLanguageFromKey (Language, Length);
-    if (Byte8 < SETTINGS_LANGUAGES) {
-      Settings.Language = Byte8;
-    }
-  }
-#ifdef OABL_DEBUG
-  if (Byte (SETTINGS_KEY_USB_HOST_LIVE, &Byte8) && Byte8 <= 1) {
-    Settings.UsbHostLive = Byte8 == 1;
-  }
-  if (Byte (SETTINGS_KEY_DISPLAY_OFF, &Byte8) && Byte8 <= 1) {
-    Settings.DisplayOff = Byte8 == 1;
-  }
-  if (Byte (SETTINGS_KEY_PANEL_LINES_OFF, &Byte8) && Byte8 <= 1) {
-    Settings.PanelLinesOff = Byte8 == 1;
-  }
 #endif
-  *Out = Settings;
-}
-
-STATIC BOOLEAN
-SameVar (
-  IN CONST SETTINGS_VAR *A,
-  IN CONST SETTINGS_VAR *B
-)
-{
-  return A->Len == B->Len &&
-         (A->Len == 0 || CompareMem (A->Value, B->Value, A->Len) == 0);
-}
-
-// Formats a variable's value for the log.
-STATIC VOID
-Shown (
-  IN CONST SETTINGS_VAR *Var,
-  OUT CHAR8             *Out,
-  IN UINTN               OutSize
-)
-{
-  if (!Var->Len) {
-    AsciiStrCopy (Out, OutSize, "default (deleted)");
-  } else if (AsciiStrEq (Var->Name, SETTINGS_KEY_MODEL) ||
-             AsciiStrEq (Var->Name, SETTINGS_KEY_MODEL_ROTATION_FOR) ||
-             AsciiStrEq (Var->Name, SETTINGS_KEY_LANGUAGE)) {
-    CHAR8 *Text = Utf8Lossy (Var->Value, Var->Len);
-
-    SPrint (Out, OutSize, "\"%s\"", Text ? Text : "");
-    FreePool (Text);
-  } else if (Var->Len == 2) {
-    SPrint (Out, OutSize, "%u", ReadLe16 (Var->Value));
-  } else {
-    SPrint (Out, OutSize, "%u", Var->Value[0]);
+    if (StoreFind (Setting->Key, &Stored)) {
+      DecodeSetting (Setting, &Stored, Out);
+    }
   }
 }
 
-// Writes misc if a put changed the store. A failed write drops what was
-// put, so the settings read back what misc holds.
-STATIC EFI_STATUS
-Flush (VOID)
-{
-  EFI_STATUS Status = VariablesFlush ();
-
-  if (EFI_ERROR (Status)) {
-    VariablesDiscard ();
-  }
-  return Status;
-}
-
-// The settings as stored, when the ABL didn't answer after a save: as
-// MenuHostState reads them, with the charger screen and USB host from
-// Before.
+// The settings as stored when the ABL didn't answer after a save, with the
+// charger screen and USB host support from Before.
 STATIC VOID
-StoredWithout (
+LoadWithoutAbl (
   IN CONST MENU_HOST_STATE *Before,
   OUT SETTINGS             *Stored
 )
@@ -503,47 +778,46 @@ SettingsSave (
   MENU_HOST_STATE      Before;
   MENU_HOST_STATE      After;
   SETTINGS             Defaults;
-  SETTINGS_VAR         Vars[SETTINGS_VARS];
-  SETTINGS_VAR         DefaultVars[SETTINGS_VARS];
-  BOOLEAN              AblModeSet = FALSE;
-  BOOLEAN              Charger    = FALSE;
-  SETTINGS_SAVE_RESULT Result     = SETTINGS_SAVED;
-  CHAR8                Text[MODEL_LEN + 8];
+  BOOLEAN              AblModeChanged = FALSE;
+  BOOLEAN              ChargerChanged = FALSE;
+  SETTINGS_SAVE_RESULT Result         = SETTINGS_SAVED;
+  CHAR8                Text[SETTINGS_MAX_MODEL_LEN + 8];
 
   if (EFI_ERROR (MenuHostState (Host, &Before))) {
     return SETTINGS_NO_ABL;
   }
   SettingsDefault (&Defaults);
-  ToVars (&Defaults, DefaultVars);
-  ToVars (Want, Vars);
-  for (UINTN Index = 0; Index < SETTINGS_VARS; Index++) {
-    SETTINGS_VAR *Var = &Vars[Index];
-    EFI_STATUS    Status;
+  for (UINTN Index = 0; Index < STORED_SETTINGS_COUNT; Index++) {
+    CONST STORED_SETTING *Setting = &mStoredSettings[Index];
+    STORED_VALUE          Value;
+    STORED_VALUE          Default;
+    EFI_STATUS            Status;
 
-    // A setting at its default isn't stored.
-    if (SameVar (Var, &DefaultVars[Index])) {
-      Var->Len = 0;
+    EncodeSetting (Setting, Want, &Value);
+    EncodeSetting (Setting, &Defaults, &Default);
+    if (StoredValuesEqual (&Value, &Default)) {
+      Value.Len = 0;
     }
-    if (VariablesHolds (Var->Name, Var->Value, Var->Len)) {
+    if (StoreHolds (Setting->Key, Value.Bytes, Value.Len)) {
       continue;
     }
-    Status = VariablesPut (Var->Name, Var->Value, Var->Len);
+    Status = StorePut (Setting->Key, Value.Bytes, Value.Len);
     if (EFI_ERROR (Status)) {
       LogPrint (
-        mLog, "setting %s failed: %s", Var->Name, STATUS_TEXT (Status)
+        mLog, "setting %s failed: %s", Setting->Key, STATUS_TEXT (Status)
       );
-      Result = AsciiStrEq (Var->Name, SETTINGS_KEY_MODEL)
-                 ? SETTINGS_MODEL_NOT_SAVED
-                 : SETTINGS_NOT_SAVED;
+      Result = Setting->Format == FORMAT_MODEL ? SETTINGS_MODEL_NOT_SAVED
+                                               : SETTINGS_NOT_SAVED;
       break;
     }
-    AblModeSet = AblModeSet || AsciiStrEq (Var->Name, SETTINGS_KEY_ABL_MODE);
-    Shown (Var, Text, sizeof (Text));
-    LogPrint (mLog, "set %s = %s", Var->Name, Text);
+    AblModeChanged = AblModeChanged ||
+                     AsciiStrEq (Setting->Key, SETTINGS_KEY_ABL_MODE);
+    FormatStoredValue (Setting, &Value, Text, sizeof (Text));
+    LogPrint (mLog, "set %s = %s", Setting->Key, Text);
   }
   // One write for all of them, also after a failure, so misc holds what
   // the settings read back.
-  if (EFI_ERROR (Flush ()) && Result == SETTINGS_SAVED) {
+  if (EFI_ERROR (StoreCommit ()) && Result == SETTINGS_SAVED) {
     Result = SETTINGS_NOT_SAVED;
   }
   // The charger screen is Qualcomm's devinfo flag, set through the ABL.
@@ -560,13 +834,13 @@ SettingsSave (
       );
       Result = SETTINGS_NOT_SAVED;
     } else {
-      Charger = TRUE;
+      ChargerChanged = TRUE;
     }
   }
   // Read back what is stored, which also checks the charger screen.
   if (EFI_ERROR (MenuHostState (Host, &After))) {
-    StoredWithout (&Before, Stored);
-    if (Charger) {
+    LoadWithoutAbl (&Before, Stored);
+    if (ChargerChanged) {
       LogLine (mLog, "OffmodeCharging: the ABL didn't answer to check it");
       Result = SETTINGS_NOT_SAVED;
     }
@@ -574,14 +848,14 @@ SettingsSave (
     *Stored = After.Settings;
   }
   // Show or hide the ABL's log right away, as AblMode is now stored.
-  if (AblModeSet) {
+  if (AblModeChanged) {
     if (Stored->AblMode == ABL_MODE_VERBOSE) {
       AblConsoleShow ();
     } else {
       AblConsoleHide ();
     }
   }
-  if (Charger && Result == SETTINGS_SAVED) {
+  if (ChargerChanged && Result == SETTINGS_SAVED) {
     if (After.Settings.OffmodeCharging != Want->OffmodeCharging) {
       LogLine (mLog, "setting OffmodeCharging failed: devinfo kept it");
       Result = SETTINGS_NOT_SAVED;
@@ -595,13 +869,18 @@ SettingsSave (
   return Result;
 }
 
+// One-off flags
+
 BOOLEAN
 SettingsFlagGet (
   IN CONST CHAR8  *Name,
   OUT OABL_BUFFER *Out
 )
 {
-  return VariablesGet (Name, Out);
+  OABL_BYTES Value;
+
+  *Out = (OABL_BUFFER){0};
+  return StoreFind (Name, &Value) && BufferFrom (Out, Value.Ptr, Value.Len);
 }
 
 BOOLEAN
@@ -610,9 +889,10 @@ SettingsFlagIs (
   IN UINT8        Value
 )
 {
-  UINT8 Stored;
+  OABL_BYTES Stored;
 
-  return Byte (Name, &Stored) && Stored == Value;
+  return StoreFind (Name, &Stored) && Stored.Len == 1 &&
+         Stored.Ptr[0] == Value;
 }
 
 EFI_STATUS
@@ -622,20 +902,13 @@ SettingsFlagSet (
   IN UINTN        Size
 )
 {
-  // A put that changes nothing leaves nothing to write.
-  EFI_STATUS Status = VariablesPut (Name, Data, Size);
+  EFI_STATUS Status = StorePut (Name, Data, Size);
 
   if (EFI_ERROR (Status)) {
     LogPrint (mLog, "setting %s failed: %s", Name, STATUS_TEXT (Status));
     return Status;
   }
-  return Flush ();
-}
-
-VOID
-SettingsPreload (VOID)
-{
-  VariablesLoad (LOG_QUIET);
+  return StoreCommit ();
 }
 
 #endif

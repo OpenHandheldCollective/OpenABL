@@ -4,7 +4,7 @@
  */
 
 /**
-  SettingsStore - named variables in the last 4 KiB of the misc partition.
+  SettingsStore - named entries in the last 4 KiB of the misc partition.
 
   Android uses the first 64 KiB of misc, which is at least 1 MiB, so the
   last 4 KiB is OpenABL's: anything there that isn't a valid store is
@@ -24,7 +24,7 @@
     zero.
 
   The Version changes when what a setting means changes. Later versions
-  and forks must keep this layout and the DeviceModel variable's name and
+  and forks must keep this layout and the DeviceModel entry's name and
   encoding (UTF-8, no NUL), and never change the magic. A store of another
   version is replaced keeping only its DeviceModel; another magic is
   foreign data.
@@ -84,7 +84,7 @@ SettingsStoreValid (IN CONST UINT8 Store[SETTINGS_STORE_SIZE]);
 BOOLEAN
 SettingsStoreNameValid (IN CONST CHAR8 *Name);
 
-// Finds variable Name. Value points into Store.
+// Finds entry Name. Value points into Store.
 BOOLEAN
 SettingsStoreGet (
   IN CONST UINT8  Store[SETTINGS_STORE_SIZE],
@@ -92,7 +92,7 @@ SettingsStoreGet (
   OUT OABL_BYTES *Value
 );
 
-// Sets variable Name, or deletes it if Size is 0 (deleting a missing one
+// Sets entry Name, or deletes it if Size is 0 (deleting a missing one
 // succeeds). FALSE, leaving Store as it was, if the name isn't valid or the
 // value doesn't fit.
 BOOLEAN

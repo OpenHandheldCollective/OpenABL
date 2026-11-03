@@ -117,7 +117,7 @@ typedef struct _MENU_BOOT_CONTEXT {
   BOOLEAN     CfwOnInternal;
   // Volume Up was held with "Volume up at boot" set to Linux (external).
   BOOLEAN AltVolumeBoot;
-  CHAR8   Model[MODEL_LEN + 1];
+  CHAR8   Model[SETTINGS_MAX_MODEL_LEN + 1];
   BOOLEAN DevMode;
   BOOLEAN VmEnabled;
   // Display preferences, for the splash's orientation.

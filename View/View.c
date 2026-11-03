@@ -934,7 +934,7 @@ InfoValue (
 typedef struct _INFO_ROW {
   ICON         Icon;
   CONST CHAR8 *Label;
-  CHAR8        Value[MODEL_LEN + 16];
+  CHAR8        Value[SETTINGS_MAX_MODEL_LEN + 16];
 } INFO_ROW;
 
 // Value, or None when it is empty.
