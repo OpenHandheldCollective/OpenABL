@@ -77,7 +77,7 @@ typedef struct _SETTINGS {
   // The menu's language, a LANG_ID from Ui/Lang.h. Stored as its Symbol.
   UINT8 Language;
 
-  // The Debug section's switches, all off by default.
+  // The developer options, all off by default.
 
   // Experimental: start USB host in the same boot as fastboot instead of
   // restarting. On the glink SoCs XBL died when a drive was attached after

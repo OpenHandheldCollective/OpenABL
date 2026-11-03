@@ -82,12 +82,12 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *InfoPanel;
   CONST CHAR8 *DeviceInfo;
   CONST CHAR8 *Log;
-  CONST CHAR8 *SectionDebug;
-  CONST CHAR8 *DbgUsbLive;
-  CONST CHAR8 *DbgQuiesce;
-  CONST CHAR8 *DbgPanelLines;
-  CONST CHAR8 *DbgBootLog;
-  CONST CHAR8 *DbgSdDiagnostics;
+  CONST CHAR8 *DeveloperOptions;
+  CONST CHAR8 *DeveloperOptionsUsbLive;
+  CONST CHAR8 *DeveloperOptionsQuiesce;
+  CONST CHAR8 *DeveloperOptionsPanelLines;
+  CONST CHAR8 *DeveloperOptionsBootLog;
+  CONST CHAR8 *DeveloperOptionsSdDiagnostics;
   CONST CHAR8 *InfoChip;
   CONST CHAR8 *InfoPlatform;
   CONST CHAR8 *InfoPmic;

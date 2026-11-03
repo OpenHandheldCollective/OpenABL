@@ -10,6 +10,7 @@
 #include "Base/Memory.h"
 #include "Base/Text.h"
 #include "Core/Settings.h"
+#include "Ui/DeveloperOptions.h"
 #include "Ui/Lang.h"
 #include "Ui/Ui.h"
 
@@ -508,6 +509,10 @@ AppRows (
   CONST SETTINGS_CAPS *Caps     = &A->Caps;
   UINTN                Count    = 0;
 
+  if (A->Screen == SCREEN_DEVELOPER_OPTIONS) {
+    return DeveloperOptionsRows (A, Rows);
+  }
+
 #define ADD_HEADER(Title) (Rows[Count++] = (ROW){.Header = (Title)})
 #define ADD_ITEM(Id)      (Rows[Count++] = (ROW){.Item = (Id)})
   ADD_HEADER (gStrings->SectionBoot);
@@ -539,15 +544,8 @@ AppRows (
   if (SettingsModelVisible (Settings)) {
     ADD_ITEM (ITEM_MODEL);
   }
-  // Experiments and diagnostics, all off by default.
-  ADD_HEADER (gStrings->SectionDebug);
-  if (Caps->UsbHost) {
-    ADD_ITEM (ITEM_USB_LIVE);
-  }
-  ADD_ITEM (ITEM_QUIESCE);
-  ADD_ITEM (ITEM_PANEL_LINES);
-  ADD_ITEM (ITEM_BOOT_LOG);
-  ADD_ITEM (ITEM_SD_DIAGNOSTICS);
+  // Last in the settings.
+  ADD_ITEM (ITEM_DEVELOPER_OPTIONS);
   ADD_HEADER (gStrings->SectionSystem);
   if (Caps->Log) {
     ADD_ITEM (ITEM_LOG);
@@ -762,43 +760,15 @@ AppItemView (
     View->Label    = gStrings->Log;
     View->Trailing = TRAILING_NAVIGATE;
     break;
+  case ITEM_DEVELOPER_OPTIONS:
   case ITEM_USB_LIVE:
   case ITEM_QUIESCE:
   case ITEM_PANEL_LINES:
   case ITEM_BOOT_LOG:
-  case ITEM_SD_DIAGNOSTICS: {
-    BOOLEAN On;
-
-    switch (Item) {
-    case ITEM_USB_LIVE:
-      On          = A->Settings.UsbHostLive;
-      View->Icon  = ICON_USB;
-      View->Label = gStrings->DbgUsbLive;
-      break;
-    case ITEM_QUIESCE:
-      On          = A->Settings.DisplayOff;
-      View->Icon  = ICON_MONITOR_OFF;
-      View->Label = gStrings->DbgQuiesce;
-      break;
-    case ITEM_PANEL_LINES:
-      On          = A->Settings.PanelLinesOff;
-      View->Icon  = ICON_PLUG;
-      View->Label = gStrings->DbgPanelLines;
-      break;
-    case ITEM_BOOT_LOG:
-      On          = A->Settings.BootLog;
-      View->Icon  = ICON_TERMINAL;
-      View->Label = gStrings->DbgBootLog;
-      break;
-    default:
-      On          = A->Settings.SdDiagnostics;
-      View->Icon  = ICON_SD_CARD;
-      View->Label = gStrings->DbgSdDiagnostics;
-      break;
-    }
-    AsciiStrCopy (Value, Cap, On ? gStrings->On : gStrings->Off);
+  case ITEM_SD_DIAGNOSTICS:
+  case ITEM_DEVELOPER_OPTIONS_BACK:
+    DeveloperOptionsItemView (A, Item, View);
     break;
-  }
   case ITEM_POWER_OFF:
     View->Icon     = ICON_POWER;
     View->Label    = gStrings->PowerOff;
@@ -878,28 +848,22 @@ Activate (
     return Command (COMMAND_DEVICE_INFO, 0);
   case ITEM_LOG:
     return Command (COMMAND_LOG, 0);
+  case ITEM_DEVELOPER_OPTIONS:
   case ITEM_USB_LIVE:
-    Settings->UsbHostLive = !Settings->UsbHostLive;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_QUIESCE:
-    Settings->DisplayOff = !Settings->DisplayOff;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_PANEL_LINES:
-    Settings->PanelLinesOff = !Settings->PanelLinesOff;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_BOOT_LOG:
-    Settings->BootLog = !Settings->BootLog;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_SD_DIAGNOSTICS:
-    Settings->SdDiagnostics = !Settings->SdDiagnostics;
-    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_DEVELOPER_OPTIONS_BACK:
+    return DeveloperOptionsActivate (A, Item);
   case ITEM_POWER_OFF:
     return Command (COMMAND_POWER_OFF, 0);
   }
   return None ();
 }
 
-// Up and down move the focus through the items, wrapping around.
+// Up and down move the focus through the items, wrapping around. Back
+// leaves the developer options.
 STATIC COMMAND
 MenuInput (
   IN OUT APP *A,
@@ -924,6 +888,9 @@ MenuInput (
     A->FocusItem = Items[(Focused + 1) % Count];
     return None ();
   case INPUT_BACK:
+    if (A->Screen == SCREEN_DEVELOPER_OPTIONS) {
+      DeveloperOptionsLeave (A);
+    }
     return None ();
   case INPUT_SELECT:
     return Activate (A, Items[Focused]);
@@ -1145,6 +1112,7 @@ AppInput (
   }
   switch (A->Screen) {
   case SCREEN_MENU:
+  case SCREEN_DEVELOPER_OPTIONS:
     return MenuInput (A, Input);
   case SCREEN_MODELS:
     return ModelsInput (A, Input);

@@ -137,11 +137,13 @@ typedef enum {
   ITEM_UNINSTALL,
   ITEM_DEVICE_INFO,
   ITEM_LOG,
+  ITEM_DEVELOPER_OPTIONS, // opens the developer options
   ITEM_USB_LIVE,
   ITEM_QUIESCE,
   ITEM_PANEL_LINES,
   ITEM_BOOT_LOG,
   ITEM_SD_DIAGNOSTICS,
+  ITEM_DEVELOPER_OPTIONS_BACK, // leaves the developer options
   ITEM_POWER_OFF,
 } ITEM;
 
@@ -166,6 +168,7 @@ typedef struct _ITEM_VIEW {
 
 typedef enum {
   SCREEN_MENU,
+  SCREEN_DEVELOPER_OPTIONS, // a list like the menu's
   SCREEN_SCANNING,
   SCREEN_MODELS,
   SCREEN_ENTRIES,
@@ -273,7 +276,8 @@ typedef struct _APP {
   ITEM         LinesFrom;
   LIST_STATE   InfoList;
 
-  INT32 Booting; // the entry picked from the list, or -1
+  LIST_STATE DeveloperOptionsList;
+  INT32      Booting; // the entry picked from the list, or -1
 
   CHAR8   Toast[160];
   UINT64  ToastUntil; // 0 for no toast
@@ -459,7 +463,8 @@ AppDesiredRotation (IN CONST APP *A);
 
 // For the view
 
-// Fills Rows (MAX_ROWS long) with headers and items and returns the count.
+// Fills Rows (MAX_ROWS long) with the headers and items of the menu, or of
+// the developer options while they show, and returns the count.
 UINTN
 AppRows (
   IN CONST APP *A,

@@ -35,8 +35,8 @@ SerialVWriteLine (
   IN va_list      Args
 );
 
-// From now on, also writes the lines to the text console (the Debug
-// section's boot log).
+// From now on, also writes the lines to the text console (the developer
+// options' boot log).
 VOID
 SerialToScreen (VOID);
 
