@@ -864,6 +864,28 @@ SettingsSave (
   return Result;
 }
 
+EFI_STATUS
+SettingsReset (VOID)
+{
+  EFI_STATUS Status;
+
+  // Never write over a misc that couldn't be read.
+  if (!StoreLoad (LOG_QUIET)) {
+    LogLine (mLog, "settings reset failed: misc couldn't be read");
+    return EFI_NOT_FOUND;
+  }
+  SettingsStoreFormat (mStore.Data);
+  mStore.Dirty = TRUE;
+  Status       = StoreCommit ();
+  if (EFI_ERROR (Status)) {
+    LogPrint (mLog, "settings reset failed: %s", STATUS_TEXT (Status));
+    return Status;
+  }
+  mStore.Fresh = FALSE;
+  LogLine (mLog, "settings reset: misc holds an empty store");
+  return EFI_SUCCESS;
+}
+
 // One-off flags
 
 BOOLEAN

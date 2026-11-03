@@ -57,7 +57,8 @@ typedef enum {
   COMMAND_UNINSTALL_CFW,
   COMMAND_DEVICE_INFO,
   COMMAND_LOG,
-  COMMAND_OPEN_MENU, // leave Boot entries before a boot for the menu
+  COMMAND_OPEN_MENU,      // leave Boot entries before a boot for the menu
+  COMMAND_RESET_SETTINGS, // deletes every setting, then restarts
 } COMMAND_KIND;
 
 // Work for the platform. Run it after the next frame, so the screen
@@ -143,6 +144,7 @@ typedef enum {
   ITEM_PANEL_LINES,
   ITEM_BOOT_LOG,
   ITEM_SD_DIAGNOSTICS,
+  ITEM_RESET_SETTINGS,
   ITEM_DEVELOPER_OPTIONS_BACK, // leaves the developer options
   ITEM_POWER_OFF,
 } ITEM;

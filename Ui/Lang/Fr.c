@@ -70,6 +70,9 @@ CONST LANG_STRINGS gLangFr = {
   .DeveloperOptionsPanelLines    = "Désactiver les lignes de l'écran",
   .DeveloperOptionsBootLog       = "Journal de démarrage à l'écran",
   .DeveloperOptionsSdDiagnostics = "Diagnostic de la carte SD",
+  .DeveloperOptionsReset         = "Réinitialiser les paramètres OpenABL",
+  .DeveloperOptionsResetFailed   =
+    "Les paramètres n'ont pas pu être réinitialisés",
   .DeveloperOptionsStepsAway     =
     "Plus que {} étapes pour débloquer les options pour les développeurs",
   .DeveloperOptionsStepAway      =

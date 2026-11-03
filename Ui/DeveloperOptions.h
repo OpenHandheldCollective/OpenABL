@@ -21,8 +21,8 @@ DeveloperOptionsRows (
   OUT ROW      *Rows
 );
 
-// Describes ITEM_DEVELOPER_OPTIONS, a switch or the Back row. View comes in
-// with the defaults set.
+// Describes ITEM_DEVELOPER_OPTIONS, a switch, the reset or the Back row.
+// View comes in with the defaults set.
 VOID
 DeveloperOptionsItemView (
   IN CONST APP  *A,
@@ -30,7 +30,8 @@ DeveloperOptionsItemView (
   OUT ITEM_VIEW *View
 );
 
-// What Select does on ITEM_DEVELOPER_OPTIONS, a switch or the Back row.
+// What Select does on ITEM_DEVELOPER_OPTIONS, a switch, the reset or the
+// Back row.
 COMMAND
 DeveloperOptionsActivate (
   IN OUT APP *A,

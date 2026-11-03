@@ -244,6 +244,12 @@ SettingsFlagSet (
   IN UINTN        Size
 );
 
+// Deletes every setting and flag in misc, the device model too, so the
+// next boot starts from the defaults. The charger screen, in devinfo, is
+// left alone. Logs a failure, after which misc is read back.
+EFI_STATUS
+SettingsReset (VOID);
+
 #endif
 
 #endif

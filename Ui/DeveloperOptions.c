@@ -31,6 +31,7 @@ DeveloperOptionsRows (
   Rows[Count++] = (ROW){.Item = ITEM_PANEL_LINES};
   Rows[Count++] = (ROW){.Item = ITEM_BOOT_LOG};
   Rows[Count++] = (ROW){.Item = ITEM_SD_DIAGNOSTICS};
+  Rows[Count++] = (ROW){.Item = ITEM_RESET_SETTINGS};
   Rows[Count++] = (ROW){.Item = ITEM_DEVELOPER_OPTIONS_BACK};
   return Count;
 }
@@ -50,6 +51,12 @@ DeveloperOptionsItemView (
     View->Icon     = ICON_CPU;
     View->Label    = gStrings->DeveloperOptions;
     View->Trailing = TRAILING_NAVIGATE;
+    return;
+  case ITEM_RESET_SETTINGS:
+    View->Icon     = ICON_TRASH;
+    View->Label    = gStrings->DeveloperOptionsReset;
+    View->Tone     = TONE_DANGER;
+    View->Trailing = TRAILING_NONE;
     return;
   case ITEM_DEVELOPER_OPTIONS_BACK:
     View->Icon     = ICON_ARROW_LEFT;
@@ -108,6 +115,9 @@ DeveloperOptionsActivate (
     A->DeveloperOptionsList = (LIST_STATE){0};
     A->FocusItem            = A->Caps.UsbHost ? ITEM_USB_LIVE : ITEM_QUIESCE;
     return (COMMAND){.Kind = COMMAND_NONE};
+  case ITEM_RESET_SETTINGS:
+    // No confirmation: whoever unlocked the developer options knows.
+    return (COMMAND){.Kind = COMMAND_RESET_SETTINGS};
   case ITEM_DEVELOPER_OPTIONS_BACK:
     DeveloperOptionsLeave (A);
     return (COMMAND){.Kind = COMMAND_NONE};

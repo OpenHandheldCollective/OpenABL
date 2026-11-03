@@ -73,6 +73,8 @@ CONST LANG_STRINGS gLangEn = {
   .DeveloperOptionsPanelLines    = "Panel lines off",
   .DeveloperOptionsBootLog       = "Boot log on screen",
   .DeveloperOptionsSdDiagnostics = "SD card diagnostics",
+  .DeveloperOptionsReset         = "Reset OpenABL settings",
+  .DeveloperOptionsResetFailed   = "The settings couldn't be reset",
   .DeveloperOptionsStepsAway     =
     "You are now {} steps away from unlocking Developer options",
   .DeveloperOptionsStepAway      =
