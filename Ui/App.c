@@ -317,11 +317,12 @@ ShowLines (
   IN UINTN        Focus
 )
 {
-  A->LinesTitle = Title;
-  A->LinesFrom  = From;
-  A->InfoList   = (LIST_STATE){.Focus = Focus, .Scroll = Focus};
-  A->Screen     = SCREEN_LINES;
-  A->Dirty      = TRUE;
+  A->LinesTitle    = Title;
+  A->LinesFrom     = From;
+  A->UnlockPresses = 0;
+  A->InfoList      = (LIST_STATE){.Focus = Focus, .Scroll = Focus};
+  A->Screen        = SCREEN_LINES;
+  A->Dirty         = TRUE;
 }
 
 VOID
@@ -544,8 +545,10 @@ AppRows (
   if (SettingsModelVisible (Settings)) {
     ADD_ITEM (ITEM_MODEL);
   }
-  // Last in the settings.
-  ADD_ITEM (ITEM_DEVELOPER_OPTIONS);
+  // Last in the settings, once unlocked from Device info.
+  if (Settings->DeveloperOptions) {
+    ADD_ITEM (ITEM_DEVELOPER_OPTIONS);
+  }
   ADD_HEADER (gStrings->SectionSystem);
   if (Caps->Log) {
     ADD_ITEM (ITEM_LOG);
@@ -898,8 +901,23 @@ MenuInput (
   return None ();
 }
 
+// Returns TRUE if Select on the focused line counts towards unlocking the
+// developer options: the bootloader version in Device info, while they are
+// locked.
+STATIC BOOLEAN
+UnlockLine (IN CONST APP *A)
+{
+  UINTN Focus = A->InfoList.Focus;
+
+  // Device info labels its lines with the gStrings pointers themselves.
+  return A->LinesFrom == ITEM_DEVICE_INFO && !A->Settings.DeveloperOptions &&
+         Focus < A->LineCount &&
+         A->Lines[Focus].Label == gStrings->InfoBootloader;
+}
+
 // Up and down move through the lines, scrolling the list. Select and Back
-// go back to the menu.
+// go back to the menu, except that Select on the bootloader version counts
+// towards unlocking the developer options while they are locked.
 STATIC COMMAND
 InfoInput (
   IN OUT APP *A,
@@ -908,6 +926,16 @@ InfoInput (
 {
   UINTN Count = A->LineCount ? A->LineCount : 1;
   UINTN Focus = A->InfoList.Focus;
+
+  if (Input == INPUT_SELECT && UnlockLine (A)) {
+    CHAR8   Toast[sizeof (A->Toast)];
+    COMMAND Save = DeveloperOptionsUnlockPress (A, Toast, sizeof (Toast));
+
+    if (Toast[0]) {
+      ShowToast (A, Toast);
+    }
+    return Save;
+  }
 
   switch (Input) {
   case INPUT_UP:

@@ -41,4 +41,18 @@ DeveloperOptionsActivate (
 VOID
 DeveloperOptionsLeave (IN OUT APP *A);
 
+// Presses on the bootloader version in Device info that unlock the
+// Developer options item.
+#define DEVELOPER_OPTIONS_UNLOCK_PRESSES 7
+
+// Counts a press on the bootloader version while the developer options are
+// locked. Fills Toast with what to show ("" for nothing) and, on the press
+// that unlocks them, returns the command that saves it.
+COMMAND
+DeveloperOptionsUnlockPress (
+  IN OUT APP *A,
+  OUT CHAR8  *Toast,
+  IN UINTN    Cap
+);
+
 #endif

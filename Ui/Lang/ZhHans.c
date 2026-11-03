@@ -70,6 +70,9 @@ CONST LANG_STRINGS gLangZhHans = {
   .DeveloperOptionsPanelLines    = "关闭面板背光与供电",
   .DeveloperOptionsBootLog       = "屏幕显示启动日志",
   .DeveloperOptionsSdDiagnostics = "SD 卡诊断",
+  .DeveloperOptionsStepsAway     = "再按 {} 次即可解锁开发者选项",
+  .DeveloperOptionsStepAway      = "再按 1 次即可解锁开发者选项",
+  .DeveloperOptionsUnlocked      = "开发者选项已解锁！",
 
   .InfoChip              = "芯片",
   .InfoPlatform          = "平台",

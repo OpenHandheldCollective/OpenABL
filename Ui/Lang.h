@@ -88,6 +88,9 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *DeveloperOptionsPanelLines;
   CONST CHAR8 *DeveloperOptionsBootLog;
   CONST CHAR8 *DeveloperOptionsSdDiagnostics;
+  CONST CHAR8 *DeveloperOptionsStepsAway;
+  CONST CHAR8 *DeveloperOptionsStepAway;
+  CONST CHAR8 *DeveloperOptionsUnlocked;
   CONST CHAR8 *InfoChip;
   CONST CHAR8 *InfoPlatform;
   CONST CHAR8 *InfoPmic;

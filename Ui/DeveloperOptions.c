@@ -12,6 +12,9 @@
 #include "Base/Text.h"
 #include "Ui/Lang.h"
 
+// The countdown toasts start once this many presses are left.
+#define COUNTDOWN_FROM 5
+
 UINTN
 DeveloperOptionsRows (
   IN CONST APP *A,
@@ -125,4 +128,34 @@ DeveloperOptionsActivate (
     break;
   }
   return (COMMAND){.Kind = COMMAND_SAVE_SETTINGS};
+}
+
+COMMAND
+DeveloperOptionsUnlockPress (
+  IN OUT APP *A,
+  OUT CHAR8  *Toast,
+  IN UINTN    Cap
+)
+{
+  UINTN Left;
+  CHAR8 Count[8];
+
+  Toast[0] = 0;
+  A->UnlockPresses++;
+  Left = DEVELOPER_OPTIONS_UNLOCK_PRESSES - A->UnlockPresses;
+  if (Left == 0) {
+    A->UnlockPresses             = 0;
+    A->Settings.DeveloperOptions = TRUE;
+    AsciiStrCopy (Toast, Cap, gStrings->DeveloperOptionsUnlocked);
+    return (COMMAND){.Kind = COMMAND_SAVE_SETTINGS};
+  }
+  if (Left == 1) {
+    AsciiStrCopy (Toast, Cap, gStrings->DeveloperOptionsStepAway);
+  } else if (Left <= COUNTDOWN_FROM) {
+    CONST CHAR8 *Arg = Count;
+
+    AsciiStrFromU64 (Count, sizeof (Count), Left);
+    LangFill (Toast, Cap, gStrings->DeveloperOptionsStepsAway, &Arg, 1);
+  }
+  return (COMMAND){.Kind = COMMAND_NONE};
 }

@@ -70,6 +70,12 @@ CONST LANG_STRINGS gLangFr = {
   .DeveloperOptionsPanelLines    = "Désactiver les lignes de l'écran",
   .DeveloperOptionsBootLog       = "Journal de démarrage à l'écran",
   .DeveloperOptionsSdDiagnostics = "Diagnostic de la carte SD",
+  .DeveloperOptionsStepsAway     =
+    "Plus que {} étapes pour débloquer les options pour les développeurs",
+  .DeveloperOptionsStepAway      =
+    "Plus qu'une étape pour débloquer les options pour les développeurs",
+  .DeveloperOptionsUnlocked      =
+    "Les options pour les développeurs sont débloquées !",
 
   .InfoChip          = "Puce",
   .InfoPlatform      = "Plateforme",

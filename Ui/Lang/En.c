@@ -73,6 +73,11 @@ CONST LANG_STRINGS gLangEn = {
   .DeveloperOptionsPanelLines    = "Panel lines off",
   .DeveloperOptionsBootLog       = "Boot log on screen",
   .DeveloperOptionsSdDiagnostics = "SD card diagnostics",
+  .DeveloperOptionsStepsAway     =
+    "You are now {} steps away from unlocking Developer options",
+  .DeveloperOptionsStepAway      =
+    "You are now 1 step away from unlocking Developer options",
+  .DeveloperOptionsUnlocked      = "Developer options are now unlocked!",
 
   .InfoChip          = "Chip",
   .InfoPlatform      = "Platform",

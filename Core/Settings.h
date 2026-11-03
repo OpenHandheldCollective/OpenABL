@@ -77,6 +77,10 @@ typedef struct _SETTINGS {
   // The menu's language, a LANG_ID from Ui/Lang.h. Stored as its Symbol.
   UINT8 Language;
 
+  // The menu shows its Developer options item. Set by pressing the
+  // bootloader version in Device info seven times.
+  BOOLEAN DeveloperOptions;
+
   // The developer options, all off by default.
 
   // Experimental: start USB host in the same boot as fastboot instead of
@@ -108,6 +112,7 @@ typedef struct _SETTINGS {
 #define SETTINGS_KEY_MODEL_ROTATION_FOR "DeviceModelRotationFor"
 #define SETTINGS_KEY_CUSTOM_LOGO        "CustomLogo"
 #define SETTINGS_KEY_LANGUAGE           "MenuLanguage"
+#define SETTINGS_KEY_DEVELOPER_OPTIONS  "DeveloperOptions"
 #define SETTINGS_KEY_USB_HOST_LIVE      "UsbHostLive"
 #define SETTINGS_KEY_DISPLAY_OFF        "DisplayOff"
 #define SETTINGS_KEY_PANEL_LINES_OFF    "PanelLinesOff"
