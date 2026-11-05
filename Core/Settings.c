@@ -247,10 +247,10 @@ LogMigratedModel (
   );
 }
 
-// Puts any device model an older loader stored into the copy. FALSE if it
-// didn't fit.
+// Puts any device model an older loader stored into the copy, and sets
+// *Migrated if there was one. FALSE if it didn't fit.
 STATIC BOOLEAN
-StoreMigrateModel (VOID)
+StoreMigrateModel (OUT BOOLEAN *Migrated OPTIONAL)
 {
   UINT8        Model[SETTINGS_MAX_MODEL_LEN];
   UINTN        Length;
@@ -263,6 +263,9 @@ StoreMigrateModel (VOID)
     return FALSE;
   }
   LogMigratedModel (Model, Length, From);
+  if (Migrated) {
+    *Migrated = TRUE;
+  }
   return TRUE;
 }
 
@@ -275,7 +278,7 @@ StoreUseEmpty (VOID)
     return;
   }
   SettingsStoreFormat (mStore.Data);
-  StoreMigrateModel ();
+  StoreMigrateModel (NULL);
   mStore.Ready = TRUE;
 }
 
@@ -703,6 +706,7 @@ SettingsSetUp (IN LOG_SINK Log)
 {
   OABL_BYTES Held;
   EFI_STATUS Status;
+  BOOLEAN    Migrated = FALSE;
 
   if (!StoreLoad (Log) || !mStore.Fresh) {
     return;
@@ -711,7 +715,7 @@ SettingsSetUp (IN LOG_SINK Log)
   // finds it.
   mStore.Dirty = TRUE;
   if (!SettingsStoreGet (mStore.Data, SETTINGS_KEY_MODEL, &Held) &&
-      !StoreMigrateModel ()) {
+      !StoreMigrateModel (&Migrated)) {
     Status = EFI_OUT_OF_RESOURCES;
   } else {
     Status = StoreWrite ();
@@ -724,6 +728,10 @@ SettingsSetUp (IN LOG_SINK Log)
   }
   mStore.Fresh = FALSE;
   LogLine (mLog, "settings: set up in misc");
+  // The model is in misc now, so what older loaders left can go.
+  if (Migrated) {
+    MigrateModelCleanUp (mLog);
+  }
 }
 
 VOID

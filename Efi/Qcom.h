@@ -128,6 +128,21 @@ QcomReadDeviceState (
   OUT OABL_BUFFER *Out
 );
 
+// Writes Length bytes of the devinfo record with VerifiedBoot's
+// VBRwDeviceState (WRITE_CONFIG). FALSE without the protocol.
+BOOLEAN
+QcomWriteDeviceState (
+  IN UINT8       *Record,
+  IN UINTN        Length,
+  OUT EFI_STATUS *Status
+);
+
+// Commits NV variables to flash with XBL's FlushVariableNV. On SM8750 a
+// variable change that isn't flushed is lost at the next reset. FALSE
+// without the protocol (SDM845 has none).
+BOOLEAN
+QcomFlushVariables (OUT EFI_STATUS *Status);
+
 // Finds how XBL rotates the picture on a Width x Height framebuffer, in
 // degrees, from its panel XMLs. FALSE off Qualcomm firmware or if no panel
 // has that size.
