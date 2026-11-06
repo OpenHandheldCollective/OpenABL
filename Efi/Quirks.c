@@ -493,10 +493,11 @@ STATIC CONST UINT32 mSpeedSelectIgnore[SPEED_WORDS] = {0, 0, 0x00ffffe0u, 0,
                                                        0};
 STATIC CONST UINT32 mHighSpeed = HIDE32 (0x52800058u);
 
-// Finds every speed selection in firmware code outside this image and
-// returns the addresses of its loads. Caller frees the result with VecFree.
+// Finds every speed selection in firmware code outside this image that
+// starts with First (the driver's load, or high speed once patched) and
+// returns their addresses. Caller frees the result with VecFree.
 STATIC U64_LIST
-SpeedSelects (VOID)
+SpeedSelects (IN UINT32 First)
 {
   U64_LIST     Sites   = {0};
   CODE_REGIONS Regions = CodeRegions ();
@@ -505,7 +506,8 @@ SpeedSelects (VOID)
   BOOLEAN      HaveOwn = ImageRange (gImageHandle, &OwnBase, &OwnSize);
   UINT32       Want[SPEED_WORDS];
 
-  for (UINTN Word = 0; Word < SPEED_WORDS; Word++) {
+  Want[0] = First;
+  for (UINTN Word = 1; Word < SPEED_WORDS; Word++) {
     Want[Word] = Reveal32 (mSpeedSelect[Word]);
   }
   for (UINTN Index = 0; Index < Regions.Count; Index++) {
@@ -530,6 +532,65 @@ SpeedSelects (VOID)
   }
   VecFree (&Regions);
   return Sites;
+}
+
+// TRUE if a removable raw disk has media: XBL's detection found the card.
+STATIC BOOLEAN
+SdCardPresent (VOID)
+{
+  EFI_HANDLE *Handles;
+  UINTN       Count   = LocateHandles (&gEfiBlockIoProtocolGuid, &Handles);
+  BOOLEAN     Present = FALSE;
+
+  for (UINTN Index = 0; Index < Count && !Present; Index++) {
+    EFI_BLOCK_IO_PROTOCOL *BlockIo =
+      GetProtocol (Handles[Index], &gEfiBlockIoProtocolGuid);
+
+    Present = BlockIo && BlockIo->Media->MediaPresent &&
+              BlockIo->Media->RemovableMedia &&
+              !BlockIo->Media->LogicalPartition;
+  }
+  if (Handles) {
+    gBS->FreePool (Handles);
+  }
+  return Present;
+}
+
+STATIC VOID
+SpeedFallback (IN LOG_SINK Log)
+{
+  U64_LIST Sites;
+  UINTN    Restored = 0;
+
+  if (SdCardPresent ()) {
+    return;
+  }
+  Sites = SpeedSelects (Reveal32 (mHighSpeed));
+  if (Sites.Count > MAX_SITES) {
+    Sites.Count = MAX_SITES;
+  }
+  for (UINTN Index = 0; Index < Sites.Count; Index++) {
+    BOOLEAN Ok = WriteWord (
+      Sites.Items[Index], TRUE, Reveal32 (mHighSpeed),
+      Reveal32 (mSpeedSelect[0])
+    );
+
+    LogPrint (
+      Log, "sdcc: no SD card at high speed: bus speed @0x%llx back to the "
+           "slot's: %s",
+      (UINT64)Sites.Items[Index], Ok ? "done" : "REFUSED"
+    );
+    Restored += Ok ? 1 : 0;
+  }
+  VecFree (&Sites);
+  if (Restored == 0) {
+    return;
+  }
+  QuirksSignalSdDetect ();
+  LogPrint (
+    Log, "sdcc: SD card at the default speed: %s",
+    SdCardPresent () ? "found" : "none"
+  );
 }
 
 #if defined(OABL_SDCC_SM4450) || defined(OABL_SDCC_SM6450) ||                  \
@@ -1315,7 +1376,7 @@ QuirksSdccUhs (
   }
   // Only with S18R clear do cards stay at 3.3 V.
   if (Patched > 0) {
-    U64_LIST Speeds = SpeedSelects ();
+    U64_LIST Speeds = SpeedSelects (Reveal32 (mSpeedSelect[0]));
 
     if (Speeds.Count > MAX_SITES) {
       Speeds.Count = MAX_SITES;
@@ -1365,6 +1426,8 @@ QuirksSdccUhs (
   if (Detected) {
     // Detection runs inside SignalEvent, as its notify TPL is above ours.
     QuirksSignalSdDetect ();
+    // Still with the longer power-up wait.
+    SpeedFallback (Log);
   }
   for (UINTN Index = 0; Index < Tries.Count; Index++) {
     CONST TRIES_WORD *Word = &Tries.Items[Index];
