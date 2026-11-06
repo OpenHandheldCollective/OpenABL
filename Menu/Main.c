@@ -565,6 +565,7 @@ HoldLogUntilKey (IN CONST MENU_HOST_STATE *State)
     Count = Events.Count;
     VecFree (&Events);
     if (Count) {
+      InputKeysClose (&Keys);
       return;
     }
     gBS->Stall (10000);

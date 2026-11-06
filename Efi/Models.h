@@ -19,13 +19,17 @@
 #include "Efi/Efi.h"
 
 #include "Base/Buffer.h"
+#include "Core/DeviceTree.h"
 #include "Efi/Serial.h"
 
-// A model name and its panel rotation in degrees, if the devicetree has one.
+// A model name, its panel rotation in degrees (if the devicetree has one), and
+// its optional UART handheld gamepad configuration.
 typedef struct _SCANNED_MODEL {
-  CHAR8  *Name;
-  BOOLEAN HasRotation;
-  UINT16  Rotation;
+  CHAR8     *Name;
+  BOOLEAN    HasRotation;
+  UINT16     Rotation;
+  BOOLEAN    HasGamepad;
+  DT_GAMEPAD Gamepad;
 } SCANNED_MODEL;
 
 typedef struct _SCANNED_MODELS OABL_VEC (SCANNED_MODEL) SCANNED_MODELS;
