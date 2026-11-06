@@ -6,7 +6,7 @@
 /**
   Main - renders the menu's screens to PNG on the host.
 
-    openabl-menu-sim [--out DIR] [--filter TEXT] [--lang En|Fr|ZhHans|Ko] [--check]
+    openabl-menu-sim [--out DIR] [--filter TEXT] [--lang En|Fr|Ja|Ru|ZhHans|Ko] [--check]
 
   For every panel and rotation it writes the main menu as the user sees it
   (*-view.png) and as the panel receives it (*-scanout.png, rotated). A few
