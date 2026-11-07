@@ -37,6 +37,7 @@
   X (LANG_EN, En)         \
   X (LANG_FR, Fr)         \
   X (LANG_ZH_HANS, ZhHans) \
-  X (LANG_KO, Ko)
+  X (LANG_KO, Ko)         \
+  X (LANG_UK, Uk)
 
 #endif
