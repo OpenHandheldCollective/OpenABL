@@ -36,6 +36,7 @@
 #define LANG_LIST(X)      \
   X (LANG_EN, En)         \
   X (LANG_FR, Fr)         \
-  X (LANG_ZH_HANS, ZhHans)
+  X (LANG_ZH_HANS, ZhHans) \
+  X (LANG_KO, Ko)
 
 #endif
