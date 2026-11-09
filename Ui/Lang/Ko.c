@@ -40,6 +40,7 @@ CONST LANG_STRINGS gLangKo = {
   .On                        = "켜짐",
   .Off                       = "꺼짐",
   .Rotation                  = "화면 회전",
+  .ReverseVolume             = "볼륨 버튼 반전",
   .CustomLogo                = "사용자 부팅 로고",
   .RotationAuto              = "자동 ({}°)",
   .DeviceModel               = "기기 모델",

@@ -541,6 +541,7 @@ AppRows (
   }
   ADD_ITEM (ITEM_CHARGING);
   ADD_ITEM (ITEM_ROTATION);
+  ADD_ITEM (ITEM_REVERSE_VOLUME);
   ADD_ITEM (ITEM_CUSTOM_LOGO);
   if (SettingsModelVisible (Settings)) {
     ADD_ITEM (ITEM_MODEL);
@@ -732,6 +733,13 @@ AppItemView (
     View->Label = gStrings->Rotation;
     RotationLabel (A, Value, Cap);
     break;
+  case ITEM_REVERSE_VOLUME:
+    View->Icon  = ICON_VOLUME;
+    View->Label = gStrings->ReverseVolume;
+    AsciiStrCopy (
+      Value, Cap, Settings->ReverseVolume ? gStrings->On : gStrings->Off
+    );
+    break;
   case ITEM_CUSTOM_LOGO:
     View->Icon  = ICON_PHOTO;
     View->Label = gStrings->CustomLogo;
@@ -836,6 +844,9 @@ Activate (
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_ROTATION:
     SettingsNextRotation (Settings);
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_REVERSE_VOLUME:
+    Settings->ReverseVolume = !Settings->ReverseVolume;
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_CUSTOM_LOGO:
     Settings->CustomLogo = !Settings->CustomLogo;

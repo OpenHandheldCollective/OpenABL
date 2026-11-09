@@ -42,6 +42,7 @@ CONST LANG_STRINGS gLangEn = {
   .Charging          = "Off-mode charging",
   .On                = "On",
   .Off               = "Off",
+  .ReverseVolume     = "Reverse volume buttons",
   .Rotation          = "Display rotation",
   .CustomLogo        = "Custom boot logo",
   .RotationAuto      = "Auto ({}°)",
