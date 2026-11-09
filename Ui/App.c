@@ -536,6 +536,7 @@ AppRows (
   ADD_ITEM (ITEM_BOOT_MODE);
   ADD_ITEM (ITEM_ABL_MODE);
   ADD_ITEM (ITEM_ALT_VOLUME_UP);
+  ADD_ITEM (ITEM_REVERSE_VOLUME);
   if (SettingsBootSourceVisible (Settings, Caps)) {
     ADD_ITEM (ITEM_BOOT_SOURCE);
   }
@@ -711,6 +712,13 @@ AppItemView (
     View->Label = gStrings->VolumeUp;
     AsciiStrCopy (Value, Cap, AltVolumeLabel (A));
     break;
+  case ITEM_REVERSE_VOLUME:
+    View->Icon  = ICON_ARROWS_DOWN_UP;
+    View->Label = gStrings->ReverseVolume;
+    AsciiStrCopy (
+      Value, Cap, Settings->ReverseVolume ? gStrings->On : gStrings->Off
+    );
+    break;
   case ITEM_BOOT_SOURCE: {
     STATIC CONST CHAR8 *CONST Usb       = "USB";
     CONST CHAR8 *CONST        Sources[] = {gStrings->Auto, gStrings->Internal,
@@ -827,6 +835,9 @@ Activate (
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_ALT_VOLUME_UP:
     Settings->AltVolumeUp = !Settings->AltVolumeUp;
+    return Command (COMMAND_SAVE_SETTINGS, 0);
+  case ITEM_REVERSE_VOLUME:
+    Settings->ReverseVolume = !Settings->ReverseVolume;
     return Command (COMMAND_SAVE_SETTINGS, 0);
   case ITEM_BOOT_SOURCE:
     SettingsNextBootSource (Settings, &A->Caps);

@@ -32,6 +32,7 @@ CONST LANG_STRINGS gLangZhHans = {
   .VolumeUp              = "开机时按音量+按键",
   .VolLinuxExternal      = "Linux（外置存储）",
   .VolRecovery           = "Recovery 模式",
+  .ReverseVolume         = "反转音量键",
   .BootSource            = "启动来源",
   .Auto                  = "自动",
   .Internal              = "内部存储",

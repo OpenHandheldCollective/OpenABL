@@ -61,6 +61,9 @@ typedef struct _SETTINGS {
   ABL_MODE  AblMode;
   // Volume up at boot starts external Linux instead of Android or Recovery.
   BOOLEAN     AltVolumeUp;
+  // The menu swaps Up and Down, for a device whose volume buttons point
+  // the other way from the screen. Power-on keys are unaffected.
+  BOOLEAN     ReverseVolume;
   BOOT_SOURCE BootSource;
   // Qualcomm's charger screen flag. It lives in devinfo, not in misc.
   BOOLEAN OffmodeCharging;
@@ -105,6 +108,7 @@ typedef struct _SETTINGS {
 #define SETTINGS_KEY_BOOT_MODE          "BootMode"
 #define SETTINGS_KEY_ABL_MODE           "AblMode"
 #define SETTINGS_KEY_ALT_VOLUME_UP      "AltVolumeUp"
+#define SETTINGS_KEY_REVERSE_VOLUME     "ReverseVolume"
 #define SETTINGS_KEY_BOOT_SOURCE        "BootSource"
 #define SETTINGS_KEY_ROTATION           "DisplayRotation"
 #define SETTINGS_KEY_MODEL              "DeviceModel"

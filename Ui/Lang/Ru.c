@@ -32,6 +32,7 @@ CONST LANG_STRINGS gLangRu = {
   .VolumeUp              = "Громкость+ при включении",
   .VolLinuxExternal      = "Linux (внешний)",
   .VolRecovery           = "Восстановление",
+  .ReverseVolume         = "Инверсия кнопок громкости",
   .BootSource            = "Источник загрузки",
   .Auto                  = "Авто",
   .Internal              = "Внутренняя память",

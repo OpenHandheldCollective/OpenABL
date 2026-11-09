@@ -32,6 +32,7 @@ CONST LANG_STRINGS gLangUk = {
   .VolumeUp          = "Кнопка \"Гучність +\" під час запуску",
   .VolLinuxExternal  = "Linux (зовнішній носій)",
   .VolRecovery       = "Відновлення (recovery)",
+  .ReverseVolume     = "Інверсія кнопок гучності",
   .BootSource        = "Джерело завантаження",
   .Auto              = "Автоматично",
   .Internal          = "Внутрішнє сховище",

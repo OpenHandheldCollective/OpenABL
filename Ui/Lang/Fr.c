@@ -32,6 +32,7 @@ CONST LANG_STRINGS gLangFr = {
   .VolumeUp          = "Volume + au démarrage",
   .VolLinuxExternal  = "Linux (externe)",
   .VolRecovery       = "Récupération",
+  .ReverseVolume     = "Inverser les boutons de volume",
   .BootSource        = "Source de démarrage",
   .Auto              = "Auto",
   .Internal          = "Interne",

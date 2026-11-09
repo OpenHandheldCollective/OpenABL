@@ -32,6 +32,7 @@ CONST LANG_STRINGS gLangKo = {
   .VolumeUp                  = "부팅 시 볼륨+ 버튼",
   .VolLinuxExternal          = "Linux (외부 저장소)",
   .VolRecovery               = "복구 모드",
+  .ReverseVolume             = "볼륨 버튼 반전",
   .BootSource                = "부팅 위치",
   .Auto                      = "자동",
   .Internal                  = "내부 저장소",

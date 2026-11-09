@@ -32,6 +32,7 @@ CONST LANG_STRINGS gLangJa = {
   .VolumeUp              = "起動時の音量＋ボタン",
   .VolLinuxExternal      = "Linux（外部）",
   .VolRecovery           = "リカバリ",
+  .ReverseVolume         = "音量ボタンを反転",
   .BootSource            = "起動元",
   .Auto                  = "自動",
   .Internal              = "内部ストレージ",

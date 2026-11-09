@@ -100,6 +100,11 @@ InputKeysPoll (
     Any = TRUE;
     // The input is lost if memory runs out.
     if (KeysPress (&Keys->Decoder, Key, Now, &Decoded)) {
+      // Swapped after the decoder, which keeps the key as read, so a key
+      // muted at startup stays muted.
+      if (Keys->Reverse && (Decoded == INPUT_UP || Decoded == INPUT_DOWN)) {
+        Decoded = Decoded == INPUT_UP ? INPUT_DOWN : INPUT_UP;
+      }
       (VOID)VecPush (Out, Decoded);
     }
   }

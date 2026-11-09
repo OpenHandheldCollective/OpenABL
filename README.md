@@ -39,7 +39,8 @@ At power-on:
 | Volume Down | Opens the menu. Fastboot still works over USB while it is open. `fastboot reboot bootloader` also opens it. |
 | Volume Up | Boots Android when the boot mode is Linux, or Android recovery when it is Android. With *Volume up at boot* set to *Linux (external)*, boots Linux from the SD card or a USB drive instead. |
 
-In the menu, Volume Up and Down move the selection and Power selects.
+In the menu, Volume Up and Down move the selection (swapped by *Reverse
+volume buttons*) and Power selects.
 
 | Item | What it does |
 |---|---|
@@ -53,6 +54,7 @@ In the menu, Volume Up and Down move the selection and Power selects.
 | Boot mode | Linux or Android. |
 | ABL mode | Silent, or Verbose to show the ABL's log on screen while booting. |
 | Volume up at boot | Sets what holding Volume Up at power-on does. |
+| Reverse volume buttons | Swaps what Volume Up and Down do in the menu, for devices whose buttons point the other way from the screen. Off by default. It doesn't change the keys held at power-on. |
 | Boot source | Auto (internal storage first), Internal, SD card or USB. |
 | Off-mode charging | Shows the charger screen when plugged in while powered off. |
 | Display rotation | Auto (from the device model) or fixed at 0, 90, 180 or 270 degrees. |
