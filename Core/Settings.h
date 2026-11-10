@@ -130,6 +130,9 @@ typedef struct _SETTINGS {
 // What Boot entries picked for the next Start, kept across a restart: the
 // drive's device path length (Le16), the path, then the entry's id.
 #define SETTINGS_FLAG_BOOT_ENTRY_ONCE "BootEntryOnce"
+// Uninstall CFW made Android the boot mode only so recovery could wipe
+// Android's data. The first boot that isn't recovery's puts Linux back.
+#define SETTINGS_FLAG_LINUX_AFTER_RECOVERY "LinuxAfterRecovery"
 
 // Rules
 

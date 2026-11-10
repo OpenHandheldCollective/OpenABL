@@ -941,6 +941,7 @@ RunCommand (
     break;
   case COMMAND_UNINSTALL_CFW: {
     SETTINGS     Want = M->Stored;
+    UINT8        One  = 1;
     BOOLEAN      Android;
     BOOLEAN      Wipe;
     EFI_STATUS   Status;
@@ -980,6 +981,13 @@ RunCommand (
       MenuLog ("uninstall: Android couldn't be made the boot mode");
       AppOnUninstalled (&mApp, FALSE, FALSE);
       break;
+    }
+    // Android is the boot mode only for recovery: the boot after it puts
+    // Linux back. Without the flag it stays Android until changed by hand.
+    if (EFI_ERROR (
+          SettingsFlagSet (SETTINGS_FLAG_LINUX_AFTER_RECOVERY, &One, 1)
+        )) {
+      MenuLog ("uninstall: Linux won't be the boot mode after recovery");
     }
     // Recovery formats userdata at its new size. Without the message it
     // still offers a factory reset by hand.

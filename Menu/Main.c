@@ -821,11 +821,56 @@ EntriesBeforeBoot (
 }
 #endif
 
+// Uninstall CFW made Android the boot mode so recovery could wipe Android's
+// data, and flagged it. On the first boot that isn't recovery's (the restart
+// out of it) Linux becomes the boot mode again, and this boot follows it.
+// Recovery boots, which may be the wipe or a restart during it, keep the
+// flag. The setting is saved before the flag is cleared: if the clear
+// fails, the next boot finds Linux already set and only clears it.
+STATIC VOID
+LinuxAfterRecovery (
+  IN CONST MENU_HOST     *Host,
+  IN OUT MENU_HOST_STATE *State,
+  IN BOOLEAN              Charger
+)
+{
+  BOOT_DECISION_START Start = MenuHostStateStart (State);
+  SETTINGS            Want;
+  SETTINGS            Stored;
+
+  if (!SettingsFlagIs (SETTINGS_FLAG_LINUX_AFTER_RECOVERY, 1)) {
+    return;
+  }
+  if (BootDecisionRecovery (
+        &Start, State->Settings.BootMode == BOOT_MODE_ANDROID
+      )) {
+    MenuLog ("after uninstall: recovery, so Android stays the boot mode");
+    return;
+  }
+  if (State->Settings.BootMode == BOOT_MODE_ANDROID) {
+    // From misc, not State's settings, whose boot source may read as Auto
+    // for a USB one this ABL can't use.
+    SettingsLoad (&Want);
+    Want.OffmodeCharging = State->Settings.OffmodeCharging;
+    Want.BootMode        = BOOT_MODE_LINUX;
+    if (SettingsSave (Host, &Want, &Stored) != SETTINGS_SAVED ||
+        Stored.BootMode != BOOT_MODE_LINUX) {
+      // The flag stays, so the next boot tries again.
+      MenuLog ("after uninstall: Linux couldn't be made the boot mode");
+      return;
+    }
+    MenuLog ("after uninstall: Linux is the boot mode again");
+    State->Settings.BootMode = BOOT_MODE_LINUX;
+    State->StartAndroid      = BootDecisionAndroid (&Start, FALSE, Charger);
+  }
+  SettingsFlagSet (SETTINGS_FLAG_LINUX_AFTER_RECOVERY, NULL, 0);
+}
+
 // Runs the boot described at MainBoot.
 STATIC EFI_STATUS
 RunBoot (
-  IN CONST MENU_HOST       *Host,
-  IN CONST MENU_HOST_STATE *State
+  IN CONST MENU_HOST     *Host,
+  IN OUT MENU_HOST_STATE *State
 )
 {
   BOOT_DECISION_START Start = MenuHostStateStart (State);
@@ -854,6 +899,7 @@ RunBoot (
     gMenuHostChargerBoot = TRUE;
     MenuLog ("powered on by the charger");
   }
+  LinuxAfterRecovery (Host, State, Charger);
   Alt = State->AltVolumeBoot;
   if ((State->StartAndroid || Charger) && !Alt) {
     BOOLEAN Recovery = BootDecisionRecovery (
