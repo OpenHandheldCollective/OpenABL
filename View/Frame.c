@@ -308,7 +308,11 @@ HashCells (VOID)
         if (Split) {
           BOX Cell = {Cx * CELL, Cy * CELL, (Cx + 1) * CELL, (Cy + 1) * CELL};
           Cell     = Intersect (Box, Cell);
-          Piece    = Hash (Code, &Cell, sizeof (Cell));
+          Piece    = Mix (
+            Mix (Mix (Mix (Code, (UINT32)Cell.X0), (UINT32)Cell.Y0),
+                 (UINT32)Cell.X1),
+            (UINT32)Cell.Y1
+          );
         }
         Row[Cx] = Mix (Row[Cx], Piece);
       }
@@ -491,9 +495,9 @@ PresentArea (IN BOX Area)
   CONST UINT32 *Pixels = mFrame.Pixels;
   INT32         W      = mFrame.W;
   INT32         H      = mFrame.H;
-  INT32         AreaW  = Area.X1 - Area.X0;
-  INT32         AreaH  = Area.Y1 - Area.Y0;
-  PRESENT_BLIT  Blit   = mFrame.Panel.Present;
+  INT32         AreaW = Area.X1 - Area.X0;
+  INT32         AreaH = Area.Y1 - Area.Y0;
+  PRESENT_BLIT  Blit  = mFrame.Panel.Present;
 
   if (mFrame.Panel.Logical) {
     for (INT32 Y = Area.Y0; Y < Area.Y1; Y++) {
@@ -511,12 +515,18 @@ PresentArea (IN BOX Area)
     );
     return;
   case 90:
-    // (X, Y) goes to (H - 1 - Y, X).
-    for (INT32 Y = Area.Y0; Y < Area.Y1; Y++) {
-      CONST UINT32 *Row    = Pixels + (UINTN)Y * W;
-      UINT32       *Column = Out + (Area.Y1 - 1 - Y);
-      for (INT32 X = Area.X0; X < Area.X1; X++) {
-        Column[(UINTN)(X - Area.X0) * AreaH] = Row[X];
+    // (X, Y) goes to (H - 1 - Y, X). Tile in 16x16 blocks for L1 cache locality.
+    for (INT32 By = Area.Y0; By < Area.Y1; By += 16) {
+      INT32 YEnd = By + 16 < Area.Y1 ? By + 16 : Area.Y1;
+      for (INT32 Bx = Area.X0; Bx < Area.X1; Bx += 16) {
+        INT32 XEnd = Bx + 16 < Area.X1 ? Bx + 16 : Area.X1;
+        for (INT32 Y = By; Y < YEnd; Y++) {
+          CONST UINT32 *Row    = Pixels + (UINTN)Y * W;
+          UINT32       *Column = Out + (Area.Y1 - 1 - Y);
+          for (INT32 X = Bx; X < XEnd; X++) {
+            Column[(UINTN)(X - Area.X0) * AreaH] = Row[X];
+          }
+        }
       }
     }
     Blit (
@@ -538,12 +548,18 @@ PresentArea (IN BOX Area)
     );
     return;
   default:
-    // 270: (X, Y) goes to (Y, W - 1 - X).
-    for (INT32 Y = Area.Y0; Y < Area.Y1; Y++) {
-      CONST UINT32 *Row    = Pixels + (UINTN)Y * W;
-      UINT32       *Column = Out + (Y - Area.Y0);
-      for (INT32 X = Area.X0; X < Area.X1; X++) {
-        Column[(UINTN)(Area.X1 - 1 - X) * AreaH] = Row[X];
+    // 270: (X, Y) goes to (Y, W - 1 - X). Tile in 16x16 blocks for L1 cache locality.
+    for (INT32 By = Area.Y0; By < Area.Y1; By += 16) {
+      INT32 YEnd = By + 16 < Area.Y1 ? By + 16 : Area.Y1;
+      for (INT32 Bx = Area.X0; Bx < Area.X1; Bx += 16) {
+        INT32 XEnd = Bx + 16 < Area.X1 ? Bx + 16 : Area.X1;
+        for (INT32 Y = By; Y < YEnd; Y++) {
+          CONST UINT32 *Row    = Pixels + (UINTN)Y * W;
+          UINT32       *Column = Out + (Y - Area.Y0);
+          for (INT32 X = Bx; X < XEnd; X++) {
+            Column[(UINTN)(Area.X1 - 1 - X) * AreaH] = Row[X];
+          }
+        }
       }
     }
     Blit (
