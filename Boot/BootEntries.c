@@ -42,6 +42,7 @@ BootEntriesVolumeFree (IN OUT BOOT_ENTRIES_VOLUME *V)
   BufferFree (&V->Dev);
   FreePool (V->Name);
   FreePool (V->PartUuid);
+  FreePool (V->LoaderDefault);
   BootEntryListFree (&V->Entries);
   *V = (BOOT_ENTRIES_VOLUME){0};
 }
@@ -288,25 +289,27 @@ ExtlinuxEntries (
   }
 }
 
-// Lists everything bootable on one filesystem, in boot order.
+// Lists everything bootable on one filesystem, in boot order. Gets
+// loader.conf's default pattern, or NULL.
 STATIC VOID
 Scan (
   IN EFI_HANDLE           Fs,
-  IN OUT BOOT_ENTRY_LIST *Out
+  IN OUT BOOT_ENTRY_LIST *Out,
+  OUT CHAR8             **Pattern
 )
 {
   CHAR8 *Conf;
-  CHAR8 *Pattern = NULL;
   UINTN  Default;
 
+  *Pattern = NULL;
   Type1Entries (Fs, Out);
   UkiEntries (Fs, Out);
   BlsSort (Out->Items, Out->Count);
   Conf = FilesReadText (Fs, BLS_LOADER_CONF, TEXT_LIMIT);
   if (Conf) {
-    Pattern = BlsLoaderConfDefault (TextOf (Conf));
+    *Pattern = BlsLoaderConfDefault (TextOf (Conf));
   }
-  if (BlsPickDefault (Out->Items, Out->Count, Pattern, &Default)) {
+  if (BlsPickDefault (Out->Items, Out->Count, *Pattern, &Default)) {
     // Move the default to the front, keeping the others in order.
     BOOT_ENTRY Entry = Out->Items[Default];
 
@@ -315,7 +318,6 @@ Scan (
     }
     Out->Items[0] = Entry;
   }
-  FreePool (Pattern);
   FreePool (Conf);
   ExtlinuxEntries (Fs, Out);
 }
@@ -362,7 +364,7 @@ BootEntriesDiscover (
     if (!PathsHandlePath (Fs, &V.Dev)) {
       continue;
     }
-    Scan (Fs, &V.Entries);
+    Scan (Fs, &V.Entries, &V.LoaderDefault);
     UefiJoin (
       (OABL_BYTES[]){BufferBytes (&V.Dev), BufferBytes (&FileNode)}, 2,
       &DefaultPath
@@ -408,5 +410,159 @@ BootEntriesDiscover (
   // SortBy is stable, so firmware order is kept within each group.
   if (!HasOnly) {
     SortBy (Out->Items, Out->Count, sizeof (*Out->Items), RemovableFirst, NULL);
+  }
+}
+
+// Gets the length of Dev before its last HD() node: the disk's own path.
+// Fails if Dev has no HD() node.
+STATIC BOOLEAN
+DiskPathLen (
+  IN CONST OABL_BUFFER *Dev,
+  OUT UINTN            *Len
+)
+{
+  UEFI_NODE Node;
+  UINTN     At    = 0;
+  BOOLEAN   Found = FALSE;
+
+  while (UefiNextNode (Dev->Data, Dev->Len, &At, &Node)) {
+    if (Node.Type == UEFI_TYPE_MEDIA && Node.SubType == UEFI_MEDIA_HARD_DRIVE) {
+      *Len  = (UINTN)(Node.Bytes.Ptr - Dev->Data);
+      Found = TRUE;
+    }
+  }
+  return Found;
+}
+
+BOOLEAN
+BootEntriesSameDisk (
+  IN CONST BOOT_ENTRIES_VOLUME *Volumes,
+  IN UINTN                      A,
+  IN UINTN                      B
+)
+{
+  CONST OABL_BUFFER *DevA = &Volumes[A].Dev;
+  CONST OABL_BUFFER *DevB = &Volumes[B].Dev;
+  UINTN              LenA;
+  UINTN              LenB;
+
+  if (A == B) {
+    return TRUE;
+  }
+  return DiskPathLen (DevA, &LenA) && DiskPathLen (DevB, &LenB) &&
+         LenA == LenB && CompareMem (DevA->Data, DevB->Data, LenA) == 0;
+}
+
+BOOLEAN
+BootEntriesDiskStart (
+  IN CONST BOOT_ENTRIES_VOLUME *Volumes,
+  IN UINTN                      Index
+)
+{
+  for (UINTN Before = 0; Before < Index; Before++) {
+    if (BootEntriesSameDisk (Volumes, Before, Index)) {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+STATIC CONST BOOT_ENTRY *
+RefEntry (
+  IN CONST BOOT_ENTRIES_VOLUME *Volumes,
+  IN CONST BOOT_ENTRIES_REF    *Ref
+)
+{
+  return &Volumes[Ref->Volume].Entries.Items[Ref->Entry];
+}
+
+STATIC BOOLEAN
+IsBls (IN CONST BOOT_ENTRY *Entry)
+{
+  return Entry->Source == BOOT_ENTRY_SOURCE_TYPE1 ||
+         Entry->Source == BOOT_ENTRY_SOURCE_UKI;
+}
+
+STATIC BOOLEAN
+RefLess (
+  IN CONST VOID *A,
+  IN CONST VOID *B,
+  IN VOID       *Context
+)
+{
+  CONST BOOT_ENTRIES_VOLUME *Volumes = Context;
+
+  return BlsCompare (RefEntry (Volumes, A), RefEntry (Volumes, B)) < 0;
+}
+
+VOID
+BootEntriesDiskOrder (
+  IN CONST BOOT_ENTRIES_VOLUME *Volumes,
+  IN UINTN                      Count,
+  IN UINTN                      Disk,
+  IN OUT BOOT_ENTRIES_REFS     *Out
+)
+{
+  UINTN        Start   = Out->Count;
+  CONST CHAR8 *Pattern = NULL;
+  UINTN        Ranked;
+  UINTN        Default = 0;
+  BOOLEAN      Found   = FALSE;
+
+  // The Type #1 entries and UKIs of every partition, ranked together.
+  for (UINTN Volume = Disk; Volume < Count; Volume++) {
+    CONST BOOT_ENTRIES_VOLUME *V = &Volumes[Volume];
+
+    if (!BootEntriesSameDisk (Volumes, Disk, Volume)) {
+      continue;
+    }
+    if (!Pattern) {
+      Pattern = V->LoaderDefault;
+    }
+    for (UINTN Entry = 0; Entry < V->Entries.Count; Entry++) {
+      if (IsBls (&V->Entries.Items[Entry])) {
+        VecPush (Out, (BOOT_ENTRIES_REF){.Volume = Volume, .Entry = Entry});
+      }
+    }
+  }
+  Ranked = Out->Count - Start;
+  SortBy (
+    Out->Items + Start, Ranked, sizeof (*Out->Items), RefLess,
+    (VOID *)Volumes
+  );
+  // The default, as BlsPickDefault picks it: the first with tries left that
+  // matches loader.conf, else the first with tries left, else the first.
+  for (UINTN Pass = Pattern ? 0 : 1; Pass < 2 && !Found; Pass++) {
+    for (UINTN Index = 0; Index < Ranked && !Found; Index++) {
+      CONST BOOT_ENTRY *Entry = RefEntry (Volumes, &Out->Items[Start + Index]);
+
+      if (!BootEntryIsBad (Entry) &&
+          (Pass == 1 || BlsGlob (Pattern, Entry->Id))) {
+        Default = Index;
+        Found   = TRUE;
+      }
+    }
+  }
+  if (Default) {
+    // Move the default to the front, keeping the others in order.
+    BOOT_ENTRIES_REF Ref = Out->Items[Start + Default];
+
+    for (UINTN Index = Default; Index > 0; Index--) {
+      Out->Items[Start + Index] = Out->Items[Start + Index - 1];
+    }
+    Out->Items[Start] = Ref;
+  }
+  // Then each partition's other entries, such as extlinux labels.
+  for (UINTN Volume = Disk; Volume < Count; Volume++) {
+    CONST BOOT_ENTRIES_VOLUME *V = &Volumes[Volume];
+
+    if (!BootEntriesSameDisk (Volumes, Disk, Volume)) {
+      continue;
+    }
+    for (UINTN Entry = 0; Entry < V->Entries.Count; Entry++) {
+      if (!IsBls (&V->Entries.Items[Entry])) {
+        VecPush (Out, (BOOT_ENTRIES_REF){.Volume = Volume, .Entry = Entry});
+      }
+    }
   }
 }

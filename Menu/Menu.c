@@ -452,7 +452,9 @@ AddRow (
 }
 
 // Lists what Start would try on the allowed drives, in its order: each
-// drive's entries, then each drive's default file. Only in Linux boot mode. USB
+// disk's entries as BootEntriesDiskOrder ranks them, so the default comes
+// first even when the A/B entries are on separate partitions, then each
+// drive's default file. Only in Linux boot mode. USB
 // drives are skipped unless USB host is up, since fastboot owns the controller.
 STATIC VOID
 FillEntries (
@@ -476,17 +478,24 @@ FillEntries (
     );
   }
   for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
-    CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Index];
+    BOOT_ENTRIES_REFS Refs = {0};
 
-    for (UINTN Index2 = 0; Index2 < V->Entries.Count; Index2++) {
-      CONST BOOT_ENTRY *Entry = &V->Entries.Items[Index2];
+    if (!BootEntriesDiskStart (mVolumes.Items, Index)) {
+      continue;
+    }
+    BootEntriesDiskOrder (mVolumes.Items, mVolumes.Count, Index, &Refs);
+    for (UINTN Index2 = 0; Index2 < Refs.Count; Index2++) {
+      UINTN             Volume = Refs.Items[Index2].Volume;
+      CONST BOOT_ENTRY *Entry =
+        &mVolumes.Items[Volume].Entries.Items[Refs.Items[Index2].Entry];
 
       AddRow (
-        Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
+        Views, &Count, Volume, Entry->Title ? Entry->Title : Entry->Id,
         EntryKind (Entry->Source), Entry->Version,
         BootEntryIsBad (Entry), Entry->Id
       );
     }
+    VecFree (&Refs);
   }
   // Then the default files, which Start tries on each drive in turn.
   for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
