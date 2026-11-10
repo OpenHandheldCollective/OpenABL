@@ -75,6 +75,7 @@ typedef enum {
   BOOT_ERROR_ANDROID_FAILED, // booting Android (boot_a/b) returned
   BOOT_ERROR_WIPE_BY_HAND,   // Linux removed, but Android isn't the boot mode
   BOOT_ERROR_UNINSTALL,      // removing Linux failed; ErrorDetail says why
+  BOOT_ERROR_NO_MODEL,       // Linux with no device model, but models found
 } BOOT_ERROR;
 
 // What the view draws

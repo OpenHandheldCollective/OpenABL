@@ -1153,6 +1153,10 @@ AppInput (
   case SCREEN_CONFIRM:
     return ConfirmInput (A, Input);
   case SCREEN_ERROR:
+    // With no device model, any key goes on to the model list.
+    if (A->Error == BOOT_ERROR_NO_MODEL) {
+      return AppOpenModels (A);
+    }
     A->Screen = SCREEN_MENU;
     return None ();
   case SCREEN_LINES:

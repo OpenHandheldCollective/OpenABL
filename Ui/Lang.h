@@ -124,6 +124,7 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ErrNoImageTitle;
   CONST CHAR8 *ErrNoImageMsg;
   CONST CHAR8 *ErrNoImageHint;
+  CONST CHAR8 *ErrNoModelMsg;
   CONST CHAR8 *ErrLoadTitle;
   CONST CHAR8 *ErrLoadHint;
   CONST CHAR8 *ErrAndroidTitle;
@@ -133,6 +134,7 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ErrAndroidFailedMsg;
   CONST CHAR8 *ErrAndroidFailedHint;
   CONST CHAR8 *PressAnyKeyMenu;
+  CONST CHAR8 *PressAnyKeyModel;
   CONST CHAR8 *ConfirmUninstallTitle;
   CONST CHAR8 *ConfirmUninstallMsg;
   CONST CHAR8 *ConfirmUninstall;

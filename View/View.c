@@ -1822,6 +1822,11 @@ ErrorDraw (IN CONST APP *A)
     Title = gStrings->UninstallFailed, Message = A->ErrorDetail, Hint = "";
     Action = gStrings->PressAnyKeyMenu;
     break;
+  case BOOT_ERROR_NO_MODEL:
+    Title = gStrings->ErrNoImageTitle, Message = gStrings->ErrNoModelMsg,
+    Hint   = "";
+    Action = gStrings->PressAnyKeyModel;
+    break;
   }
   float MaxW =
     ToPx (300) < (float)mView.Body.W ? ToPx (300) : (float)mView.Body.W;

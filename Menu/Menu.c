@@ -839,6 +839,30 @@ MayStartHere (IN MENU_STATE *M)
   return Ok;
 }
 
+// Returns TRUE if the boot mode is Linux, no device model is set and the
+// allowed drives have devicetrees to pick one from. FALSE if they can't be
+// scanned now (USB boot source without live USB host).
+STATIC BOOLEAN
+NoModelButModels (IN OUT MENU_STATE *M)
+{
+  SCANNED_MODELS Found;
+  BOOLEAN        Any;
+
+  if (M->Stored.BootMode != BOOT_MODE_LINUX || M->Stored.Model[0]) {
+    return FALSE;
+  }
+  if (EFI_ERROR (FindModels (M, TRUE, &Found))) {
+    MenuLog ("no device model set; couldn't look for devicetrees");
+    return FALSE;
+  }
+  Any = Found.Count > 0;
+  MenuLog (
+    "no device model set; %llu devicetree model(s) found", (UINT64)Found.Count
+  );
+  ModelsFree (&Found);
+  return Any;
+}
+
 // Static, as the app state is large (log and device info lines).
 STATIC APP mApp;
 
@@ -868,6 +892,12 @@ RunCommand (
       PickEntry ((UINTN)Command.Arg);
     }
 #endif
+    // Linux with no device model: if the drives have devicetrees to pick
+    // from, ask for one instead of booting.
+    if (!M->BootPicker && NoModelButModels (M)) {
+      AppOnBootResult (&mApp, FALSE, BOOT_ERROR_NO_MODEL, NULL);
+      break;
+    }
     // Before a boot, the boot goes on as soon as the menu leaves.
     if (M->BootPicker || (StartsHere (M) && MayStartHere (M))) {
       // Shut down as when the ABL asks the menu to leave.

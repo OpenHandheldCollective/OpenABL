@@ -115,6 +115,7 @@ CONST LANG_STRINGS gLangKo = {
     "선택한 부팅 위치에서 부팅 가능한 이미지를 찾지 못했습니다.",
   .ErrNoImageHint =
     "드라이브를 확인하거나 메뉴에서 부팅 위치를 변경하세요.",
+  .ErrNoModelMsg             = "기기 모델이 설정되지 않았습니다.",
   .ErrLoadTitle              = "Linux 시작 실패",
   .ErrLoadHint =
     "드라이브의 부팅 파일을 확인하거나 메뉴에서 부팅 위치를 "
@@ -129,6 +130,7 @@ CONST LANG_STRINGS gLangKo = {
     "로그 화면에서 원인을 확인하세요. Android 파티션을 확인하거나 "
     "부팅 모드를 Linux로 설정하세요.",
   .PressAnyKeyMenu           = "아무 키나 누르면 메뉴로 돌아갑니다",
+  .PressAnyKeyModel          = "아무 키나 누르면 기기 모델을 선택합니다",
   .ConfirmUninstallTitle     = "CFW를 제거할까요?",
   .ConfirmUninstallMsg =
     "다음 파티션과 Android의 모든 데이터가 삭제됩니다:",
