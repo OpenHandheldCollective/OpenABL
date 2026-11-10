@@ -675,3 +675,284 @@ DtReserveMemoryNamed (
   *Added = TRUE;
   return DT_OK;
 }
+
+#define MAX_DT_DEPTH 32
+
+STATIC BOOLEAN
+HasPropStr (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Node,
+  IN CONST CHAR8 *PropName,
+  IN CONST CHAR8 *Target
+)
+{
+  OABL_BYTES Prop;
+  UINTN      TargetLen = AsciiStrLen (Target);
+  UINTN      At        = 0;
+
+  if (!Get (Fdt, Node, PropName, &Prop)) {
+    return FALSE;
+  }
+  while (At < Prop.Len) {
+    UINTN End = At;
+
+    while (End < Prop.Len && Prop.Ptr[End]) {
+      End++;
+    }
+    if (End - At == TargetLen &&
+        CompareMem (Prop.Ptr + At, Target, TargetLen) == 0) {
+      return TRUE;
+    }
+    At = End + 1;
+  }
+  return FALSE;
+}
+
+STATIC BOOLEAN
+NodeEnabled (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Node
+)
+{
+  OABL_BYTES Status;
+
+  if (!Get (Fdt, Node, "status", &Status)) {
+    return TRUE;
+  }
+  return HasPropStr (Fdt, Node, "status", "okay") ||
+         HasPropStr (Fdt, Node, "status", "ok");
+}
+
+STATIC BOOLEAN
+NodeByPhandle (
+  IN CONST UINT8 *Fdt,
+  IN UINT32       Phandle,
+  OUT UINTN      *Out
+)
+{
+  INT32 Node  = -1;
+  INT32 Depth = -1;
+
+  if (!Phandle || Phandle == 0xFFFFFFFFU) {
+    return FALSE;
+  }
+  for (;;) {
+    OABL_BYTES Prop;
+
+    Node = fdt_next_node (Fdt, Node, &Depth);
+    if (Node < 0 || Depth < 0) {
+      return FALSE;
+    }
+    if ((Get (Fdt, (UINTN)Node, "phandle", &Prop) ||
+         Get (Fdt, (UINTN)Node, "linux,phandle", &Prop)) &&
+        Prop.Len == 4 && ReadBe32 (Prop.Ptr) == Phandle) {
+      *Out = (UINTN)Node;
+      return TRUE;
+    }
+  }
+}
+
+STATIC UINT16
+GpioPinOf (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Node,
+  IN CONST CHAR8 *PropName
+)
+{
+  OABL_BYTES Prop;
+  UINT32     Pin;
+
+  if (!Get (Fdt, Node, PropName, &Prop) || Prop.Len < 8) {
+    return DT_NO_GPIO;
+  }
+  Pin = ReadBe32 (Prop.Ptr + 4);
+  return Pin < 512 ? (UINT16)Pin : DT_NO_GPIO;
+}
+
+STATIC UINT16
+SupplyGpioPinOf (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Node,
+  IN CONST CHAR8 *SupplyName
+)
+{
+  OABL_BYTES Prop;
+  UINTN      RegNode;
+  UINT16     Pin;
+
+  if (!Get (Fdt, Node, SupplyName, &Prop) || Prop.Len < 4 ||
+      !NodeByPhandle (Fdt, ReadBe32 (Prop.Ptr), &RegNode)) {
+    return DT_NO_GPIO;
+  }
+  Pin = GpioPinOf (Fdt, RegNode, "gpio");
+  if (Pin == DT_NO_GPIO) {
+    Pin = GpioPinOf (Fdt, RegNode, "gpios");
+  }
+  return Pin;
+}
+
+STATIC BOOLEAN
+ParseGpioName (
+  IN CONST UINT8 *Str,
+  IN UINTN        Len,
+  OUT UINT16     *Pin
+)
+{
+  UINT32 Value = 0;
+
+  if (Len < 5 || Len > 7 || CompareMem (Str, "gpio", 4) != 0) {
+    return FALSE;
+  }
+  for (UINTN Index = 4; Index < Len; Index++) {
+    if (Str[Index] < '0' || Str[Index] > '9') {
+      return FALSE;
+    }
+    Value = Value * 10 + (UINT32)(Str[Index] - '0');
+  }
+  if (Value >= 512) {
+    return FALSE;
+  }
+  *Pin = (UINT16)Value;
+  return TRUE;
+}
+
+STATIC VOID
+CollectPinsInNode (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Node,
+  IN OUT UINT16   Pins[2],
+  IN OUT UINTN   *Count
+)
+{
+  OABL_BYTES Prop;
+  UINTN      At = 0;
+
+  if (!Get (Fdt, Node, "pins", &Prop)) {
+    return;
+  }
+  while (At < Prop.Len && *Count < 2) {
+    UINTN  End = At;
+    UINT16 Pin;
+
+    while (End < Prop.Len && Prop.Ptr[End]) {
+      End++;
+    }
+    if (ParseGpioName (Prop.Ptr + At, End - At, &Pin)) {
+      Pins[(*Count)++] = Pin;
+    }
+    At = End + 1;
+  }
+}
+
+STATIC BOOLEAN
+UartPinsOf (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        UartNode,
+  OUT UINT16     *TxGpio,
+  OUT UINT16     *RxGpio
+)
+{
+  OABL_BYTES Prop;
+  UINT16     Pins[2] = {DT_NO_GPIO, DT_NO_GPIO};
+  UINTN      Count   = 0;
+
+  if (!Get (Fdt, UartNode, "pinctrl-0", &Prop)) {
+    return FALSE;
+  }
+  for (UINTN At = 0; At + 4 <= Prop.Len && Count < 2; At += 4) {
+    UINTN PinNode;
+
+    if (!NodeByPhandle (Fdt, ReadBe32 (Prop.Ptr + At), &PinNode)) {
+      continue;
+    }
+    CollectPinsInNode (Fdt, PinNode, Pins, &Count);
+    for (INT32 Child = fdt_first_subnode (Fdt, (INT32)PinNode);
+         Child >= 0 && Count < 2; Child = fdt_next_subnode (Fdt, Child)) {
+      CollectPinsInNode (Fdt, (UINTN)Child, Pins, &Count);
+    }
+  }
+  if (Count < 2) {
+    return FALSE;
+  }
+  *TxGpio = Pins[0];
+  *RxGpio = Pins[1];
+  return TRUE;
+}
+
+BOOLEAN
+DtGamepadConfig (
+  IN CONST UINT8 *Fdt,
+  IN UINTN        Size,
+  OUT DT_GAMEPAD *Out
+)
+{
+  UINTN Ancestors[MAX_DT_DEPTH] = {0};
+  INT32 Node                    = -1;
+  INT32 Depth                   = -1;
+
+  *Out = (DT_GAMEPAD){
+    .TxGpio   = DT_NO_GPIO,
+    .RxGpio   = DT_NO_GPIO,
+    .VddGpio  = DT_NO_GPIO,
+    .BootGpio = DT_NO_GPIO,
+    .EnGpio   = DT_NO_GPIO,
+    .RstGpio  = DT_NO_GPIO,
+  };
+  if (!Usable (Fdt, Size, NO_NODE)) {
+    return FALSE;
+  }
+  for (;;) {
+    BOOLEAN    IsRetroid8250 = FALSE;
+    UINTN      UartNode;
+    UINT32     AddressCells = 2;
+    OABL_BYTES Reg;
+    UINT64     UartBase;
+    UINT16     TxGpio;
+    UINT16     RxGpio;
+
+    Node = fdt_next_node (Fdt, Node, &Depth);
+    if (Node < 0 || Depth < 0) {
+      return FALSE;
+    }
+    if (Depth >= MAX_DT_DEPTH) {
+      continue;
+    }
+    Ancestors[Depth] = (UINTN)Node;
+    if (Depth < 1 || !NodeEnabled (Fdt, (UINTN)Node)) {
+      continue;
+    }
+    if (HasPropStr (
+          Fdt, (UINTN)Node, "compatible", "retroid,retroid-pocket-gamepad"
+        )) {
+      IsRetroid8250 = TRUE;
+    } else if (!HasPropStr (
+                 Fdt, (UINTN)Node, "compatible", "gamepad,rsinput"
+               )) {
+      continue;
+    }
+    UartNode = Ancestors[Depth - 1];
+    if (!NodeEnabled (Fdt, UartNode)) {
+      continue;
+    }
+    if (Depth >= 2) {
+      CellsOf (Fdt, Ancestors[Depth - 2], "#address-cells", &AddressCells);
+    }
+    if (AddressCells < 1 || AddressCells > 2 ||
+        !Get (Fdt, UartNode, "reg", &Reg) || Reg.Len < AddressCells * 4) {
+      continue;
+    }
+    UartBase = ReadCells (Reg.Ptr, AddressCells * 4);
+    if (!UartBase || !UartPinsOf (Fdt, UartNode, &TxGpio, &RxGpio)) {
+      continue;
+    }
+    Out->UartBase      = UartBase;
+    Out->TxGpio        = TxGpio;
+    Out->RxGpio        = RxGpio;
+    Out->VddGpio       = SupplyGpioPinOf (Fdt, (UINTN)Node, "vdd-supply");
+    Out->BootGpio      = GpioPinOf (Fdt, (UINTN)Node, "boot-gpios");
+    Out->EnGpio        = GpioPinOf (Fdt, (UINTN)Node, "enable-gpios");
+    Out->RstGpio       = GpioPinOf (Fdt, (UINTN)Node, "reset-gpios");
+    Out->IsRetroid8250 = IsRetroid8250;
+    return Out->EnGpio != DT_NO_GPIO;
+  }
+}
