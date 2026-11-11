@@ -2,13 +2,27 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-"""Makes the CJK fallback face: mkfont.py FONT PRIMARY STRINGS... > OUT.oablf
+"""Makes the menu's font faces from OpenType fonts, in the .oablf format
+(Gfx/Font.c). Needs fontTools.
 
-Converts the characters that the string literals in the STRINGS files
-(Ui/Lang/*.c, one per language) use from the OpenType font FONT to the .oablf
-format (Gfx/Font.c), at 250 units per em, one weight. Characters that the primary face PRIMARY (an .oablf) or
-ASCII already cover are left out. Fails if FONT lacks a character, so no
-string is drawn with missing glyphs. Needs fontTools.
+  mkfont.py --primary FONT STRINGS... > OUT.oablf
+
+The primary face: printable ASCII, the symbols the menu draws itself (BASE),
+and every character below U+2000 that the string literals in the STRINGS
+files (Ui/Lang/*.c, one per language) use, so accented Latin, Greek and
+Cyrillic match the rest of the menu. Punctuation from U+2000 up (curly
+quotes, dashes) is left to the fallback, which draws it as wide as the CJK
+strings expect; add any that a non-CJK string needs to BASE. FONT is a
+variable font with a wght axis; the face has a Regular (400) and a Medium
+(500) weight, at FONT's own units per em.
+
+  mkfont.py FONT PRIMARY STRINGS... > OUT.oablf
+
+The fallback face: the characters those strings use that the primary face
+PRIMARY (an .oablf) lacks, at 250 units per em, one weight.
+
+Either fails if FONT lacks a character, so no string is drawn with missing
+glyphs.
 """
 import re
 import struct
@@ -17,8 +31,18 @@ import sys
 from fontTools.pens.basePen import BasePen
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
+from fontTools.varLib import instancer
 
 UNITS_PER_EM = 250
+
+# What the menu draws outside the strings, on top of printable ASCII.
+BASE = '°·×…'
+
+# Characters the strings use below this go in the primary face.
+PRIMARY_END = 0x2000
+
+# The primary face's weights, as FONT_WEIGHT in Gfx/Gfx.h orders them.
+WEIGHTS = (400, 500)
 
 # A C string literal, or a comment to skip.
 TOKEN = re.compile(r'"((?:[^"\\\n]|\\.)*)"|//[^\n]*|/\*.*?\*/|\'(?:[^\'\\]|\\.)*\'',
@@ -115,20 +139,20 @@ class OutlinePen(BasePen):
     _endPath = _closePath
 
 
-def main():
-    if len(sys.argv) < 4:
-        sys.exit('usage: mkfont.py FONT PRIMARY STRINGS... > OUT.oablf')
-    font_path, primary_path, *strings_paths = sys.argv[1:]
-    covered = primary_chars(primary_path)
+def string_chars(strings_paths):
+    """Returns {code point: a string that uses it} for the non-ASCII
+    characters of the string literals in strings_paths."""
     wanted = {}
     for strings_path in strings_paths:
         for text in literals(open(strings_path, encoding='utf-8').read()):
             for char in text:
-                if ord(char) > 0x7f and ord(char) not in covered:
+                if ord(char) > 0x7f:
                     wanted.setdefault(ord(char), text)
+    return wanted
 
-    font = TTFont(font_path, lazy=True)
-    cmap = font.getBestCmap()
+
+def check(font_path, cmap, wanted):
+    """Exits if cmap lacks any of wanted's characters."""
     missing = [c for c in sorted(wanted) if c not in cmap or c > 0xffff]
     if missing:
         for c in missing:
@@ -136,32 +160,72 @@ def main():
                   f'used in "{wanted[c]}"', file=sys.stderr)
         sys.exit(1)
 
-    upm = font['head'].unitsPerEm
-    ratio = UNITS_PER_EM / upm
-    glyph_set = font.getGlyphSet()
-    chars = sorted(wanted)
+
+def face(fonts, chars, units_per_em):
+    """Returns the .oablf face of chars, one weight per font in fonts. The
+    first font gives the metrics."""
+    first = fonts[0]
+    ratio = units_per_em / first['head'].unitsPerEm
     records = bytearray()
     outlines = bytearray()
-    for char in chars:
-        glyph = glyph_set[cmap[char]]
-        pen = OutlinePen(glyph_set, ratio)
-        glyph.draw(pen)
-        pen.data.append(5)
-        bounds_pen = BoundsPen(glyph_set)
-        glyph.draw(bounds_pen)
-        bounds = bounds_pen.bounds or (0, 0, 0, 0)
-        x0, y0 = (int((v * ratio) // 1) for v in bounds[:2])
-        x1, y1 = (-int((-v * ratio) // 1) for v in bounds[2:])
-        records += struct.pack('<HhhhhI', scale(glyph.width, ratio), x0, y0, x1,
-                               y1, len(outlines))
-        outlines += pen.data
+    for font in fonts:
+        cmap = font.getBestCmap()
+        glyph_set = font.getGlyphSet()
+        for char in chars:
+            glyph = glyph_set[cmap[char]]
+            pen = OutlinePen(glyph_set, ratio)
+            glyph.draw(pen)
+            pen.data.append(5)
+            bounds_pen = BoundsPen(glyph_set)
+            glyph.draw(bounds_pen)
+            bounds = bounds_pen.bounds or (0, 0, 0, 0)
+            x0, y0 = (int((v * ratio) // 1) for v in bounds[:2])
+            x1, y1 = (-int((-v * ratio) // 1) for v in bounds[2:])
+            records += struct.pack('<HhhhhI', scale(glyph.width, ratio), x0,
+                                   y0, x1, y1, len(outlines))
+            outlines += pen.data
 
-    hhea = font['hhea']
-    header = struct.pack('<4sHHhhhHH', b'OABF', 1, UNITS_PER_EM,
+    hhea = first['hhea']
+    header = struct.pack('<4sHHhhhHH', b'OABF', 1, units_per_em,
                          scale(hhea.ascent, ratio), scale(hhea.descent, ratio),
-                         scale(font['OS/2'].sCapHeight, ratio), len(chars), 1)
-    sys.stdout.buffer.write(header + struct.pack(f'<{len(chars)}H', *chars) +
-                            records + outlines)
+                         scale(first['OS/2'].sCapHeight, ratio), len(chars),
+                         len(fonts))
+    return (header + struct.pack(f'<{len(chars)}H', *chars) + records +
+            outlines)
+
+
+def primary(font_path, strings_paths):
+    """Returns the primary face."""
+    wanted = {c: 'the menu' for c in range(0x20, 0x7f)}
+    wanted.update((ord(c), 'the menu') for c in BASE)
+    for char, text in string_chars(strings_paths).items():
+        if char < PRIMARY_END:
+            wanted.setdefault(char, text)
+    fonts = [instancer.instantiateVariableFont(TTFont(font_path), {'wght': w})
+             for w in WEIGHTS]
+    check(font_path, fonts[0].getBestCmap(), wanted)
+    return face(fonts, sorted(wanted), fonts[0]['head'].unitsPerEm)
+
+
+def fallback(font_path, primary_path, strings_paths):
+    """Returns the fallback face."""
+    covered = primary_chars(primary_path)
+    wanted = {c: text for c, text in string_chars(strings_paths).items()
+              if c not in covered}
+    font = TTFont(font_path, lazy=True)
+    check(font_path, font.getBestCmap(), wanted)
+    return face([font], sorted(wanted), UNITS_PER_EM)
+
+
+def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == '--primary':
+        data = primary(sys.argv[2], sys.argv[3:])
+    elif len(sys.argv) >= 4 and sys.argv[1] != '--primary':
+        data = fallback(sys.argv[1], sys.argv[2], sys.argv[3:])
+    else:
+        sys.exit('usage: mkfont.py --primary FONT STRINGS... > OUT.oablf\n'
+                 '       mkfont.py FONT PRIMARY STRINGS... > OUT.oablf')
+    sys.stdout.buffer.write(data)
 
 
 if __name__ == '__main__':

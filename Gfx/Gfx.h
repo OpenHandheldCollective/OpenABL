@@ -177,9 +177,9 @@ IconPad (IN float Size);
 VOID
 IconsReset (VOID);
 
-// The menu font at any size, read in place from the .oablf files in Assets:
-// Montserrat at two weights, plus CJK glyphs in the Chinese build. Glyphs
-// are measured and rasterised on first use and kept.
+// The menu font at any size, read in place from the .oablf faces the build
+// makes: Montserrat at two weights, plus a CJK face for the characters it
+// lacks. Glyphs are measured and rasterised on first use and kept.
 
 typedef enum { FONT_WEIGHT_REGULAR, FONT_WEIGHT_MEDIUM } FONT_WEIGHT;
 

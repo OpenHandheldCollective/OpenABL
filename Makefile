@@ -20,9 +20,11 @@
 #                     LinuxLoader did on these chips (SM8650, SM8750)
 #
 # The menu has every language in Ui/Lang/, one file each (listed in
-# Ui/Lang/Languages.h). Its CJK face is made at build time from
-# Assets/SourceHanSansSC-Normal.otf by Scripts/mkfont.py with just the
-# characters those strings use (needs fontTools: pip install fonttools).
+# Ui/Lang/Languages.h). Scripts/mkfont.py makes its font faces at build time
+# with just the characters those strings use (needs fontTools: pip install
+# fonttools): Montserrat at two weights from Assets/Montserrat-Variable.ttf for
+# Latin, Greek and Cyrillic, and a CJK face from
+# Assets/SourceHanSansSC-Normal.otf for the rest.
 # The ABL image is 512 KiB and the abl partition 1 MiB, so the program is
 # kept small.
 #
@@ -76,9 +78,10 @@ EDK2_INCLUDES := MdePkg/Include MdePkg/Include/AArch64 MdeModulePkg/Include \
 OWN_FLAGS := $(BASE_FLAGS) $(DEFINES) $(foreach d,$(EDK2_INCLUDES),-isystem $(EDK2)/$(d)) \
 	-Wall -Wextra -Wno-unused-parameter -Werror -MMD -MP
 
+FONT := $(OBJ)/montserrat.oablf
 CJK_FONT := $(OBJ)/cjk-sc.oablf
 LANG_SRCS := $(sort $(wildcard Ui/Lang/*.c))
-ASSETS := Font=Assets/montserrat.oablf FontCjk=$(CJK_FONT)
+ASSETS := Font=$(FONT) FontCjk=$(CJK_FONT)
 
 .PHONY: all sim clean
 all: $(OUT)/openabl-menu.efi
@@ -100,13 +103,19 @@ $(OBJ)/$(VARIANT)/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(OWN_FLAGS) -c $< -o $@
 
-# The CJK face: the characters the strings use, from the full font.
-$(CJK_FONT): Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf $(LANG_SRCS)
+# The menu font: ASCII, a few symbols, and the letters the strings use.
+$(FONT): Scripts/mkfont.py Assets/Montserrat-Variable.ttf $(LANG_SRCS)
 	@mkdir -p $(@D)
-	$(PYTHON) Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf Assets/montserrat.oablf $(LANG_SRCS) > $@.tmp
+	$(PYTHON) Scripts/mkfont.py --primary Assets/Montserrat-Variable.ttf $(LANG_SRCS) > $@.tmp
 	@mv $@.tmp $@
 
-$(OBJ)/$(VARIANT)/assets.c: Scripts/bin2c.py $(wildcard Assets/*.oablf) $(CJK_FONT)
+# The CJK face: the characters the strings use that the menu font lacks.
+$(CJK_FONT): Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf $(FONT) $(LANG_SRCS)
+	@mkdir -p $(@D)
+	$(PYTHON) Scripts/mkfont.py Assets/SourceHanSansSC-Normal.otf $(FONT) $(LANG_SRCS) > $@.tmp
+	@mv $@.tmp $@
+
+$(OBJ)/$(VARIANT)/assets.c: Scripts/bin2c.py $(FONT) $(CJK_FONT)
 	@mkdir -p $(@D)
 	$(PYTHON) Scripts/bin2c.py $(ASSETS) > $@
 

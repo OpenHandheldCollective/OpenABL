@@ -8,7 +8,7 @@
 
   The strings themselves are in Ui/Lang/, one file per language.
   Scripts/mkfont.py reads the string literals there for the characters the
-  CJK face needs, so every string the menu draws belongs in those files.
+  font faces need, so every string the menu draws belongs in those files.
 */
 
 #include "Ui/Lang.h"

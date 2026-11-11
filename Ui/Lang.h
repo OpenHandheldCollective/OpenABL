@@ -8,9 +8,9 @@
 
   Each language is a LANG_STRINGS table in its own file in Ui/Lang/, listed
   in Ui/Lang/Languages.h. The Language setting picks one at run time. The
-  CJK face (made from these strings at build time) is a fallback for the
-  characters the menu font lacks. {}, {0} and {1} mark where LangFill puts
-  values.
+  font faces are made from these strings at build time: Montserrat for
+  Latin, Greek and Cyrillic, and a CJK face for the rest. {}, {0} and {1}
+  mark where LangFill puts values.
 */
 
 #ifndef __UI_LANG_H__
