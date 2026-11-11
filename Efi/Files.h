@@ -107,6 +107,11 @@ FilesRename (
 CHAR8 *
 FilesVolumeLabel (IN EFI_HANDLE Fs);
 
+// Returns the trimmed GPT partition name of Handle, such as "ROCKNIX", or
+// NULL if it has none or is not a GPT partition. Caller frees it.
+CHAR8 *
+FilesPartitionName (IN EFI_HANDLE Handle);
+
 // Paths: device paths as raw bytes. Core/EfiData.h has the node helpers.
 
 // Copies the device path of Handle, end node included, into Out. Returns

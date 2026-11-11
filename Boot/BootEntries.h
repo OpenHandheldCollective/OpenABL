@@ -33,6 +33,8 @@ typedef struct _BOOT_ENTRIES_VOLUME {
   BOOLEAN Removable;
   // GPT partition GUID in LoaderDevicePartUUID format, or NULL.
   CHAR8 *PartUuid;
+  // GPT partition name, such as "ROCKNIX", or NULL.
+  CHAR8 *PartName;
   // \EFI\BOOT\BOOTAA64.EFI exists here and is not our own image.
   BOOLEAN DefaultFile;
   // loader.conf's default pattern, or NULL.

@@ -503,11 +503,16 @@ FillEntries (
          Index2 < sizeof (gDefaultFilesPaths) / sizeof (*gDefaultFilesPaths);
          Index2++) {
       if (FilesExists (mVolumes.Items[Index].Fs, gDefaultFilesPaths[Index2])) {
-        // The file name, such as BOOTAA64.EFI.
+        // The partition's name, such as ROCKNIX, else the file name, such
+        // as BOOTAA64.EFI.
+        CONST CHAR8 *Title = mVolumes.Items[Index].PartName;
+
+        if (!Title) {
+          Title = gDefaultFilesPaths[Index2] + sizeof ("\\EFI\\BOOT\\") - 1;
+        }
         AddRow (
-          Views, &Count, Index,
-          gDefaultFilesPaths[Index2] + sizeof ("\\EFI\\BOOT\\") - 1,
-          ENTRY_KIND_DEFAULT_FILE, NULL, FALSE, MENU_PICK_DEFAULT_FILE
+          Views, &Count, Index, Title, ENTRY_KIND_DEFAULT_FILE, NULL, FALSE,
+          MENU_PICK_DEFAULT_FILE
         );
         break;
       }

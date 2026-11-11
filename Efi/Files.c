@@ -552,6 +552,49 @@ FilesVolumeLabel (IN EFI_HANDLE Fs)
   return Out;
 }
 
+// Qualcomm's PartitionDxe puts the GPT entry on each partition, SDM845's
+// has no EFI_PARTITION_INFO_PROTOCOL.
+STATIC EFI_GUID mPartitionRecordGuid = {
+  0xfe2555be, 0xd716, 0x4686, {0xb9, 0xd0, 0x79, 0xdb, 0x59, 0x21, 0xb7, 0x0d}
+};
+
+CHAR8 *
+FilesPartitionName (IN EFI_HANDLE Handle)
+{
+  EFI_PARTITION_INFO_PROTOCOL *Info =
+    GetProtocol (Handle, &gEfiPartitionInfoProtocolGuid);
+  CONST UINT8                 *Record = GetProtocol (Handle, &mPartitionRecordGuid);
+  CONST CHAR16                *Have;
+  // The entry's 36 units need not end in a terminator.
+  UINT16    Name[37];
+  CHAR8    *Text;
+  OABL_TEXT Trimmed;
+  CHAR8    *Out = NULL;
+
+  if (Info && Info->Type == PARTITION_TYPE_GPT) {
+    Have = Info->Info.Gpt.PartitionName;
+  } else if (Record) {
+    // PartitionTypeGUID(16) UniquePartitionGUID(16) StartingLBA(8)
+    // EndingLBA(8) Attributes(8) PartitionName(72)
+    Have = (CONST CHAR16 *)(Record + 56);
+  } else {
+    return NULL;
+  }
+  for (UINTN Index = 0; Index < 36; Index++) {
+    Name[Index] = Have[Index];
+  }
+  Name[36] = 0;
+  if (!(Text = Utf16ToStr (Name))) {
+    return NULL;
+  }
+  Trimmed = TextTrim (TextOf (Text));
+  if (Trimmed.Len) {
+    Out = TextDup (Trimmed);
+  }
+  FreePool (Text);
+  return Out;
+}
+
 // Device paths
 
 // Returns the size of the device path, all instances and the end-of-entire

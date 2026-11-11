@@ -43,6 +43,7 @@ BootEntriesVolumeFree (IN OUT BOOT_ENTRIES_VOLUME *V)
   FreePool (V->Name);
   FreePool (V->PartUuid);
   FreePool (V->LoaderDefault);
+  FreePool (V->PartName);
   BootEntryListFree (&V->Entries);
   *V = (BOOT_ENTRIES_VOLUME){0};
 }
@@ -381,6 +382,7 @@ BootEntriesDiscover (
       V.Name = SPrintAlloc ("drive %zu", Index);
     }
     V.PartUuid  = PartUuid (&V.Dev);
+    V.PartName  = FilesPartitionName (Fs);
     V.Removable = Removable (Fs);
     SerialLog (
       "volume %s (%s): %zu entr%s%s", V.Name, BootEntriesVolumeKind (&V),
