@@ -124,16 +124,16 @@ CONST LANG_STRINGS gLangEs = {
                            "particiones Android, o establece Modo de inicio a Linux.",
   .PressAnyKeyMenu       = "Presiona cualquier tecla para volver al menú",
   .PressAnyKeyModel      = "Presiona cualquier tecla para elegir el modelo del dispositivo",
-  .ConfirmUninstallTitle = "Desinstalar CFW?",
+  .ConfirmUninstallTitle = "¿Desinstalar CFW?",
   .ConfirmUninstallMsg   = "Elimina estas partiticiones, y todos los datos "
                            "de Android junto con ellas:",
   .ConfirmUninstall      = "Desinstalar",
-  .ConfirmUninstallFinalTitle = "Eliminar para siempre?",
+  .ConfirmUninstallFinalTitle = "¿Eliminar para siempre?",
   .ConfirmUninstallFinalMsg =
     "El dispositivo reiniciara en recuperación, lo que borrara los datos "
     "de Android. Esto no se puede deshacer.",
   .ConfirmUninstallFinal = "Borrar",
-  .ConfirmEdlTitle       = "Entrar al modo descarga de emergencia?",
+  .ConfirmEdlTitle       = "¿Entrar al modo descarga de emergencia?",
   .ConfirmEdlMsg = "La pantalla se mantendra negra en este modo. Necesitaras un ordenador "
                    "con herramientas de flasheo de Qualcomm para salir.",
   .ConfirmEdl    = "Abrir EDL",
