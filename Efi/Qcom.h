@@ -59,6 +59,12 @@ QcomChip (OUT QCOM_CHIP *Out);
 BOOLEAN
 QcomPlatform (OUT EFI_PLATFORMINFO_PLATFORM_INFO_TYPE *Out);
 
+// The parts ChipInfo reports disabled, one bit per EFICHIPINFO_PART_*
+// value, read as the ABL's ReadMMPartialGoods reads them. 0 without the
+// protocol or before it has subset parts.
+UINT32
+QcomDisabledParts (VOID);
+
 // Layouts XBL fills in.
 _Static_assert (
   sizeof (EFI_PLATFORMINFO_PLATFORM_INFO_TYPE) == 20,

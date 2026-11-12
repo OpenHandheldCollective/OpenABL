@@ -121,6 +121,35 @@ QcomChip (OUT QCOM_CHIP *Out)
   return TRUE;
 }
 
+UINT32
+QcomDisabledParts (VOID)
+{
+  EFI_CHIPINFO_PROTOCOL *ChipInfo = Open (&gEfiChipInfoProtocolGuid);
+  UINT32                 Mask     = 0;
+
+  // The ABL's SUBSET_PART_CHIPINFO_BASE_REVISION.
+  if (!ChipInfo || ChipInfo->Revision < 0x10002) {
+    return 0;
+  }
+  for (UINT32 Part = 1; Part < EFICHIPINFO_NUM_PARTS; Part++) {
+    EFI_STATUS Status = EFI_NOT_FOUND;
+    BOOLEAN    Off    = FALSE;
+    UINT32     Subset = 0;
+
+    if (ChipInfo->Revision >= EFI_CHIPINFO_PROTOCOL_REVISION_5) {
+      Status = ChipInfo->IsPartDisabled (ChipInfo, Part, 0, &Off);
+      Subset = Off;
+    }
+    if (Status == EFI_NOT_FOUND) {
+      Status = ChipInfo->GetSubsetPart (ChipInfo, Part, &Subset);
+    }
+    if (!EFI_ERROR (Status) && Subset) {
+      Mask |= 1u << Part;
+    }
+  }
+  return Mask;
+}
+
 BOOLEAN
 QcomPlatform (OUT EFI_PLATFORMINFO_PLATFORM_INFO_TYPE *Out)
 {

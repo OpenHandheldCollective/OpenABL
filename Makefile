@@ -83,7 +83,7 @@ CJK_FONT := $(OBJ)/cjk-sc.oablf
 LANG_SRCS := $(sort $(wildcard Ui/Lang/*.c))
 ASSETS := Font=$(FONT) FontCjk=$(CJK_FONT)
 
-.PHONY: all sim clean
+.PHONY: all sim clean test
 all: $(OUT)/openabl-menu.efi
 
 # Linked as a boot service driver: an application would be unloaded when it
@@ -151,5 +151,15 @@ $(OBJ)/sim-$(VARIANT)/assets.o: $(OBJ)/$(VARIANT)/assets.c
 
 -include $(SIM_OBJS:.o=.d)
 
+# Host tests (need libfdt).
+test: build/test/partialgoods-test
+	build/test/partialgoods-test
+
+build/test/partialgoods-test: $(sort $(shell find Base -name '*.c')) Host/Host.c \
+		Core/PartialGoods.c Test/PartialGoods.c
+	@mkdir -p $(@D)
+	$(HOSTCC) -O1 -g -std=gnu11 -I. -Wall -Wextra -Wno-unused-parameter -Werror \
+		-o $@ $^ -lfdt
+
 clean:
-	rm -rf build/obj build/menu build/sim
+	rm -rf build/obj build/menu build/sim build/test

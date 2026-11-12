@@ -14,6 +14,8 @@
 
 #include "Base/Buffer.h"
 #include "Efi/DisplayHandover.h"
+#include "Efi/Handover.h"
+#include "Efi/Qcom.h"
 #include "Efi/Splash.h"
 
 // U-Boot's EFI_DT_FIXUP_PROTOCOL: its GUID, revision and flags.
@@ -29,6 +31,8 @@ STATIC EFI_GUID mDtFixupGuid = {
 
 #define FDT_MAGIC       0xd00dfeedu
 #define FDT_HEADER_SIZE 40u
+// What partial goods may add to the tree: a status per disabled node.
+#define FDT_ROOM        4096u
 
 typedef struct _DT_FIXUP_PROTOCOL DT_FIXUP_PROTOCOL;
 
@@ -49,9 +53,10 @@ struct _DT_FIXUP_PROTOCOL {
 STATIC LOG_SINK mLog;
 STATIC BOOLEAN  mInstalled;
 
-// Hands the splash over in the loader's tree on DT_APPLY_FIXUPS and installs
-// it as the devicetree table on DT_INSTALL_TABLE. DT_RESERVE_MEMORY is a
-// no-op: XBL's memory map already keeps the carveouts and display reserved.
+// Disables the fused-off parts' remote processors and hands the splash over in
+// the loader's tree on DT_APPLY_FIXUPS, and installs it as the devicetree
+// table on DT_INSTALL_TABLE. DT_RESERVE_MEMORY is a no-op: XBL's memory map
+// already keeps the carveouts and display reserved.
 STATIC EFI_STATUS EFIAPI
 Fixup (
   IN DT_FIXUP_PROTOCOL *This,
@@ -62,6 +67,7 @@ Fixup (
 {
   UINT8 *Tree = Fdt;
   UINT32 Total;
+  UINT32 Need;
 
   (VOID)This;
   if (!Tree || !BufferSize || *BufferSize < 8 ||
@@ -72,14 +78,20 @@ Fixup (
   if (Total < FDT_HEADER_SIZE) {
     return EFI_INVALID_PARAMETER;
   }
-  // Nothing here grows the tree, so its own size is room enough.
-  if (*BufferSize < Total) {
-    *BufferSize = Total;
+  // Only partial goods grows the tree.
+  Need = (Flags & DT_APPLY_FIXUPS) && QcomDisabledParts () ? Total + FDT_ROOM
+                                                           : Total;
+  if (*BufferSize < Need) {
+    *BufferSize = Need;
     return EFI_BUFFER_TOO_SMALL;
   }
   if (Flags & DT_APPLY_FIXUPS) {
     LogPrint (mLog, "dt-fixup: the loader's devicetree, %u bytes", Total);
-    DisplayHandoverKeepSplash (SplashHandOver (Tree, Total, mLog));
+    if (Need > Total) {
+      WriteBe32 (Tree + 4, Need);
+      HandoverPartialGoods (Tree, mLog);
+    }
+    DisplayHandoverKeepSplash (SplashHandOver (Tree, Need, mLog));
   }
   if (Flags & DT_INSTALL_TABLE) {
     EFI_STATUS Status = gBS->InstallConfigurationTable (&gFdtTableGuid, Tree);

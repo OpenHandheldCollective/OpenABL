@@ -58,6 +58,15 @@ HandoverBootReturned (IN LOG_SINK Log);
 VOID
 HandoverHypUartOff (VOID);
 
+// Disables in Fdt the remote processors of the parts ChipInfo reports fused
+// off, as the ABL does for Android. Fdt needs room to grow by a few bytes per
+// node.
+VOID
+HandoverPartialGoods (
+  IN OUT VOID *Fdt,
+  IN LOG_SINK  Log
+);
+
 // Installs Dtb as the devicetree table (gFdtTableGuid) in ACPI-reclaim pages
 // with 8 KiB of padding and its splash region pointed at XBL's framebuffer,
 // replacing any table installed earlier. Size and At get the installed blob;

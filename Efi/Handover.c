@@ -22,6 +22,7 @@
 #include "Base/Memory.h"
 #include "Core/Carveouts.h"
 #include "Core/EfiData.h"
+#include "Core/PartialGoods.h"
 #include "Efi/DisplayHandover.h"
 #include "Efi/DtFixup.h"
 #include "Efi/Dxe.h"
@@ -738,6 +739,22 @@ HandoverHypUartOff (VOID)
 #endif
 }
 
+VOID
+HandoverPartialGoods (
+  IN OUT VOID *Fdt,
+  IN LOG_SINK  Log
+)
+{
+  UINT32 Disabled = QcomDisabledParts ();
+
+  if (Disabled) {
+    LogPrint (
+      Log, "partial-goods: parts %#x fused off, %td remote processors disabled",
+      Disabled, PartialGoodsApply (Fdt, Disabled)
+    );
+  }
+}
+
 // The devicetree table installed last. It is freed when replaced, since the
 // OS keeps ACPI-reclaim memory.
 STATIC EFI_PHYSICAL_ADDRESS mLastDtb;
@@ -761,6 +778,7 @@ HandoverInstallDevicetree (
   if (!UefiPaddedDtb (Dtb, DtbSize, DTB_PAD, &Blob)) {
     return "not a devicetree blob";
   }
+  HandoverPartialGoods (Blob.Data, Log);
   DisplayHandoverKeepSplash (SplashHandOver (Blob.Data, Blob.Len, Log));
   Pages = (Blob.Len + PAGE - 1) / PAGE;
   if (AllocateOutsideCarveouts (EfiACPIReclaimMemory, Pages, &Memory) !=
