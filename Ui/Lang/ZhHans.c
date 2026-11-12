@@ -39,6 +39,7 @@ CONST LANG_STRINGS gLangZhHans = {
   .Charging              = "关机充电",
   .On                    = "开",
   .Off                   = "关",
+  .ReverseVolume         = "反转音量键",
   .Rotation              = "屏幕旋转",
   .CustomLogo            = "自定义启动徽标",
   .RotationAuto          = "自动（{}°）",

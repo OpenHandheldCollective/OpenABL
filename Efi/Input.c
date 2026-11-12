@@ -100,6 +100,13 @@ InputKeysPoll (
     Any = TRUE;
     // The input is lost if memory runs out.
     if (KeysPress (&Keys->Decoder, Key, Now, &Decoded)) {
+      if (Keys->ReverseVolume) {
+        if (Decoded == INPUT_UP) {
+          Decoded = INPUT_DOWN;
+        } else if (Decoded == INPUT_DOWN) {
+          Decoded = INPUT_UP;
+        }
+      }
       (VOID)VecPush (Out, Decoded);
     }
   }

@@ -59,6 +59,7 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *On;
   CONST CHAR8 *Off;
   CONST CHAR8 *Rotation;
+  CONST CHAR8 *ReverseVolume;
   CONST CHAR8 *CustomLogo;
   CONST CHAR8 *RotationAuto;
   CONST CHAR8 *DeviceModel;

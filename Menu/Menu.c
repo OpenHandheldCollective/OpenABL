@@ -1263,6 +1263,7 @@ RunMenu (
     INPUT_EVENTS Events = {0};
     UINT16       Want;
 
+    Keys.ReverseVolume = mApp.Settings.ReverseVolume;
     InputKeysPoll (&Keys, Now, &Events);
     // Once an uninstall waits to restart into recovery, keys and timers do
     // nothing, so its settings can't be changed back before the wipe.
