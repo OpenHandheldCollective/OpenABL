@@ -177,11 +177,12 @@ make FEATURES=standard-boot,card-logo
 ```
 
 **Languages:** the menu's strings live in `Ui/Lang/`, one file per language
-(`En.c`, `Fr.c`, `ZhHans.c`, `Ko.c`), and the *Language* setting picks one at
-run time. `Ui/Lang/Languages.h` sets their order, with Korean last. To add a
-language, copy `Ui/Lang/En.c` to a new file, translate it, and add its symbol
-to that list. Strings left out show in English. The simulator's `--lang` accepts
-a symbol (`En`, `Fr`, `ZhHans`, `Ko`).
+(`En.c`, `Es.c`, `Fr.c`, `Ru.c`, `Uk.c`, `Ja.c`, `ZhHans.c`, `Ko.c`), and the
+*Language* setting picks one at run time. `Ui/Lang/Languages.h` sets their
+order, with Korean last. To add a language, copy `Ui/Lang/En.c` to a new file,
+translate it, and add its symbol to that list. Strings left out show in English.
+The simulator's `--lang` accepts a symbol (`En`, `Es`, `Fr`, `Ru`, `Uk`, `Ja`,
+`ZhHans`, `Ko`).
 
 GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
 `v*` tag is pushed and uploads the images to that tag's release, with
