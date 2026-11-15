@@ -9,6 +9,7 @@
 
 #include "Efi/NestedDisk.h"
 #include "Base/Memory.h"
+#include "Base/Text.h"
 
 #include "Core/EfiData.h"
 #include "Efi/Files.h"
@@ -123,34 +124,14 @@ DiskFlush (IN EFI_BLOCK_IO_PROTOCOL *This)
   return EFI_SUCCESS;
 }
 
-// Qualcomm's PartitionDxe puts the GPT entry on each partition, SDM845's
-// has no EFI_PARTITION_INFO_PROTOCOL.
-STATIC EFI_GUID mPartitionRecordGuid = {
-  0xfe2555be, 0xd716, 0x4686, {0xb9, 0xd0, 0x79, 0xdb, 0x59, 0x21, 0xb7, 0x0d}
-};
-
 STATIC BOOLEAN
 IsUserdata (IN EFI_HANDLE Handle)
 {
-  EFI_PARTITION_INFO_PROTOCOL *Info =
-    GetProtocol (Handle, &gEfiPartitionInfoProtocolGuid);
-  CONST UINT8                 *Record = GetProtocol (Handle, &mPartitionRecordGuid);
-  CONST CHAR16                *Have;
-  STATIC CONST CHAR16          Name[] = L"userdata";
+  CHAR8  *Name = FilesPartitionName (Handle);
+  BOOLEAN Is   = Name && AsciiStrEq (Name, "userdata");
 
-  if (Info && Info->Type == PARTITION_TYPE_GPT) {
-    Have = Info->Info.Gpt.PartitionName;
-  } else if (Record) {
-    Have = (CONST CHAR16 *)(Record + 56);
-  } else {
-    return FALSE;
-  }
-  for (UINTN I = 0; I < sizeof (Name) / sizeof (*Name); I++) {
-    if (Have[I] != Name[I]) {
-      return FALSE;
-    }
-  }
-  return TRUE;
+  FreePool (Name);
+  return Is;
 }
 
 // Reads and verifies the GPT at sector 1 of userdata, Ss bytes a sector.

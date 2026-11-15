@@ -107,6 +107,7 @@ CONST LANG_STRINGS gLangZhHans = {
   .ErrNoImageTitle       = "无法启动 Linux",
   .ErrNoImageMsg         = "所选启动来源上没有可启动的镜像。",
   .ErrNoImageHint        = "请检查驱动器，或在菜单中更改启动来源。",
+  .ErrNoModelMsg         = "尚未设置设备型号。",
   .ErrLoadTitle          = "无法运行 Linux",
   .ErrLoadHint           = "请检查驱动器上的启动文件，或在菜单中更改启动来源。",
   .ErrAndroidTitle       = "无法启动 Android",
@@ -117,6 +118,7 @@ CONST LANG_STRINGS gLangZhHans = {
   .ErrAndroidFailedHint =
     "原因见日志页面。请检查 Android 分区，或将启动模式设为 Linux。",
   .PressAnyKeyMenu            = "按任意键返回菜单",
+  .PressAnyKeyModel           = "按任意键选择设备型号",
   .ConfirmUninstallTitle      = "确认卸载 Linux？",
   .ConfirmUninstallMsg        = "将清除以下分区，以及 Android 的全部数据：",
   .ConfirmUninstall           = "卸载",

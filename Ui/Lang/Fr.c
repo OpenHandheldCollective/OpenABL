@@ -117,6 +117,7 @@ CONST LANG_STRINGS gLangFr = {
                      "sélectionnée.",
   .ErrNoImageHint  = "Vérifiez le lecteur ou modifiez la source de démarrage "
                      "dans le menu.",
+  .ErrNoModelMsg   = "Aucun modèle d'appareil n'est défini.",
   .ErrLoadTitle    = "Impossible de démarrer Linux",
   .ErrLoadHint =
     "Vérifiez les fichiers d'amorçage sur le lecteur ou modifiez la source "
@@ -133,6 +134,8 @@ CONST LANG_STRINGS gLangFr = {
                            "Vérifiez les partitions Android ou sélectionnez "
                            "Linux comme mode de démarrage.",
   .PressAnyKeyMenu       = "Appuyez sur une touche pour revenir au menu",
+  .PressAnyKeyModel      = "Appuyez sur une touche pour choisir le modèle "
+                           "de l'appareil",
   .ConfirmUninstallTitle = "Désinstaller le CFW ?",
   .ConfirmUninstallMsg   = "Les partitions suivantes seront effacées, ainsi "
                            "que toutes les données Android qu'elles "

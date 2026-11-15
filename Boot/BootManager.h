@@ -9,7 +9,8 @@
   We are both the UEFI boot manager (UEFI 2.10 section 3.1, EBBR) and a Boot
   Loader Specification loader. The order is BootNext (deleted first),
   LoaderEntryOneShot, LoaderEntryDefault, the active BootOrder options, and
-  then every drive's entries and default file, removable drives first. A
+  then each disk's entries (in BootEntriesDiskOrder's order) and its drives'
+  default files, removable drives first. A
   Boot#### option naming a whole drive stands for that drive's targets.
   Firmware-volume options and anything that would start us again are skipped.
 */

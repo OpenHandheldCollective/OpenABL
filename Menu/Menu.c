@@ -452,7 +452,9 @@ AddRow (
 }
 
 // Lists what Start would try on the allowed drives, in its order: each
-// drive's entries, then each drive's default file. Only in Linux boot mode. USB
+// disk's entries as BootEntriesDiskOrder ranks them, so the default comes
+// first even when the A/B entries are on separate partitions, then each
+// drive's default file. Only in Linux boot mode. USB
 // drives are skipped unless USB host is up, since fastboot owns the controller.
 STATIC VOID
 FillEntries (
@@ -476,17 +478,24 @@ FillEntries (
     );
   }
   for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
-    CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Index];
+    BOOT_ENTRIES_REFS Refs = {0};
 
-    for (UINTN Index2 = 0; Index2 < V->Entries.Count; Index2++) {
-      CONST BOOT_ENTRY *Entry = &V->Entries.Items[Index2];
+    if (!BootEntriesDiskStart (mVolumes.Items, Index)) {
+      continue;
+    }
+    BootEntriesDiskOrder (mVolumes.Items, mVolumes.Count, Index, &Refs);
+    for (UINTN Index2 = 0; Index2 < Refs.Count; Index2++) {
+      UINTN             Volume = Refs.Items[Index2].Volume;
+      CONST BOOT_ENTRY *Entry =
+        &mVolumes.Items[Volume].Entries.Items[Refs.Items[Index2].Entry];
 
       AddRow (
-        Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
+        Views, &Count, Volume, Entry->Title ? Entry->Title : Entry->Id,
         EntryKind (Entry->Source), Entry->Version,
         BootEntryIsBad (Entry), Entry->Id
       );
     }
+    VecFree (&Refs);
   }
   // Then the default files, which Start tries on each drive in turn.
   for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
@@ -494,11 +503,16 @@ FillEntries (
          Index2 < sizeof (gDefaultFilesPaths) / sizeof (*gDefaultFilesPaths);
          Index2++) {
       if (FilesExists (mVolumes.Items[Index].Fs, gDefaultFilesPaths[Index2])) {
-        // The file name, such as BOOTAA64.EFI.
+        // The partition's name, such as ROCKNIX, else the file name, such
+        // as BOOTAA64.EFI.
+        CONST CHAR8 *Title = mVolumes.Items[Index].PartName;
+
+        if (!Title) {
+          Title = gDefaultFilesPaths[Index2] + sizeof ("\\EFI\\BOOT\\") - 1;
+        }
         AddRow (
-          Views, &Count, Index,
-          gDefaultFilesPaths[Index2] + sizeof ("\\EFI\\BOOT\\") - 1,
-          ENTRY_KIND_DEFAULT_FILE, NULL, FALSE, MENU_PICK_DEFAULT_FILE
+          Views, &Count, Index, Title, ENTRY_KIND_DEFAULT_FILE, NULL, FALSE,
+          MENU_PICK_DEFAULT_FILE
         );
         break;
       }
@@ -830,6 +844,30 @@ MayStartHere (IN MENU_STATE *M)
   return Ok;
 }
 
+// Returns TRUE if the boot mode is Linux, no device model is set and the
+// allowed drives have devicetrees to pick one from. FALSE if they can't be
+// scanned now (USB boot source without live USB host).
+STATIC BOOLEAN
+NoModelButModels (IN OUT MENU_STATE *M)
+{
+  SCANNED_MODELS Found;
+  BOOLEAN        Any;
+
+  if (M->Stored.BootMode != BOOT_MODE_LINUX || M->Stored.Model[0]) {
+    return FALSE;
+  }
+  if (EFI_ERROR (FindModels (M, TRUE, &Found))) {
+    MenuLog ("no device model set; couldn't look for devicetrees");
+    return FALSE;
+  }
+  Any = Found.Count > 0;
+  MenuLog (
+    "no device model set; %llu devicetree model(s) found", (UINT64)Found.Count
+  );
+  ModelsFree (&Found);
+  return Any;
+}
+
 // Static, as the app state is large (log and device info lines).
 STATIC APP mApp;
 
@@ -859,6 +897,12 @@ RunCommand (
       PickEntry ((UINTN)Command.Arg);
     }
 #endif
+    // Linux with no device model: if the drives have devicetrees to pick
+    // from, ask for one instead of booting.
+    if (!M->BootPicker && NoModelButModels (M)) {
+      AppOnBootResult (&mApp, FALSE, BOOT_ERROR_NO_MODEL, NULL);
+      break;
+    }
     // Before a boot, the boot goes on as soon as the menu leaves.
     if (M->BootPicker || (StartsHere (M) && MayStartHere (M))) {
       // Shut down as when the ABL asks the menu to leave.

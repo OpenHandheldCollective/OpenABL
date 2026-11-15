@@ -123,9 +123,26 @@ PushFile (
   }
 }
 
-// Appends drive Volume's entries, then its default file.
 STATIC VOID
-Drive (
+PushEntry (
+  IN OUT BOOT_MANAGER_TARGETS *Out,
+  IN UINTN                     Volume,
+  IN UINTN                     Entry
+)
+{
+  VecPush (
+    Out, (BOOT_MANAGER_TARGET){
+           .Kind      = BOOT_MANAGER_TARGET_ENTRY,
+           .HasVolume = TRUE,
+           .Volume    = Volume,
+           .Entry     = Entry,
+         }
+  );
+}
+
+// Appends drive Volume's default file, if it has one.
+STATIC VOID
+DefaultFile (
   IN CONST BOOT_ENTRIES_VOLUME *Volumes,
   IN UINTN                      Volume,
   IN OUT BOOT_MANAGER_TARGETS  *Out
@@ -135,16 +152,6 @@ Drive (
   OABL_BUFFER                Node = {0};
   OABL_BUFFER                Path = {0};
 
-  for (UINTN Entry = 0; Entry < V->Entries.Count; Entry++) {
-    VecPush (
-      Out, (BOOT_MANAGER_TARGET){
-             .Kind      = BOOT_MANAGER_TARGET_ENTRY,
-             .HasVolume = TRUE,
-             .Volume    = Volume,
-             .Entry     = Entry,
-           }
-    );
-  }
   if (V->DefaultFile) {
     if (UefiFilePathNode (UEFI_DEFAULT_BOOT_FILE, &Node) &&
         UefiJoin (
@@ -156,6 +163,44 @@ Drive (
       );
     }
     BufferFree (&Node);
+  }
+}
+
+// Appends drive Volume's entries, then its default file.
+STATIC VOID
+Drive (
+  IN CONST BOOT_ENTRIES_VOLUME *Volumes,
+  IN UINTN                      Volume,
+  IN OUT BOOT_MANAGER_TARGETS  *Out
+)
+{
+  for (UINTN Entry = 0; Entry < Volumes[Volume].Entries.Count; Entry++) {
+    PushEntry (Out, Volume, Entry);
+  }
+  DefaultFile (Volumes, Volume, Out);
+}
+
+// Appends the disk that starts at drive Disk: its entries in
+// BootEntriesDiskOrder's order, then each partition's default file.
+STATIC VOID
+DiskTargets (
+  IN CONST BOOT_ENTRIES_VOLUME *Volumes,
+  IN UINTN                      VolumeCount,
+  IN UINTN                      Disk,
+  IN OUT BOOT_MANAGER_TARGETS  *Out
+)
+{
+  BOOT_ENTRIES_REFS Refs = {0};
+
+  BootEntriesDiskOrder (Volumes, VolumeCount, Disk, &Refs);
+  for (UINTN Index = 0; Index < Refs.Count; Index++) {
+    PushEntry (Out, Refs.Items[Index].Volume, Refs.Items[Index].Entry);
+  }
+  VecFree (&Refs);
+  for (UINTN Volume = Disk; Volume < VolumeCount; Volume++) {
+    if (BootEntriesSameDisk (Volumes, Disk, Volume)) {
+      DefaultFile (Volumes, Volume, Out);
+    }
   }
 }
 
@@ -500,7 +545,9 @@ BootManagerPlan (
   }
   VecFree (&Order);
   for (UINTN Index = 0; Index < VolumeCount; Index++) {
-    Drive (Volumes, Index, Out);
+    if (BootEntriesDiskStart (Volumes, Index)) {
+      DiskTargets (Volumes, VolumeCount, Index, Out);
+    }
   }
 
   // Keep only the first copy of each target, and never start ourselves.

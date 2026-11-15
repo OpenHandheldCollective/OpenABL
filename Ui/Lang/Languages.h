@@ -24,8 +24,9 @@
   4. Add its entry to LANG_LIST where it should appear on the Language
      screen.
 
-  Nothing else changes: the build picks up the file, and the CJK face takes
-  the characters it needs from every file in Ui/Lang/.
+  Nothing else changes: the build picks up the file, and the font faces
+  take the characters they need from every file in Ui/Lang/ (Montserrat
+  for Latin, Greek and Cyrillic, Source Han Sans for the rest).
 
   Kept free of includes so Core/Settings.h can count the entries.
 */

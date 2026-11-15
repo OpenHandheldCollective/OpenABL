@@ -114,6 +114,7 @@ CONST LANG_STRINGS gLangEn = {
   .ErrNoImageTitle = "Couldn't boot Linux",
   .ErrNoImageMsg   = "No bootable image was found on the selected boot source.",
   .ErrNoImageHint  = "Check the drive, or change Boot source in the menu.",
+  .ErrNoModelMsg   = "No device model is set.",
   .ErrLoadTitle    = "Couldn't start Linux",
   .ErrLoadHint =
     "Check the boot files on the drive, or change Boot source in the menu.",
@@ -125,6 +126,7 @@ CONST LANG_STRINGS gLangEn = {
   .ErrAndroidFailedHint  = "The Log screen says why. Check the Android "
                            "partitions, or set Boot mode to Linux.",
   .PressAnyKeyMenu       = "Press any key to return to the menu",
+  .PressAnyKeyModel      = "Press any key to choose the device model",
   .ConfirmUninstallTitle = "Uninstall CFW?",
   .ConfirmUninstallMsg   = "Erases these partitions, and all of Android's "
                            "data with them:",

@@ -8,9 +8,9 @@
 
   Each language is a LANG_STRINGS table in its own file in Ui/Lang/, listed
   in Ui/Lang/Languages.h. The Language setting picks one at run time. The
-  CJK face (made from these strings at build time) is a fallback for the
-  characters the menu font lacks. {}, {0} and {1} mark where LangFill puts
-  values.
+  font faces are made from these strings at build time: Montserrat for
+  Latin, Greek and Cyrillic, and a CJK face for the rest. {}, {0} and {1}
+  mark where LangFill puts values.
 */
 
 #ifndef __UI_LANG_H__
@@ -124,6 +124,7 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ErrNoImageTitle;
   CONST CHAR8 *ErrNoImageMsg;
   CONST CHAR8 *ErrNoImageHint;
+  CONST CHAR8 *ErrNoModelMsg;
   CONST CHAR8 *ErrLoadTitle;
   CONST CHAR8 *ErrLoadHint;
   CONST CHAR8 *ErrAndroidTitle;
@@ -133,6 +134,7 @@ typedef struct _LANG_STRINGS {
   CONST CHAR8 *ErrAndroidFailedMsg;
   CONST CHAR8 *ErrAndroidFailedHint;
   CONST CHAR8 *PressAnyKeyMenu;
+  CONST CHAR8 *PressAnyKeyModel;
   CONST CHAR8 *ConfirmUninstallTitle;
   CONST CHAR8 *ConfirmUninstallMsg;
   CONST CHAR8 *ConfirmUninstall;
