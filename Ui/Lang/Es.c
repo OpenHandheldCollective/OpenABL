@@ -37,8 +37,8 @@ CONST LANG_STRINGS gLangEs = {
   .Internal          = "Interno",
   .SdCard            = "Tarjeta SD",
   .Charging          = "Carga en modo apagado",
-  .On                = "Encendido",
-  .Off               = "Apagado",
+  .On                = "Activado",
+  .Off               = "Desactivado",
   .Rotation          = "Rotación de pantalla",
   .CustomLogo        = "Logo de arranque personalizado",
   .RotationAuto      = "Auto ({}°)",
@@ -49,7 +49,7 @@ CONST LANG_STRINGS gLangEs = {
   .ToastTargetExited = "El objetivo de arranque finalizó",
   .ToastAndroidInAbl = "Se elige Android en el menú propio del ABL",
   .ToastFirmwareDt   = "Usando el devicetree del firmware",
-  .ToastModelSet     = "Modelo de dispositivo configurado a {}",
+  .ToastModelSet     = "Modelo de dispositivo establecido: {}",
   .LookingOn         = "Buscando Linux en {}",
   .SrcFirstDrive     = "el primer disco arrancable",
   .SrcInternal       = "almacenamiento interno",
@@ -67,11 +67,11 @@ CONST LANG_STRINGS gLangEs = {
   .DeveloperOptions              = "Opciones de desarrollador",
   .DeveloperOptionsUsbLive       = "Host USB activo",
   .DeveloperOptionsQuiesce       = "Desactivar pantalla",
-  .DeveloperOptionsPanelLines    = "Lineas de panel desactivadas",
+  .DeveloperOptionsPanelLines    = "Líneas de panel desactivadas",
   .DeveloperOptionsBootLog       = "Registros de arranque en pantalla",
-  .DeveloperOptionsSdDiagnostics = "Diagnóstico de la Tarjeta SD",
+  .DeveloperOptionsSdDiagnostics = "Diagnóstico de la tarjeta SD",
   .DeveloperOptionsReset         = "Restablecer ajustes OpenABL",
-  .DeveloperOptionsResetFailed   = "No se pudo restablecer los ajustes",
+  .DeveloperOptionsResetFailed   = "No se pudieron restablecer los ajustes",
   .DeveloperOptionsStepsAway     =
     "Te encuentras a {} pasos de desbloquear opciones de desarrollador",
   .DeveloperOptionsStepAway      =
@@ -82,7 +82,7 @@ CONST LANG_STRINGS gLangEs = {
   .InfoPlatform      = "Plataforma",
   .InfoPmic          = "PMIC",
   .InfoStorageChip   = "Chip de almacenamiento",
-  .InfoAndroid       = "Android build",
+  .InfoAndroid       = "Versión de Android",
   .InfoBootloader    = "Bootloader",
   .InfoUefi          = "Firmware UEFI",
   .HintMove          = "Arriba y abajo",
@@ -94,12 +94,12 @@ CONST LANG_STRINGS gLangEs = {
   .Current           = "Actual",
   .FirmwareDefault   = "Predeterminado firmware",
   .Back              = "Volver",
-  .ModelExplain = "El modelo elige que devicetree Linux usa para iniciar, y la "
+  .ModelExplain = "El modelo elige con qué devicetree arranca Linux, y la "
                   "rotación de pantalla.",
   .FirmwareDtExplain =
-    "Inicia con el devicetree que el firmware ya propociona, sin cambios..",
+    "Inicia con el devicetree que el firmware ya proporciona, sin cambios.",
   .FoundIn        = " Encontrado en {}.",
-  .EntriesExplain = "Elige uno para iniciarlo ahora. Iniciar intenta en este orden.",
+  .EntriesExplain = "Elige una para iniciarla ahora. Iniciar las prueba en este orden.",
   .NoTriesLeft    = "No quedan intentos",
   .Default        = "Predeterminado",
   .BackToMenu     = "Volver al menú.",
@@ -108,9 +108,9 @@ CONST LANG_STRINGS gLangEs = {
   .StartingAndroid = "Iniciando Android",
   .StartingLinux   = "Iniciando Linux",
   .Starting        = "Iniciando {}",
-  .ErrNoImageTitle = "No se pudo iniciar Linux",
+  .ErrNoImageTitle = "No se pudo arrancar Linux",
   .ErrNoImageMsg   = "No se encontró ninguna imagen arrancable en la fuente seleccionada.",
-  .ErrNoImageHint  = "Verifica el disco, or cambia la fuente de arranque en el menú.",
+  .ErrNoImageHint  = "Verifica el disco o cambia la fuente de arranque en el menú.",
   .ErrNoModelMsg   = "No hay modelo de dispositivo configurado.",
   .ErrLoadTitle    = "No se pudo iniciar Linux",
   .ErrLoadHint =
@@ -119,56 +119,57 @@ CONST LANG_STRINGS gLangEs = {
   .ErrAndroidMsg         = "Este build aún no puede iniciar Android en este dispositivo.",
   .ErrAndroidHint        = "Establece el Modo de inicio a Linux en el menú.",
   .ErrAndroidFailedTitle = "No se pudo iniciar Android",
-  .ErrAndroidFailedMsg   = "La imagen de arranque de Linux no pudo iniciar.",
-  .ErrAndroidFailedHint  = "La pantalla de registros dice porque. Revisa las "
-                           "particiones Android, o establece Modo de inicio a Linux.",
+  .ErrAndroidFailedMsg   = "Las imágenes de arranque de Android no se iniciaron.",
+  .ErrAndroidFailedHint  = "La pantalla de registros dice por qué. Revisa las "
+                           "particiones de Android o establece Modo de inicio a Linux.",
   .PressAnyKeyMenu       = "Presiona cualquier tecla para volver al menú",
   .PressAnyKeyModel      = "Presiona cualquier tecla para elegir el modelo del dispositivo",
   .ConfirmUninstallTitle = "¿Desinstalar CFW?",
-  .ConfirmUninstallMsg   = "Elimina estas partiticiones, y todos los datos "
-                           "de Android junto con ellas:",
+  .ConfirmUninstallMsg   = "Borra estas particiones y, con ellas, todos los "
+                           "datos de Android:",
   .ConfirmUninstall      = "Desinstalar",
   .ConfirmUninstallFinalTitle = "¿Eliminar para siempre?",
   .ConfirmUninstallFinalMsg =
-    "El dispositivo reiniciara en recuperación, lo que borrara los datos "
+    "El dispositivo reiniciará en recuperación, que borrará los datos "
     "de Android. Esto no se puede deshacer.",
   .ConfirmUninstallFinal = "Borrar",
   .ConfirmEdlTitle       = "¿Entrar al modo descarga de emergencia?",
-  .ConfirmEdlMsg = "La pantalla se mantendra negra en este modo. Necesitaras un ordenador "
+  .ConfirmEdlMsg = "La pantalla se mantendrá apagada en este modo. Necesitarás un ordenador "
                    "con herramientas de flasheo de Qualcomm para salir.",
-  .ConfirmEdl    = "Abrir EDL",
+  .ConfirmEdl    = "Entrar en EDL",
   .Cancel        = "Cancelar",
   .AblSettingFailed    = "El ABL no pudo cambiar ese ajuste",
   .AblModelFailed      = "El ABL no pudo guardar el modelo de dispositivo",
-  .AblNotAnswering     = "EL ABL dejo de responder",
+  .AblNotAnswering     = "El ABL dejó de responder",
   .AblRestartFailed    = "El ABL no pudo reiniciar ({})",
   .RestartingToScan    = "Reiniciando para escanear",
   .RestartToScanFailed = "No se pudo reiniciar para escanear",
-  .ModelScanFailed     = "No fue posible buscar modelos de dispositivo.",
-  .AblActionFailed     = "El ABL no pudo hacer eso.",
+  .ModelScanFailed     = "No fue posible buscar modelos de dispositivo",
+  .AblActionFailed     = "El ABL no pudo hacer eso",
   .PowerOffFailed      = "No se pudo apagar",
-  .RestartingRecovery  = "Reiniciando en modo recuperación",                         
-  .CfwRemoved         = "Linux esta removido. Recuperación borrara los datos de "
-                        "a continuación",
-  .WipeInRecovery     = "Linux esta removido. Elige restablecimiento de fabrica "
-                        "en recuperación para borrar los datos de Android..",
-  .UninstallFailed    = "Fallo al desinstalar",
+  .RestartingRecovery  = "Reiniciando en modo recuperación",
+  .CfwRemoved         = "Linux se ha eliminado. Recuperación borrará ahora los "
+                        "datos de Android.",
+  .WipeInRecovery     = "Linux se ha eliminado. Elige Restablecer datos de fábrica "
+                        "en recuperación para borrar los datos de Android.",
+  .UninstallFailed    = "Error al desinstalar",
   .Uninstalling       = "Desinstalando CFW",
   .DontTurnOff        = "No apagues el dispositivo.",
   .UninstallNotFound  = "Linux ya no se encuentra en el almacenamiento interno.",
   .UninstallUntrusted = "No se puede confiar en la tabla de particiones, no "
                         "se realizó ningún cambio.",
   .UninstallWriteFailed = "La escritura de la tabla de particiones falló ({}).",
-  .UninstallReadBack    = "La tabla de particiones no se leyo tal como se escribió.",
-  .UninstallError       = "Algo salio mal ({}).",
-  .ErrWipeTitle         = "Linux ha sido removido",
+  .UninstallReadBack    = "La tabla de particiones no se leyó tal como se escribió.",
+  .UninstallError       = "Algo salió mal ({}).",
+  .ErrWipeTitle         = "Linux se ha eliminado",
   .WipeByHand       = "No se pudo establecer Android como modo de inicio. "
-                      "Establece inicio a Android, y restablece en recuperación.",
+                      "Establece Modo de inicio a Android y luego elige "
+                      "Restablecer datos de fábrica en recuperación.",
   .Unknown          = "Desconocido",
   .NotInserted      = "No insertado",
-  .SrcAblScan       = "el escaneo de la ABL",
+  .SrcAblScan       = "el escaneo del ABL",
   .EntryType1       = "entrada BLS",
   .EntryUki         = "Imagen de kernel unificada",
   .InternalStorage  = "Almacenamiento interno",
-  .RemovableStorage = "Almacenamiento extraible",
+  .RemovableStorage = "Almacenamiento extraíble",
 };
