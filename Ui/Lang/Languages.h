@@ -34,11 +34,12 @@
 #ifndef __UI_LANG_LANGUAGES_H__
 #define __UI_LANG_LANGUAGES_H__
 
-#define LANG_LIST(X)      \
-  X (LANG_EN, En)         \
-  X (LANG_FR, Fr)         \
+#define LANG_LIST(X)       \
+  X (LANG_EN, En)          \
+  X (LANG_ES, Es)          \
+  X (LANG_FR, Fr)          \
+  X (LANG_UK, Uk)          \
   X (LANG_ZH_HANS, ZhHans) \
-  X (LANG_KO, Ko)         \
-  X (LANG_UK, Uk)
+  X (LANG_KO, Ko)
 
 #endif
