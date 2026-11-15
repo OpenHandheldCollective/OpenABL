@@ -164,7 +164,7 @@ CONST LANG_STRINGS gLangEn = {
   .UninstallReadBack    = "The partition table didn't read back as written.",
   .UninstallError       = "Something went wrong ({}).",
   .ErrWipeTitle         = "Linux is removed",
-  .WipeByHand       = "Android couldn't be made the boot mode. Set Boot Mode "
+  .WipeByHand       = "Android couldn't be made the boot mode. Set Boot mode "
                       "to Android, then choose Factory reset in recovery.",
   .Unknown          = "Unknown",
   .NotInserted      = "Not inserted",

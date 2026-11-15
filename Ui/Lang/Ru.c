@@ -65,7 +65,7 @@ CONST LANG_STRINGS gLangRu = {
   .Log                   = "Журнал",
 
   .DeveloperOptions              = "Параметры разработчика",
-  .DeveloperOptionsUsbLive       = "Активный USB-хост",
+  .DeveloperOptionsUsbLive       = "USB-хост без перезагрузки",
   .DeveloperOptionsQuiesce       = "Отключать дисплей",
   .DeveloperOptionsPanelLines    = "Отключать питание панели",
   .DeveloperOptionsBootLog       = "Журнал загрузки на экране",
@@ -89,7 +89,7 @@ CONST LANG_STRINGS gLangRu = {
   .NoDeviceTrees         = "Деревья устройств не найдены",
   .OneModel              = "Найдена 1 модель",
   .NModels               = "Найдено моделей: {}",
-  .Current               = "Текущая",
+  .Current               = "Выбрано",
   .FirmwareDefault       = "По умолчанию (прошивка)",
   .Back                  = "Назад",
   .ModelExplain          = "Модель определяет дерево устройств (DTB) и поворот экрана для Linux.",

@@ -3,6 +3,10 @@
  *   https://github.com/OpenHandheldCollective
  */
 
+/**
+  Uk - the menu's strings in Ukrainian.
+*/
+
 #include "Ui/Lang.h"
 
 CONST LANG_STRINGS gLangUk = {
@@ -109,7 +113,7 @@ CONST LANG_STRINGS gLangUk = {
   .ErrNoImageMsg   = "Завантажувальний образ не знайдено на вибраному диску.",
   .ErrNoImageHint  = "Перевірте диск або змініть джерело завантаження в меню.",
   .ErrNoModelMsg   = "Модель пристрою не встановлено.",
-  .ErrLoadTitle    = "Не вдалося завантажити Linux",
+  .ErrLoadTitle    = "Не вдалося запустити Linux",
   .ErrLoadHint =
     "Перевірте завантажувальні файли на диску або змініть джерело завантаження в меню.",
   .ErrAndroidTitle       = "Завантаження Android недоступне",
@@ -152,9 +156,11 @@ CONST LANG_STRINGS gLangUk = {
   .Uninstalling       = "Видалення кастомної прошивки (CFW)",
   .DontTurnOff        = "Не вимикайте пристрій.",
   .UninstallNotFound  = "Linux більше не встановлено на внутрішньому сховищі.",
-  .UninstallUntrusted = "Не вдалося перевірити таблицю розділів, нічого не змінено. ",
+  .UninstallUntrusted = "Таблиці розділів не можна довіряти, тому нічого "
+                        "не змінено.",
   .UninstallWriteFailed = "Не вдалося записати таблицю розділів ({}).",
-  .UninstallReadBack    = "Не вдалося перевірити таблицю розділів.",
+  .UninstallReadBack    = "Таблиця розділів після запису не збігається "
+                          "із записаною.",
   .UninstallError       = "Щось пішло не так ({}).",
   .ErrWipeTitle         = "Linux видалено",
   .WipeByHand       = "Не вдалося встановити режим завантаження Android. Встановіть "

@@ -4,7 +4,7 @@
  */
 
 /**
- Fr - Les chaînes du menu en français.
+  Fr - the menu's strings in French.
 */
 
 #include "Ui/Lang.h"
@@ -65,9 +65,9 @@ CONST LANG_STRINGS gLangFr = {
   .Log               = "Journal",
 
   .DeveloperOptions              = "Options pour les développeurs",
-  .DeveloperOptionsUsbLive       = "Hôte USB actif",
+  .DeveloperOptionsUsbLive       = "Hôte USB sans redémarrage",
   .DeveloperOptionsQuiesce       = "Désactiver l'écran",
-  .DeveloperOptionsPanelLines    = "Désactiver les lignes de l'écran",
+  .DeveloperOptionsPanelLines    = "Couper l'alimentation de l'écran",
   .DeveloperOptionsBootLog       = "Journal de démarrage à l'écran",
   .DeveloperOptionsSdDiagnostics = "Diagnostic de la carte SD",
   .DeveloperOptionsReset         = "Réinitialiser les paramètres OpenABL",

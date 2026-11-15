@@ -65,7 +65,7 @@ CONST LANG_STRINGS gLangJa = {
   .Log                   = "ログ",
 
   .DeveloperOptions              = "開発者向けオプション",
-  .DeveloperOptionsUsbLive       = "ライブ USB ホスト",
+  .DeveloperOptionsUsbLive       = "再起動なしで USB ホスト",
   .DeveloperOptionsQuiesce       = "ディスプレイ停止",
   .DeveloperOptionsPanelLines    = "パネル電源オフ",
   .DeveloperOptionsBootLog       = "画面に起動ログを表示",
