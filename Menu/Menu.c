@@ -1009,11 +1009,11 @@ RunCommand (
       break;
     }
     M->Caps.CfwOnInternal = FALSE;
-    // With Linux as the boot mode the reboot reason is ignored and Linux
-    // is looked for, so recovery needs Android as the boot mode. Set it
-    // first: a wipe request left in misc without it would fire whenever
-    // Android is next picked. The boot source stays: an SD card may still
-    // hold Linux.
+    // Recovery starts in either boot mode, from misc's wipe request or the
+    // reboot reason. Android is still made the boot mode first: if neither
+    // reaches recovery, the next boot is Android's and doesn't look for the
+    // Linux that's gone. The boot source stays: an SD card may still hold
+    // Linux.
     Want.BootMode = BOOT_MODE_ANDROID;
     Android = !Save (M, &Want) && M->Stored.BootMode == BOOT_MODE_ANDROID;
     AppSetSettings (&mApp, &M->Stored);

@@ -138,7 +138,9 @@ the entries. A `LoaderEntryOneShot` entry boots at once.
   `losetup -P`, with `--sector-size 4096` for a 4096-byte image on UFS).
 
 **Android** boots from the device's own boot partitions, the same way as
-with Qualcomm's ABL, including verified boot and recovery.
+with Qualcomm's ABL, including verified boot and recovery. A restart into
+recovery (*Recovery mode*, `fastboot reboot recovery`, or `reboot recovery`
+from an OS) boots Android recovery in either boot mode.
 
 ## Building
 

@@ -31,7 +31,10 @@ BootDecisionAndroid (
   IN BOOLEAN                    Charger
 )
 {
-  return AndroidSetting || BootDecisionUpHeld (Start) || Charger;
+  // Recovery is Android's, so a recovery boot (fastboot reboot recovery,
+  // the menu's Recovery mode, misc) boots Android in the Linux boot mode too.
+  return AndroidSetting || BootDecisionUpHeld (Start) || Charger ||
+         BootDecisionRecovery (Start, AndroidSetting);
 }
 
 BOOLEAN

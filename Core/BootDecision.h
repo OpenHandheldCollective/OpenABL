@@ -43,7 +43,7 @@ BOOLEAN
 BootDecisionUpHeld (IN CONST BOOT_DECISION_START *Start);
 
 // Returns TRUE for the Android boot mode: set in the settings, Volume Up or
-// Home held, or a charger boot.
+// Home held, a charger boot, or a recovery boot (BootDecisionRecovery).
 BOOLEAN
 BootDecisionAndroid (
   IN CONST BOOT_DECISION_START *Start,
@@ -59,8 +59,10 @@ BootDecisionAltBoot (
 
 // Returns TRUE to boot Android's recovery instead of its normal boot. In the
 // Android boot mode, Qualcomm's recovery flag or Home held selects it. In
-// the Linux boot mode, Volume Up boots Android itself, and since Qualcomm's
-// flag can't tell Volume Up from its other sources, Volume Up wins.
+// the Linux boot mode, the flag selects it too (from the reboot reason or
+// misc), except with Volume Up held: Volume Up boots Android itself, and
+// since Qualcomm's flag can't tell Volume Up from its other sources, Volume
+// Up wins.
 BOOLEAN
 BootDecisionRecovery (
   IN CONST BOOT_DECISION_START *Start,
