@@ -714,7 +714,7 @@ index 4064b49..00119ab 100644
    ArmInvalidateInstructionCache ();
  
 diff --git a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
-index 88e0117..b3c8b82 100644
+index 88e0117..675d610 100644
 --- a/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
 +++ b/QcomModulePkg/Library/BootLib/UpdateCmdLine.c
 @@ -77,6 +77,7 @@
@@ -801,7 +801,65 @@ index 88e0117..b3c8b82 100644
        AsciiStrCatS (Dst, MaxCmdLineLen, Src);
      }
    }
-@@ -1531,6 +1578,23 @@ UpdateCmdLine (BootParamlist *BootParamlistPtr,
+@@ -1260,6 +1307,44 @@ Update_PartialGoods_Bootconfig (UINT32 HeaderVersion,
+   return EFI_SUCCESS;
+ }
+ #endif
++/* OpenABL: TRUE if the vendor_boot bootconfig already sets Key. */
++STATIC BOOLEAN
++VendorBootconfigHasKey (CONST BootParamlist *BootParamlistPtr,
++                        CONST CHAR8 *Key)
++{
++  CONST CHAR8 *Start;
++  CONST CHAR8 *End;
++  UINTN        KeyLen = AsciiStrLen (Key);
++  UINT32       Offset;
++
++  if (BootParamlistPtr->VendorImageBuffer == NULL ||
++      BootParamlistPtr->VendorBootconfigSize == 0) {
++    return FALSE;
++  }
++  Offset = BootParamlistPtr->PageSize +
++           LOCAL_ROUND_TO_PAGE (BootParamlistPtr->VendorRamdiskSize,
++                                BootParamlistPtr->PageSize) +
++           LOCAL_ROUND_TO_PAGE (BootParamlistPtr->DtSize,
++                                BootParamlistPtr->PageSize) +
++           LOCAL_ROUND_TO_PAGE (BootParamlistPtr->VendorRamdiskTableSize,
++                                BootParamlistPtr->PageSize);
++  Start = (CONST CHAR8 *)BootParamlistPtr->VendorImageBuffer + Offset;
++  End = Start + BootParamlistPtr->VendorBootconfigSize;
++  while (Start + KeyLen <= End) {
++    while (Start < End && (*Start == ' ' || *Start == '\n')) {
++      Start++;
++    }
++    if (Start + KeyLen < End && !CompareMem (Start, Key, KeyLen) &&
++        (Start[KeyLen] == '=' || Start[KeyLen] == ' ')) {
++      return TRUE;
++    }
++    while (Start < End && *Start != '\n') {
++      Start++;
++    }
++  }
++  return FALSE;
++}
++
+ /*Update command line: appends boot information to the original commandline
+  *that is taken from boot image header*/
+ EFI_STATUS
+@@ -1375,7 +1460,11 @@ UpdateCmdLine (BootParamlist *BootParamlistPtr,
+     ADD_PARAM_LEN (BootConfigFlag, AsciiStrLen (BootDevBuf),
+                    CmdLineLen, BootConfigLen);
+ 
+-    if (IsDynamicPartitionSupport ()) {
++    /* OpenABL: a second androidboot.boot_devices makes the kernel drop the
++     * whole bootconfig ("Value is redefined"). */
++    if (IsDynamicPartitionSupport () &&
++        !VendorBootconfigHasKey (BootParamlistPtr,
++                                 "androidboot.boot_devices")) {
+       ParamLen = AsciiStrLen (DynamicBootDeviceCmdLine);
+       BootConfigFlag = IsAndroidBootParam (DynamicBootDeviceCmdLine,
+                                            ParamLen, HeaderVersion);
+@@ -1531,6 +1620,23 @@ UpdateCmdLine (BootParamlist *BootParamlistPtr,
    AddtoBootConfigList (BootConfigFlag, DisplayCmdLine, NULL,
                     BootConfigListHead, ParamLen, 0);
  
