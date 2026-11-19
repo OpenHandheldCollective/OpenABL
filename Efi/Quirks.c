@@ -1432,13 +1432,14 @@ QuirksSdccUhs (
   if (Detected) {
     // Detection runs inside SignalEvent, as its notify TPL is above ours.
     QuirksSignalSdDetect ();
+#ifdef OABL_SDCC_SM4450
+    // Before the fallback: a stuck card is found again at high speed.
+    if (Base && Chip == SM4450 && SdStuck ()) {
+      SdUnstick (Base, Log);
+    }
+#endif
     SpeedFallback (Log);
   }
-#ifdef OABL_SDCC_SM4450
-  if (Detected && Base && Chip == SM4450 && SdStuck ()) {
-    SdUnstick (Base, Log);
-  }
-#endif
   if (Diagnostics && Sites.Count > 0) {
     SdSlotReport (mSdccSite, "after", Log);
   }

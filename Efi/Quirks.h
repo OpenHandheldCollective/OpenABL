@@ -27,14 +27,13 @@
 // With S18R clear, the builds that would then ask a card for the slot's UHS
 // speed ask for high speed instead. Every build gives a card one second to
 // power up; that becomes four seconds for the rest of the boot, so a card put
-// in or swapped at the menu gets them too. Then signals card detection again;
-// if that finds no card, puts the driver's own speed choice back and detects
-// once more (some cards are found only at the default speed).
-// The OABL_SDCC_* builds patch more SdccDxe words, and the G2 Gen 2 also gets
-// its SD command line pull-up. On SM4450 a card that detection leaves
-// holding DAT low is power-cycled and detected again. With Diagnostics the
-// SD slot is logged before and after. Returns the number of S18R sites
-// patched.
+// in or swapped at the menu gets them too. Then signals card detection again.
+// On SM4450 a card that detection leaves holding DAT low is power-cycled and
+// detected again. If there is still no card, puts the driver's own speed
+// choice back and detects once more (some cards are found only at the default
+// speed). The OABL_SDCC_* builds patch more SdccDxe words, and the G2 Gen 2
+// also gets its SD command line pull-up. With Diagnostics the SD slot is
+// logged before and after. Returns the number of S18R sites patched.
 UINT32
 QuirksSdccUhs (
   IN UINT32   Chip,
