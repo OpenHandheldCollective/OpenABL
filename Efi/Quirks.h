@@ -23,10 +23,11 @@
 // XBL's SdccDxe asks every SD card for 1.8 V signalling (S18R in ACMD41)
 // but never sends CMD11, so UHS cards that wait for it are never found.
 // Clears S18R at every ACMD41 site in firmware code outside this image (at
-// most 16), and on SM8650 and SM8750 sets XPC there too. With S18R clear, 
-// the builds that would then ask a card for the slot's UHS speed ask for 
-// high speed instead. Every build gives a card one second to power up; that 
-// becomes four seconds. Then signals card detection again, and puts the second back.
+// most 16), and on SM8250, SM8550, SM8650 and SM8750 sets XPC there too.
+// With S18R clear, the builds that would then ask a card for the slot's UHS
+// speed ask for high speed instead. Every build gives a card one second to
+// power up; that becomes four seconds for the rest of the boot, so a card put
+// in or swapped at the menu gets them too. Then signals card detection again.
 // The OABL_SDCC_* builds patch more SdccDxe words, and the G2 Gen 2 also gets
 // its SD command line pull-up. On SM4450 a card that detection leaves
 // holding DAT low is power-cycled and detected again. With Diagnostics the

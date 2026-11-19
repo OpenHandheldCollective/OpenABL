@@ -287,7 +287,9 @@ QuirksSignalSdDetect (VOID)
 // SdccDxe: the 1.8 V request
 
 // The movk that sets S18R in the ACMD41 argument and what follows it, in
-// the SM8250 and SM4450 builds. Stored XORed (HIDE).
+// the SM8250 and SM4450 builds. The SM8550 build has the second with
+// mov w22, #200 (its ACMD41 tries) as the fourth word, so that word isn't
+// matched. Stored XORed (HIDE).
 STATIC CONST UINT8 mAcmd41[2][24] = {
   {HIDE (0x15), HIDE (0x00), HIDE (0x90), HIDE (0x52), HIDE (0xf5),
    HIDE (0x3f), HIDE (0xa8), HIDE (0x72), HIDE (0x00), HIDE (0x00),
@@ -311,7 +313,7 @@ STATIC CONST UINT8 mAcmd41Mask[2][24] = {
 #define MOVK_XPC_S18R_CLEAR 0x72aa1ff5u
 // SM8250, SM8550/QCS8550/SG3xG2, SM8650 and SM8750/CQ8725S chip ids, whose
 // cards get XPC.
-STATIC CONST UINT32 mXpcChips[] = {356, 519, 536, 601, 603, 682, 618, 639, 706};
+STATIC CONST UINT32 mXpcChips[] = {356, 519, 536, 601, 603, 618, 639, 682, 706};
 #define MAX_SITES 16
 
 STATIC BOOLEAN
@@ -1660,13 +1662,13 @@ QuirksConnectAll (
   QuirksFatCache (Chip, Log);
 }
 
-// SdccDxe's DetectCard only opens the SD slot if its ClientHandle is NULL.
+// SdccDxe's SD detection only opens the slot if its DeviceHandle is NULL.
 // Once a card has been detected, removing or swapping it while in the menu
-// does not clear ClientHandle until a BlockIo transfer runs
+// does not clear DeviceHandle until a BlockIo transfer runs
 // sdcc_handle_is_mem_present (CMD13), sees the card is gone or reset, and
-// calls sdcc_handle_close. Issue a zero-byte ReadBlocks on each removable raw
-// BlockIo handle before QuirksSignalSdDetect so a removed or swapped card's
-// stale handle is closed first.
+// calls sdcc_handle_close. Issue a zero-byte ReadBlocks (SdccDxe's presence
+// check) on each removable raw BlockIo handle before QuirksSignalSdDetect so
+// a removed or swapped card's stale handle is closed first.
 STATIC VOID
 SdccRefreshRemovableSlots (VOID)
 {
