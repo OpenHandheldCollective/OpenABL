@@ -210,6 +210,11 @@ typedef enum {
 VOID
 SettingsSetUp (IN LOG_SINK Log);
 
+// TRUE once after SettingsSetUp created the store since this program was
+// loaded.
+BOOLEAN
+SettingsTakeNewStore (VOID);
+
 // Reads misc now, so SettingsLoad works at ExitBootServices.
 VOID
 SettingsPreload (VOID);

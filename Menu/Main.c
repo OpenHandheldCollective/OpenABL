@@ -958,6 +958,16 @@ MainBoot (IN CONST MENU_HOST *Host)
   // Again, in case the early start couldn't read misc, before
   // MenuHostState reads the settings.
   SettingsSetUp (gMenuEfiLog);
+  // A new store turns the charger screen on. The early start can't do it,
+  // as devinfo isn't read until the ABL's DeviceInfoInit, which runs before
+  // this.
+  if (SettingsTakeNewStore ()) {
+    Status = MenuHostAction (Host, OPENABL_MENU_ACTION_CHARGER_SCREEN_ON);
+    MenuLog (
+      "settings: charger screen on for the new store: %s",
+      EFI_ERROR (Status) ? "failed" : "done"
+    );
+  }
   if (EFI_ERROR (MenuHostState (Host, &State))) {
     return EFI_UNSUPPORTED;
   }

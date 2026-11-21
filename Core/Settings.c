@@ -196,6 +196,11 @@ STATIC struct {
   UINT8                  Data[SETTINGS_STORE_SIZE];
 } mStore;
 
+// SettingsSetUp created the store, and SettingsTakeNewStore hasn't said so
+// yet. Kept in memory only: the early start stays loaded, so the main boot
+// sees it.
+STATIC BOOLEAN mNewStore;
+
 // Finds misc's last 4 KiB. FALSE if there is no single misc or no room.
 STATIC BOOLEAN
 StoreLocate (VOID)
@@ -728,11 +733,21 @@ SettingsSetUp (IN LOG_SINK Log)
     return;
   }
   mStore.Fresh = FALSE;
+  mNewStore    = TRUE;
   LogLine (mLog, "settings: set up in misc");
   // The model is in misc now, so what older loaders left can go.
   if (Migrated) {
     MigrateModelCleanUp (mLog);
   }
+}
+
+BOOLEAN
+SettingsTakeNewStore (VOID)
+{
+  BOOLEAN New = mNewStore;
+
+  mNewStore = FALSE;
+  return New;
 }
 
 VOID
