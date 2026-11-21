@@ -26,8 +26,6 @@ STATIC CONST CHAR8 *CONST mDtbDirs[] = {
 
 #define N_DTB_DIRS (sizeof (mDtbDirs) / sizeof (*mDtbDirs))
 
-// Limit on .dtb files read per folder.
-#define DTB_FILES_MAX 256
 // Limit on the size of a .dtb file.
 #define DTB_MAX ((UINTN)4 << 20)
 
@@ -87,7 +85,7 @@ typedef BOOLEAN (*DTB_VISIT) (
 );
 
 // Reads the .dtb files in Dir, not its subfolders, and calls Visit with
-// each, up to DTB_FILES_MAX of them. TRUE if Visit stopped it.
+// each. TRUE if Visit stopped it.
 STATIC BOOLEAN
 ReadDtbs (
   IN EFI_HANDLE   Fs,
@@ -98,11 +96,9 @@ ReadDtbs (
 {
   FILES_DIR_ENTRIES Names = {0};
   BOOLEAN           Stop  = FALSE;
-  UINTN             Read  = 0;
 
   FilesList (Fs, Dir, &Names);
-  for (UINTN Index = 0; Index < Names.Count && !Stop && Read < DTB_FILES_MAX;
-       Index++) {
+  for (UINTN Index = 0; Index < Names.Count && !Stop; Index++) {
     CONST FILES_DIR_ENTRY *Entry = &Names.Items[Index];
     OABL_TEXT              Name  = TextOf (Entry->Name);
     OABL_BUFFER            Blob  = {0};
@@ -113,7 +109,6 @@ ReadDtbs (
         !(Path = SPrintAlloc ("%s\\%s", Dir, Entry->Name))) {
       continue;
     }
-    Read++;
     if (FilesRead (Fs, Path, DTB_MAX, &Blob)) {
       Stop = Visit (Context, &Blob);
     }
