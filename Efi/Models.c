@@ -15,6 +15,7 @@
 #include "Core/DeviceTree.h"
 #include "Base/Buffer.h"
 #include "Efi/Files.h"
+#include "Efi/Quirks.h"
 
 // The folders searched for devicetree files, in order, and only these.
 // \boot\grub is where GRUB-based images keep them; \dtbs is used by
@@ -28,6 +29,77 @@ STATIC CONST CHAR8 *CONST mDtbDirs[] = {
 
 // Limit on the size of a .dtb file.
 #define DTB_MAX ((UINTN)4 << 20)
+
+// ChipInfo ids and the root SoC compatible used by Linux devicetrees.
+STATIC CONST struct {
+  UINT32       Id;
+  CONST CHAR8 *Compatible;
+} mSocCompatibles[] = {
+  {321, "qcom,sdm845"},
+  {341, "qcom,sdm845"},
+  {356, "qcom,sm8250"},
+  {444, "qcom,sm6115"},
+  {467, "qcom,sm6115"},
+  {519, "qcom,sm8550"},
+  {530, "qcom,sm8475"},
+  {531, "qcom,sm8475"},
+  {540, "qcom,sm8475"},
+  {557, "qcom,sm8650"},
+  {568, "qcom,sm4450"},
+  {601, "qcom,sm8550"},
+  {603, "qcom,sm8550"},
+  {618, "qcom,sm8750"},
+  {634, "qcom,sm6450"},
+  {639, "qcom,sm8750"},
+  {654, "qcom,sm4450"},
+  {682, "qcom,sm8650"},
+  {700, "qcom,sm7675"},
+  {706, "qcom,sm8750"},
+};
+
+STATIC CONST CHAR8 *
+SocCompatible (IN UINT32 Id)
+{
+  for (UINTN Index = 0;
+       Index < sizeof (mSocCompatibles) / sizeof (*mSocCompatibles); Index++) {
+    if (mSocCompatibles[Index].Id == Id) {
+      return mSocCompatibles[Index].Compatible;
+    }
+  }
+  return NULL;
+}
+
+// The SoC follows the board-specific strings in the root compatible list.
+STATIC BOOLEAN
+MatchesSoc (
+  IN CONST UINT8 *Blob,
+  IN UINTN        Size,
+  IN CONST CHAR8 *Compatible
+)
+{
+  OABL_BYTES List;
+
+  if (!DtPropAt (Blob, Size, 0, "compatible", &List)) {
+    return FALSE;
+  }
+  for (UINTN At = 0; At < List.Len;) {
+    UINTN End = At;
+
+    while (End < List.Len && List.Ptr[End]) {
+      End++;
+    }
+    if (End == List.Len) {
+      return FALSE;
+    }
+    if (TextEqStr (
+          (OABL_TEXT){(CONST CHAR8 *)List.Ptr + At, End - At}, Compatible
+        )) {
+      return TRUE;
+    }
+    At = End + 1;
+  }
+  return FALSE;
+}
 
 VOID
 ModelsFree (IN OUT SCANNED_MODELS *Models)
@@ -45,6 +117,7 @@ AddModels (
   IN OUT SCANNED_MODELS *Found,
   IN CONST UINT8        *Region,
   IN UINTN               Size,
+  IN CONST CHAR8        *Compatible OPTIONAL,
   IN OUT UINTN          *Trees
 )
 {
@@ -61,6 +134,11 @@ AddModels (
       continue;
     }
     (*Trees)++;
+    if (Compatible &&
+        !MatchesSoc (Blob, Dtbs.Items[Index].Size, Compatible)) {
+      DtInfoFree (&Info);
+      continue;
+    }
     for (UINTN Index2 = 0; Index2 < Found->Count && !Known; Index2++) {
       Known = AsciiStrEq (Found->Items[Index2].Name, Info.Model);
     }
@@ -123,6 +201,7 @@ ReadDtbs (
 typedef struct _SCAN_VISIT {
   SCANNED_MODELS *Found;
   UINTN           Trees;
+  CONST CHAR8    *Compatible;
 } SCAN_VISIT;
 
 STATIC BOOLEAN
@@ -133,7 +212,9 @@ ScanVisit (
 {
   SCAN_VISIT *Scan = Context;
 
-  AddModels (Scan->Found, Blob->Data, Blob->Len, &Scan->Trees);
+  AddModels (
+    Scan->Found, Blob->Data, Blob->Len, Scan->Compatible, &Scan->Trees
+  );
   return FALSE;
 }
 
@@ -209,9 +290,17 @@ ModelsScan (
   IN OUT SCANNED_MODELS *Out
 )
 {
+  UINT32       Chip       = QuirksChipId ();
+  CONST CHAR8 *Compatible = SocCompatible (Chip);
+
+  if (!Compatible) {
+    LogPrint (
+      Log, "scan: no SoC compatible for chip id %u; showing all models", Chip
+    );
+  }
   for (UINTN Drive = 0; Drive < Count; Drive++) {
     for (UINTN Dir = 0; Dir < N_DTB_DIRS; Dir++) {
-      SCAN_VISIT Scan  = {Out, 0};
+      SCAN_VISIT Scan  = {Out, 0, Compatible};
       UINTN      First = Out->Count;
 
       ReadDtbs (Drives[Drive], mDtbDirs[Dir], ScanVisit, &Scan);
