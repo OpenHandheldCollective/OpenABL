@@ -883,16 +883,26 @@ SettingsReset (VOID)
     LogLine (mLog, "settings reset failed: misc couldn't be read");
     return EFI_NOT_FOUND;
   }
-  SettingsStoreFormat (mStore.Data);
-  mStore.Dirty = TRUE;
-  Status       = StoreCommit ();
-  if (EFI_ERROR (Status)) {
-    LogPrint (mLog, "settings reset failed: %s", STATUS_TEXT (Status));
-    return Status;
+  // Zeros, not an empty store: StoreWrite would seal it.
+  ZeroMem (mStore.Data, SETTINGS_STORE_SIZE);
+  Status = UninstallWrite (
+    mStore.BlockIo, mStore.Lba, mStore.Data, SETTINGS_STORE_SIZE
+  );
+  if (Status == EFI_SUCCESS) {
+    Status = mStore.BlockIo->FlushBlocks (mStore.BlockIo);
   }
-  mStore.Fresh = FALSE;
-  LogLine (mLog, "settings reset: misc holds an empty store");
-  return EFI_SUCCESS;
+  if (Status != EFI_SUCCESS) {
+    LogPrint (mLog, "settings reset failed: %s", STATUS_TEXT (Status));
+  } else {
+    LogLine (mLog, "settings reset: misc's store is erased");
+  }
+  // Read misc back, so the copy matches it whether or not the write went
+  // through.
+  mStore.Loaded = FALSE;
+  mStore.Ready  = FALSE;
+  mStore.Dirty  = FALSE;
+  StoreLoad (mLog);
+  return Status;
 }
 
 // One-off flags
