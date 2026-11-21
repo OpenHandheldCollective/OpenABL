@@ -42,8 +42,9 @@ ModelsDevicetreeFor (
   OUT OABL_BUFFER *Out
 );
 
-// Adds the models found on Drives to Out, which starts empty, and sorts them
-// by name. When drives share a model, the first drive's devicetree wins.
+// Adds models for the running SoC found on Drives to Out, which starts empty,
+// and sorts them by name. Unknown SoC ids show all models. When drives share
+// a model, the first drive's devicetree wins.
 // Logs one line per folder that had any. Free Out with
 // ModelsFree.
 VOID
