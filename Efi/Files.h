@@ -102,6 +102,13 @@ FilesRename (
   IN CONST CHAR8 *NewName
 );
 
+// EFI_NOT_FOUND if Path can't be opened for writing.
+EFI_STATUS
+FilesDelete (
+  IN EFI_HANDLE   Fs,
+  IN CONST CHAR8 *Path
+);
+
 // Returns the trimmed volume label, or NULL if it is unset, empty or
 // "NO NAME". Caller frees it.
 CHAR8 *

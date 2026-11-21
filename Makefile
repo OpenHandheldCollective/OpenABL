@@ -15,9 +15,6 @@
 #   sdcc-sm4450       SD card fix for SM4450's XBL (also sdcc-sm6450,
 #                     sdcc-sm7675)
 #   loader-quirks     XBL workarounds needed by OS loaders (SDM845, SM6115)
-#   park-display      set the display on before the boot, and off at
-#                     ExitBootServices when no devicetree was seen, as
-#                     LinuxLoader did on these chips (SM8650, SM8750)
 #
 # The menu has every language in Ui/Lang/, one file each (listed in
 # Ui/Lang/Languages.h). Scripts/mkfont.py makes its font faces at build time
@@ -48,7 +45,7 @@ FEATURES ?= standard-boot,sysfont,card-logo,sdcc-sm4450,sdcc-sm6450,sdcc-sm7675,
 OUT      ?= build/menu
 
 KNOWN := standard-boot sysfont card-logo sdcc-sm4450 sdcc-sm6450 sdcc-sm7675 \
-	loader-quirks park-display
+	loader-quirks
 comma := ,
 LIST := $(subst $(comma), ,$(FEATURES))
 UNKNOWN := $(filter-out $(KNOWN),$(LIST))

@@ -15,8 +15,16 @@ in its firmware volume and starts it instead of its own fastboot menu.
 
 The main menu and the boot entries, rendered by the simulator (`make sim`).
 
-Supported chipsets: SDM845, SM4450, SM6115, SM6450, SM7675, SM8250, SM8475,
-SM8550, SM8650 and SM8750.
+Supported chipsets, and the image each takes:
+
+| Image | Chipsets |
+|---|---|
+| `abl_signed-MBN5.elf` | SDM845 |
+| `abl_signed-MBN6.elf` | SM6115, SM8250 |
+| `abl_signed-MBN7.elf` | SM4450, SM6450, SM7675, SM7750, SM8475, SM8550, SM8650, SM8750 |
+
+Chips whose stock ABL is signed with the same MBN version take the same
+image; OpenABL checks which chip it's on when it starts.
 
 ## Using it
 
@@ -24,11 +32,11 @@ Flash the image for your chipset to the ABL partition (both slots on A/B
 devices):
 
 ```bash
-fastboot flash abl_a abl_signed-SM8550.elf
+fastboot flash abl_a abl_signed-MBN7.elf
 ```
 
 ```bash
-fastboot flash abl_b abl_signed-SM8550.elf
+fastboot flash abl_b abl_signed-MBN7.elf
 ```
 
 At power-on:
@@ -121,7 +129,9 @@ the entries. A `LoaderEntryOneShot` entry boots at once.
   `qcom_scm`'s allowlist; the kernel patch in `Linux/` adds OpenABL's
   chipsets.
 - Linux finds the ABL's version in the ESRT:
-  `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor).
+  `/sys/firmware/efi/esrt/entries/entry0/fw_version` (major << 16 | minor),
+  and the last update's result in `last_attempt_version` and
+  `last_attempt_status`.
 - An `EFI_RT_PROPERTIES_TABLE` tells Linux which runtime services XBL
   lacks: `SetVirtualAddressMap` on SDM845, all of them on SM6115.
 - The display: a `splash_region` (or `cont_splash_region`) in the kernel's
@@ -148,14 +158,19 @@ Requires git and Docker. The build runs in an amd64 container, so on Apple
 Silicon use Docker Desktop or OrbStack.
 
 ```bash
-./build.sh sm8550
+./build.sh mbn7
 ```
 
-Give one or more chipsets, or `all`. Images are written to
-`build/out/abl_signed-<CHIPSET>.elf` with a `.sha256` file next to each. The
-build also writes `build/out/openabl-recovery-flashable-<chipset>.zip`: a
-recovery-flashable Android addon that writes ABL to both slots and sets up a
-persistence addon.d script to re-flash the opposite slot after an OTA update.
+Give one or more images (`mbn5`, `mbn6`, `mbn7`), chipsets, which build the
+image they take, or `all`. Images are written to
+`build/out/abl_signed-<IMAGE>.elf` with a `.sha256` file next to each, and
+copied as `abl_signed-<CHIPSET>.elf` for each of the image's chipsets;
+`build/out/openabl-manifest.tsv` lists them all. The build also writes
+`build/out/openabl-recovery-flashable-<image>.zip`, copied for each
+chipset: a recovery-flashable Android addon that checks the installed ABL
+has the image's MBN version, writes ABL to both slots and sets up a
+persistence addon.d script to re-flash the opposite slot after an OTA
+update.
 
 The full log is in `build/abl-build.log`. The version, MAJOR.MINOR, is in
 `VERSION`; the menu, fastboot's `version-bootloader` and Linux's ESRT report
@@ -164,13 +179,13 @@ it.
 | Option | |
 |---|---|
 | `--no-standard-boot` | Leave out standard boot (Linux then boots only from the default boot file) |
-| `--clean` | Build each chipset from scratch |
+| `--clean` | Build each image from scratch |
 
 The first build downloads Qualcomm's ABL source (tianocore edk2 from
 CodeLinaro, tag `KERNEL.PLATFORM.3.0.r23-02400-kernel.0`), applies
 `Abl/openabl.patch` and adds the files under `Abl/QcomModulePkg`, and
-downloads microui and qtestsign, all into `build/`. The first build of a
-chipset takes about ten minutes; later builds only recompile what changed.
+downloads microui and qtestsign, all into `build/`. The first build of an
+image takes about ten minutes; later builds only recompile what changed.
 
 To build only the menu program (`build/menu/openabl-menu.efi`) with your own
 clang and lld-link, fetch the sources with `Scripts/fetch.sh` and run make.
@@ -188,41 +203,90 @@ translate it, and add its symbol to that list. Strings left out show in English.
 The simulator's `--lang` accepts a symbol (`En`, `Es`, `Fr`, `Ru`, `Uk`, `Ja`,
 `ZhHans`, `Ko`).
 
-GitHub Actions (`.github/workflows/build.yml`) builds every chipset when a
+GitHub Actions (`.github/workflows/build.yml`) builds every image when a
 `v*` tag is pushed and uploads the images to that tag's release, with
 `openabl-<TAG>-source.tar.xz`: this repository and the sources it fetches,
 which `./build.sh` builds without fetching them again. Run it by hand to
 build a tag. Each build also uploads `openabl-<TAG>.tar.gz` with a folder per
-chipset holding its image and `.sha256`; the Package workflow makes that
+image or chipset holding it and its `.sha256`, `openabl-manifest.tsv` and
+`openabl-update`; the Package workflow makes that
 archive for an existing release. CI keeps the sources it fetches in the
 `sources` pre-release and fetches them again only after a pin in
 `Scripts/fetch.sh` changes.
 
+## Firmware updates
+
+OpenABL can be updated from Linux, without fastboot:
+
+```bash
+openabl-update openabl-v1.4/
+```
+
+`Linux/openabl-update` takes images, or the folder from a release's
+`openabl-<TAG>.tar.gz`, and copies them with their `.sha256` to
+`\openabl\update\` on the ESP. The chipset copies in a release are the
+same files as the MBN images, so each is only copied once. Booted through
+OpenABL, it only copies images newer than the installed version. On the
+next boot into Linux, OpenABL checks each staged image against the ABL
+in the active slot and installs the newest that passes. XBL won't fall back
+to the other slot, so an image is only written if:
+
+- its SHA-256 matches the `.sha256`
+- its segment hashes check out and it fits in `abl`
+- it's a newer version (`--force` skips the version check)
+- its ELF type, MBN version, software id and kind of signature match the
+  installed ABL, so it's the right image for this device
+- the battery is charged enough to flash
+
+The inactive slot is written first, then the active one, each read back and
+retried up to three times, then the device restarts. A slot that still
+fails gets the old image back. If the battery is too low the update stays
+staged for the next boot.
+
+To see how it went:
+
+```bash
+openabl-update --status
+```
+
+This reads the ESRT's `last_attempt_status`: 0 success, 2 too large, 3 not
+newer, 4 wrong image, 5 bad SHA-256, 7 battery low, 1 anything else (see the
+log).
+
+Only images with the image tag can be installed this way, so the first one
+has to be flashed with fastboot.
+
+## For distributions
+
+Each release has an image per MBN version and, for anything that fetches
+images by chipset, a copy of it under each chipset's name:
+`abl_signed-SM8550.elf` is `abl_signed-MBN7.elf`. The release's
+`openabl-<TAG>.tar.gz` has a folder for each, as before, with
+`openabl-manifest.tsv` and `openabl-update` next to them.
+
+`openabl-manifest.tsv` lists each file with its version, MBN version,
+chipsets, chip ids and SHA-256. The chip ids are ChipInfo ids, the same
+numbers as Linux's `/sys/devices/soc0/soc_id`, so a device's image is the
+row listing its `soc_id`.
+
+To keep OpenABL up to date from the OS, install the release's folder (say
+to `/usr/share/openabl`) and run `openabl-update /usr/share/openabl` after
+each package update. It stages the images only if they are newer than the
+installed one, and exits 0 when there is nothing to do; OpenABL then
+installs the one that matches the installed ABL. Run from an image build,
+with `--esp` and no ESRT, it stages them without the version check. The
+first install still needs fastboot, the recovery package (which refuses an
+installed ABL of another MBN version) or the distribution's own tooling.
+
 ## Future direction
 
-**Firmware updates.** XBL starts the ABL in the active slot and never falls
-back to the other slot, so an update must never write an image XBL would
-reject. The plan:
+**fwupd.** fwupd's capsule path needs `UpdateCapsule` or a persistent
+`OsIndications`, which XBL doesn't have, so it needs a small plugin that
+stages images the way `openabl-update` does.
 
-1. Linux puts `abl_signed-<CHIPSET>.elf` and its `.sha256` in
-   `\openabl\update\` on the boot drive. No UEFI variables are needed, which
-   Linux can't write persistently on every chip.
-2. At the next boot, before the menu, OpenABL checks the file: its SHA-256,
-   the ELF and its segment hashes (what XBL checks), its size, the chip it
-   was built for, a newer version unless forced, and enough battery or a
-   charger.
-3. It writes the inactive slot's `abl` and reads it back, then the active
-   slot's. A failed write of the active slot is redone from the checked
-   copy. The file is then removed and the device restarts.
-4. The result goes in a UEFI variable, which the ESRT reports as
-   `last_attempt_version` and `last_attempt_status`.
-5. fwupd's UEFI capsule path needs `UpdateCapsule` or a persistent
-   `OsIndications`, which XBL doesn't offer, so fwupd needs a small plugin
-   for steps 1 and 4.
-
-A safer step can come later: start the new ABL in memory first and write it
-only once its menu comes up. A bad ABL can always be restored through EDL
-(9008) with the device's flat build.
+**Test boot.** Boot the new ABL from memory first and only write it once its
+menu comes up. A bad ABL can still be restored through EDL (9008) with the
+device's flat build.
 
 ## Licence
 

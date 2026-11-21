@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026-present Open Handheld Collective
 #   https://github.com/OpenHandheldCollective
-# Build of every chipset for each pull request.
+# Build of every image for each pull request.
 name: Pull request
 
 on:
@@ -56,6 +56,8 @@ jobs:
             cp "$addon" "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
           done
+          cp build/out/openabl-manifest.tsv dist/
+          cp Linux/openabl-update dist/
 
       - uses: actions/upload-artifact@v7
         with:
