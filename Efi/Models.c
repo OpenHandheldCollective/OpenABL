@@ -30,6 +30,10 @@ STATIC CONST CHAR8 *CONST mDtbDirs[] = {
 
 // Limit on the size of a .dtb file.
 #define DTB_MAX ((UINTN)4 << 20)
+// The first read of a .dtb file: its header and the root's properties.
+#define DTB_HEAD ((UINTN)4 << 10)
+// Limit on the strings block read with it.
+#define DTB_STRINGS_MAX ((UINTN)64 << 10)
 
 VOID
 ModelsFree (IN OUT SCANNED_MODELS *Models)
@@ -38,6 +42,32 @@ ModelsFree (IN OUT SCANNED_MODELS *Models)
     FreePool (Models->Items[Index].Name);
   }
   VecFree (Models);
+}
+
+// Bytes up to the first NUL, as DtInspect reads a model.
+STATIC OABL_TEXT
+UpToNul (IN OABL_BYTES Bytes)
+{
+  UINTN Len = 0;
+
+  while (Len < Bytes.Len && Bytes.Ptr[Len]) {
+    Len++;
+  }
+  return (OABL_TEXT){(CONST CHAR8 *)Bytes.Ptr, Len};
+}
+
+STATIC BOOLEAN
+IsKnown (
+  IN CONST SCANNED_MODELS *Found,
+  IN OABL_TEXT             Model
+)
+{
+  for (UINTN Index = 0; Index < Found->Count; Index++) {
+    if (TextEqStr (Model, Found->Items[Index].Name)) {
+      return TRUE;
+    }
+  }
+  return FALSE;
 }
 
 // Adds Region's models for Soc (any SoC if NULL) that aren't in Found yet.
@@ -60,7 +90,6 @@ AddModels (
   for (UINTN Index = 0; Index < Dtbs.Count; Index++) {
     CONST UINT8 *Blob = Region + Dtbs.Items[Index].Offset;
     DT_INFO      Info;
-    BOOLEAN      Known = FALSE;
     OABL_BYTES   List;
 
     if (!DtInspect (Blob, Dtbs.Items[Index].Size, &Info)) {
@@ -71,16 +100,11 @@ AddModels (
         !(DtPropAt (Blob, Dtbs.Items[Index].Size, 0, "compatible", &List) &&
           SocMatches (Soc, List))) {
       (*Others)++;
-      DtInfoFree (&Info);
-      continue;
-    }
-    for (UINTN Index2 = 0; Index2 < Found->Count && !Known; Index2++) {
-      Known = AsciiStrEq (Found->Items[Index2].Name, Info.Model);
-    }
-    if (!Known && VecPush (
-                    Found, (SCANNED_MODEL){Info.Model, Info.HasPanelRotation,
-                                           Info.PanelRotation}
-                  )) {
+    } else if (!IsKnown (Found, TextOf (Info.Model)) &&
+               VecPush (
+                 Found, (SCANNED_MODEL){Info.Model, Info.HasPanelRotation,
+                                        Info.PanelRotation}
+               )) {
       // Found owns the name now.
       Info.Model = NULL;
       Added++;
@@ -91,18 +115,92 @@ AddModels (
   return Added;
 }
 
+// A .dtb file's root model and compatible, read without the whole file.
+typedef struct _DTB_PEEK {
+  // FALSE if they couldn't be read this way, such as for a file with
+  // several devicetrees; then the whole file has to be read.
+  BOOLEAN    Known;
+  BOOLEAN    HasModel;
+  BOOLEAN    HasCompatible;
+  OABL_BYTES Model;
+  OABL_BYTES Compatible;
+  // Model and Compatible point into Head.
+  OABL_BUFFER Head;
+  OABL_BUFFER Strings;
+} DTB_PEEK;
+
+// Reads the header and the root's properties at the start of Path, and its
+// strings block at the end, rather than the whole file.
+STATIC VOID
+PeekDtb (
+  IN EFI_HANDLE   Fs,
+  IN CONST CHAR8 *Path,
+  OUT DTB_PEEK   *Peek
+)
+{
+  DT_LAYOUT Layout;
+  DT_PEEK   Model;
+  DT_PEEK   Compatible;
+  UINTN     Length;
+
+  *Peek = (DTB_PEEK){0};
+  if (!FilesReadPart (Fs, Path, 0, DTB_HEAD, &Peek->Head) ||
+      !DtLayoutOf (Peek->Head.Data, Peek->Head.Len, &Layout) ||
+      (Length = Layout.Total - Layout.StringsOffset) > DTB_STRINGS_MAX) {
+    return;
+  }
+  // One byte more: a file that goes on past the tree may hold more trees,
+  // which only DtFindAll on the whole file finds.
+  if (!FilesReadPart (
+        Fs, Path, Layout.StringsOffset, Length + 1, &Peek->Strings
+      ) ||
+      Peek->Strings.Len != Length) {
+    return;
+  }
+  Model = DtPeekRootProp (
+    Peek->Head.Data, Peek->Head.Len, &Layout, Peek->Strings.Data,
+    Peek->Strings.Len, "model", &Peek->Model
+  );
+  Compatible = DtPeekRootProp (
+    Peek->Head.Data, Peek->Head.Len, &Layout, Peek->Strings.Data,
+    Peek->Strings.Len, "compatible", &Peek->Compatible
+  );
+  if (Model == DT_PEEK_UNKNOWN || Compatible == DT_PEEK_UNKNOWN) {
+    return;
+  }
+  Peek->Known         = TRUE;
+  Peek->HasModel      = Model == DT_PEEK_FOUND;
+  Peek->HasCompatible = Compatible == DT_PEEK_FOUND;
+}
+
+STATIC VOID
+PeekFree (IN OUT DTB_PEEK *Peek)
+{
+  BufferFree (&Peek->Head);
+  BufferFree (&Peek->Strings);
+  *Peek = (DTB_PEEK){0};
+}
+
+// Called for each .dtb file before ReadDtbs reads all of it. Returning
+// FALSE skips the file.
+typedef BOOLEAN (*DTB_WANT) (
+  IN OUT VOID       *Context,
+  IN CONST DTB_PEEK *Peek
+);
+
 // Called for each .dtb file ReadDtbs reads. Returning TRUE stops it.
 typedef BOOLEAN (*DTB_VISIT) (
   IN OUT VOID        *Context,
   IN OUT OABL_BUFFER *Blob
 );
 
-// Reads the .dtb files in Dir, not its subfolders, and calls Visit with
-// each. TRUE if Visit stopped it.
+// Reads the .dtb files in Dir, not its subfolders, that Want wants and
+// calls Visit with each. TRUE if Visit stopped it.
 STATIC BOOLEAN
 ReadDtbs (
   IN EFI_HANDLE   Fs,
   IN CONST CHAR8 *Dir,
+  IN DTB_WANT     Want,
   IN DTB_VISIT    Visit,
   IN OUT VOID    *Context
 )
@@ -115,6 +213,7 @@ ReadDtbs (
     CONST FILES_DIR_ENTRY *Entry = &Names.Items[Index];
     OABL_TEXT              Name  = TextOf (Entry->Name);
     OABL_BUFFER            Blob  = {0};
+    DTB_PEEK               Peek;
     CHAR8                 *Path;
 
     if (Entry->IsDir || Name.Len < 4 ||
@@ -122,9 +221,11 @@ ReadDtbs (
         !(Path = SPrintAlloc ("%s\\%s", Dir, Entry->Name))) {
       continue;
     }
-    if (FilesRead (Fs, Path, DTB_MAX, &Blob)) {
+    PeekDtb (Fs, Path, &Peek);
+    if (Want (Context, &Peek) && FilesRead (Fs, Path, DTB_MAX, &Blob)) {
       Stop = Visit (Context, &Blob);
     }
+    PeekFree (&Peek);
     BufferFree (&Blob);
     FreePool (Path);
   }
@@ -140,6 +241,36 @@ typedef struct _SCAN_VISIT {
   UINTN           Trees;
   UINTN           Others;
 } SCAN_VISIT;
+
+// Reads the whole file only for a model of this SoC not found yet, which
+// needs its panel rotation.
+STATIC BOOLEAN
+ScanWant (
+  IN OUT VOID       *Context,
+  IN CONST DTB_PEEK *Peek
+)
+{
+  SCAN_VISIT *Scan = Context;
+
+  if (!Peek->Known) {
+    return TRUE;
+  }
+  // DtInspect needs a model.
+  if (!Peek->HasModel) {
+    return FALSE;
+  }
+  if (Scan->Soc &&
+      !(Peek->HasCompatible && SocMatches (Scan->Soc, Peek->Compatible))) {
+    Scan->Trees++;
+    Scan->Others++;
+    return FALSE;
+  }
+  if (IsKnown (Scan->Found, UpToNul (Peek->Model))) {
+    Scan->Trees++;
+    return FALSE;
+  }
+  return TRUE;
+}
 
 STATIC BOOLEAN
 ScanVisit (
@@ -160,6 +291,19 @@ typedef struct _FIND_VISIT {
   CONST CHAR8 *Model;
   OABL_BUFFER *Out;
 } FIND_VISIT;
+
+// Reads the whole file only if it may be Model's.
+STATIC BOOLEAN
+FindWant (
+  IN OUT VOID       *Context,
+  IN CONST DTB_PEEK *Peek
+)
+{
+  FIND_VISIT *Find = Context;
+
+  return !Peek->Known ||
+         (Peek->HasModel && TextEqStr (UpToNul (Peek->Model), Find->Model));
+}
 
 STATIC BOOLEAN
 FindVisit (
@@ -194,7 +338,7 @@ ModelsDevicetreeFor (
   for (UINTN Dir = 0; Dir < N_DTB_DIRS; Dir++) {
     FIND_VISIT Find = {Model, Out};
 
-    if (ReadDtbs (Fs, mDtbDirs[Dir], FindVisit, &Find)) {
+    if (ReadDtbs (Fs, mDtbDirs[Dir], FindWant, FindVisit, &Find)) {
       return TRUE;
     }
   }
@@ -241,7 +385,7 @@ ModelsScan (
       SCAN_VISIT Scan  = {Out, Soc, 0, 0};
       UINTN      First = Out->Count;
 
-      ReadDtbs (Drives[Drive], mDtbDirs[Dir], ScanVisit, &Scan);
+      ReadDtbs (Drives[Drive], mDtbDirs[Dir], ScanWant, ScanVisit, &Scan);
       if (Scan.Trees) {
         LogPrint (
           Log,

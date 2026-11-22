@@ -197,6 +197,79 @@ DtInfoFree (IN OUT DT_INFO *Info)
 }
 
 BOOLEAN
+DtLayoutOf (
+  IN CONST UINT8 *Head,
+  IN UINTN        Len,
+  OUT DT_LAYOUT  *Layout
+)
+{
+  UINT32 Magic;
+  UINT32 Total;
+  UINT32 Struct;
+  UINT32 Strings;
+
+  if (!GetBe32 (Head, Len, 0, &Magic) || Magic != FDT_MAGIC ||
+      !GetBe32 (Head, Len, 4, &Total) || !GetBe32 (Head, Len, 8, &Struct) ||
+      !GetBe32 (Head, Len, 12, &Strings) || Struct > Total || Strings > Total) {
+    return FALSE;
+  }
+  *Layout = (DT_LAYOUT){Total, Struct, Strings};
+  return TRUE;
+}
+
+DT_PEEK
+DtPeekRootProp (
+  IN CONST UINT8     *Head,
+  IN UINTN            HeadLen,
+  IN CONST DT_LAYOUT *Layout,
+  IN CONST UINT8     *Strings,
+  IN UINTN            StringsLen,
+  IN CONST CHAR8     *Name,
+  OUT OABL_BYTES     *Value
+)
+{
+  // Only the tree's bytes count, if Head runs past its end.
+  UINTN      Size = HeadLen < Layout->Total ? HeadLen : Layout->Total;
+  UINTN      At   = Layout->StructOffset;
+  OABL_BYTES Node;
+  OABL_BYTES Prop;
+  UINT32     Token;
+  UINT32     Length;
+  UINT32     NameOffset;
+
+  // The root: FDT_BEGIN_NODE and an empty name.
+  if (!GetBe32 (Head, Size, At, &Token) || Token != FDT_BEGIN_NODE ||
+      !Cstr (Head, Size, At + 4, &Node)) {
+    return DT_PEEK_UNKNOWN;
+  }
+  At += 4 + Align4 (Node.Len + 1);
+  // Its properties come before its first subnode.
+  for (;;) {
+    if (!GetBe32 (Head, Size, At, &Token)) {
+      return DT_PEEK_UNKNOWN;
+    }
+    At += 4;
+    if (Token == FDT_BEGIN_NODE || Token == FDT_END_NODE) {
+      return DT_PEEK_ABSENT;
+    }
+    if (Token == FDT_NOP) {
+      continue;
+    }
+    if (Token != FDT_PROP || !GetBe32 (Head, Size, At, &Length) ||
+        !GetBe32 (Head, Size, At + 4, &NameOffset) ||
+        !Cstr (Strings, StringsLen, NameOffset, &Prop) ||
+        !InBounds (Size, At + 8, Length)) {
+      return DT_PEEK_UNKNOWN;
+    }
+    if (BytesIs (Prop, Name)) {
+      *Value = (OABL_BYTES){Head + At + 8, Length};
+      return DT_PEEK_FOUND;
+    }
+    At += 8 + Align4 (Length);
+  }
+}
+
+BOOLEAN
 DtFindAll (
   IN CONST UINT8 *Region,
   IN UINTN        Size,

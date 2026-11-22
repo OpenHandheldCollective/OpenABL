@@ -50,6 +50,47 @@ DtInspect (
 VOID
 DtInfoFree (IN OUT DT_INFO *Info);
 
+// Where a devicetree's blocks are, from its header.
+typedef struct _DT_LAYOUT {
+  // totalsize: the tree's size, from its start.
+  UINTN Total;
+  UINTN StructOffset;
+  // The strings block runs from here to the end of the tree.
+  UINTN StringsOffset;
+} DT_LAYOUT;
+
+// Reads the header of the tree that starts at Head. Fails if it isn't a
+// devicetree header or its blocks don't fit in totalsize. Head may be just
+// the start of the tree.
+BOOLEAN
+DtLayoutOf (
+  IN CONST UINT8 *Head,
+  IN UINTN        Len,
+  OUT DT_LAYOUT  *Layout
+);
+
+typedef enum {
+  DT_PEEK_FOUND,
+  DT_PEEK_ABSENT,
+  // Head ends before the root's properties do, or they don't parse.
+  DT_PEEK_UNKNOWN,
+} DT_PEEK;
+
+// Finds the root's first property called Name with only part of the tree
+// read: Head, its start, and Strings, from Layout's StringsOffset to its
+// end, so a .dtb file's model and compatible can be read without reading
+// the whole file. Value points into Head.
+DT_PEEK
+DtPeekRootProp (
+  IN CONST UINT8     *Head,
+  IN UINTN            HeadLen,
+  IN CONST DT_LAYOUT *Layout,
+  IN CONST UINT8     *Strings,
+  IN UINTN            StringsLen,
+  IN CONST CHAR8     *Name,
+  OUT OABL_BYTES     *Value
+);
+
 // Where a devicetree is in a region.
 typedef struct _DT_BLOB {
   UINTN Offset, Size;

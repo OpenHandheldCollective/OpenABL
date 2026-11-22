@@ -34,7 +34,8 @@ VOID
 ModelsFree (IN OUT SCANNED_MODELS *Models);
 
 // Reads the devicetree for Model on Fs: the first matching .dtb file in
-// those folders. FALSE if there is none. Caller frees Out with BufferFree.
+// those folders. Other files are only read as far as their root's model.
+// FALSE if there is none. Caller frees Out with BufferFree.
 BOOLEAN
 ModelsDevicetreeFor (
   IN EFI_HANDLE    Fs,
@@ -45,9 +46,9 @@ ModelsDevicetreeFor (
 // Adds models for the running SoC (by Core/Soc's compatibles) found on
 // Drives to Out, which starts empty, and sorts them by name. SoCs without
 // compatibles show all models. When drives share a model, the first drive's
-// devicetree wins.
-// Logs one line per folder that had any. Free Out with
-// ModelsFree.
+// devicetree wins. A file is read whole only for a new model of this SoC;
+// the rest are only read as far as their root's model and compatible.
+// Logs one line per folder that had any. Free Out with ModelsFree.
 VOID
 ModelsScan (
   IN CONST EFI_HANDLE   *Drives,
