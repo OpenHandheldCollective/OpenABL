@@ -34,6 +34,7 @@ SysInfoFormatBytes (IN UINT64 Bytes);
 CONST CHAR8 *
 SysInfoPlatformName (IN UINT32 Type);
 
+// The SoC's name from Core/Soc, or NULL.
 CONST CHAR8 *
 SysInfoSocName (IN UINT32 ChipId);
 

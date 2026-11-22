@@ -13,6 +13,7 @@
 #include "Base/Print.h"
 #include "Base/Text.h"
 #include "Core/DeviceTree.h"
+#include "Core/Soc.h"
 #include "Base/Buffer.h"
 #include "Efi/Files.h"
 #include "Efi/Quirks.h"
@@ -30,77 +31,6 @@ STATIC CONST CHAR8 *CONST mDtbDirs[] = {
 // Limit on the size of a .dtb file.
 #define DTB_MAX ((UINTN)4 << 20)
 
-// ChipInfo ids and the root SoC compatible used by Linux devicetrees.
-STATIC CONST struct {
-  UINT32       Id;
-  CONST CHAR8 *Compatible;
-} mSocCompatibles[] = {
-  {321, "qcom,sdm845"},
-  {341, "qcom,sdm845"},
-  {356, "qcom,sm8250"},
-  {444, "qcom,sm6115"},
-  {467, "qcom,sm6115"},
-  {519, "qcom,sm8550"},
-  {530, "qcom,sm8475"},
-  {531, "qcom,sm8475"},
-  {540, "qcom,sm8475"},
-  {557, "qcom,sm8650"},
-  {568, "qcom,sm4450"},
-  {601, "qcom,sm8550"},
-  {603, "qcom,sm8550"},
-  {618, "qcom,sm8750"},
-  {634, "qcom,sm6450"},
-  {639, "qcom,sm8750"},
-  {654, "qcom,sm4450"},
-  {682, "qcom,sm8650"},
-  {700, "qcom,sm7675"},
-  {706, "qcom,sm8750"},
-};
-
-STATIC CONST CHAR8 *
-SocCompatible (IN UINT32 Id)
-{
-  for (UINTN Index = 0;
-       Index < sizeof (mSocCompatibles) / sizeof (*mSocCompatibles); Index++) {
-    if (mSocCompatibles[Index].Id == Id) {
-      return mSocCompatibles[Index].Compatible;
-    }
-  }
-  return NULL;
-}
-
-// The SoC follows the board-specific strings in the root compatible list.
-STATIC BOOLEAN
-MatchesSoc (
-  IN CONST UINT8 *Blob,
-  IN UINTN        Size,
-  IN CONST CHAR8 *Compatible
-)
-{
-  OABL_BYTES List;
-
-  if (!DtPropAt (Blob, Size, 0, "compatible", &List)) {
-    return FALSE;
-  }
-  for (UINTN At = 0; At < List.Len;) {
-    UINTN End = At;
-
-    while (End < List.Len && List.Ptr[End]) {
-      End++;
-    }
-    if (End == List.Len) {
-      return FALSE;
-    }
-    if (TextEqStr (
-          (OABL_TEXT){(CONST CHAR8 *)List.Ptr + At, End - At}, Compatible
-        )) {
-      return TRUE;
-    }
-    At = End + 1;
-  }
-  return FALSE;
-}
-
 VOID
 ModelsFree (IN OUT SCANNED_MODELS *Models)
 {
@@ -110,15 +40,17 @@ ModelsFree (IN OUT SCANNED_MODELS *Models)
   VecFree (Models);
 }
 
-// Adds Region's models that aren't in Found yet. Returns how many; *Trees
-// counts the devicetrees read.
+// Adds Region's models for Soc (any SoC if NULL) that aren't in Found yet.
+// Returns how many; *Trees counts the devicetrees read and *Others those
+// for another SoC.
 STATIC UINTN
 AddModels (
   IN OUT SCANNED_MODELS *Found,
   IN CONST UINT8        *Region,
   IN UINTN               Size,
-  IN CONST CHAR8        *Compatible OPTIONAL,
-  IN OUT UINTN          *Trees
+  IN CONST SOC_INFO     *Soc OPTIONAL,
+  IN OUT UINTN          *Trees,
+  IN OUT UINTN          *Others
 )
 {
   DT_BLOBS Dtbs;
@@ -129,13 +61,16 @@ AddModels (
     CONST UINT8 *Blob = Region + Dtbs.Items[Index].Offset;
     DT_INFO      Info;
     BOOLEAN      Known = FALSE;
+    OABL_BYTES   List;
 
     if (!DtInspect (Blob, Dtbs.Items[Index].Size, &Info)) {
       continue;
     }
     (*Trees)++;
-    if (Compatible &&
-        !MatchesSoc (Blob, Dtbs.Items[Index].Size, Compatible)) {
+    if (Soc &&
+        !(DtPropAt (Blob, Dtbs.Items[Index].Size, 0, "compatible", &List) &&
+          SocMatches (Soc, List))) {
+      (*Others)++;
       DtInfoFree (&Info);
       continue;
     }
@@ -200,8 +135,10 @@ ReadDtbs (
 // State for ModelsScan's walk of one folder.
 typedef struct _SCAN_VISIT {
   SCANNED_MODELS *Found;
+  // The running SoC, or NULL to take every model.
+  CONST SOC_INFO *Soc;
   UINTN           Trees;
-  CONST CHAR8    *Compatible;
+  UINTN           Others;
 } SCAN_VISIT;
 
 STATIC BOOLEAN
@@ -213,7 +150,7 @@ ScanVisit (
   SCAN_VISIT *Scan = Context;
 
   AddModels (
-    Scan->Found, Blob->Data, Blob->Len, Scan->Compatible, &Scan->Trees
+    Scan->Found, Blob->Data, Blob->Len, Scan->Soc, &Scan->Trees, &Scan->Others
   );
   return FALSE;
 }
@@ -290,24 +227,27 @@ ModelsScan (
   IN OUT SCANNED_MODELS *Out
 )
 {
-  UINT32       Chip       = QuirksChipId ();
-  CONST CHAR8 *Compatible = SocCompatible (Chip);
+  UINT32          Chip = QuirksChipId ();
+  CONST SOC_INFO *Soc  = SocById (Chip);
 
-  if (!Compatible) {
+  if (!SocHasCompatibles (Soc)) {
     LogPrint (
       Log, "scan: no SoC compatible for chip id %u; showing all models", Chip
     );
+    Soc = NULL;
   }
   for (UINTN Drive = 0; Drive < Count; Drive++) {
     for (UINTN Dir = 0; Dir < N_DTB_DIRS; Dir++) {
-      SCAN_VISIT Scan  = {Out, 0, Compatible};
+      SCAN_VISIT Scan  = {Out, Soc, 0, 0};
       UINTN      First = Out->Count;
 
       ReadDtbs (Drives[Drive], mDtbDirs[Dir], ScanVisit, &Scan);
       if (Scan.Trees) {
         LogPrint (
-          Log, "scan: drive %llu: %llu new model(s) from %s", (UINT64)Drive,
-          (UINT64)(Out->Count - First), mDtbDirs[Dir]
+          Log,
+          "scan: drive %llu: %llu new model(s) from %s, %llu for other SoCs",
+          (UINT64)Drive, (UINT64)(Out->Count - First), mDtbDirs[Dir],
+          (UINT64)Scan.Others
         );
       }
     }

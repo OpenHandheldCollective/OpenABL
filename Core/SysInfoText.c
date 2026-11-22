@@ -11,6 +11,7 @@
 
 #include "Base/Memory.h"
 #include "Base/Print.h"
+#include "Core/Soc.h"
 
 #define MIB ((UINT64)1 << 20)
 #define GIB ((UINT64)1 << 30)
@@ -87,38 +88,9 @@ SysInfoPlatformName (IN UINT32 Type)
 CONST CHAR8 *
 SysInfoSocName (IN UINT32 ChipId)
 {
-  switch (ChipId) {
-  case 321:
-    return "Snapdragon 845";
-  case 356:
-    return "Snapdragon 865";
-  case 444:
-    return "Snapdragon 662";
-  case 467:
-    return "Dragonwing QCS6125";
-  case 531:
-    return "Snapdragon 8+ Gen 1";
-  case 601:
-    return "Snapdragon G3x Gen 2";
-  case 603:
-    return "Dragonwing QCS8550";
-  case 634:
-    return "Snapdragon G2 Gen 1";
-  case 639:
-    return "Snapdragon 8 Elite";
-  case 654:
-    return "Snapdragon G1 Gen 2";
-  case 682:
-    return "Snapdragon G3 Gen 3";
-  case 700:
-    return "Snapdragon G2 Gen 2";
-  case 706:
-    return "Dragonwing Q8750";
-  case 732:
-    return "Dragonwing Q7790";
-  default:
-    return NULL;
-  }
+  CONST SOC_INFO *Soc = SocById (ChipId);
+
+  return Soc ? Soc->Name : NULL;
 }
 
 CHAR8 *
