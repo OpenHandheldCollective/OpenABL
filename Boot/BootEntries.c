@@ -22,7 +22,7 @@
 // Size limit for entry files and loader.conf.
 #define TEXT_LIMIT ((UINTN)64 << 10)
 // Bytes read from the start of a UKI to get its section table.
-#define PE_HEAD 4096
+#define PE_HEAD 32768
 
 CONST CHAR8 *
 BootEntriesVolumeKind (IN CONST BOOT_ENTRIES_VOLUME *V)
