@@ -899,7 +899,7 @@ index 975e656..51ffe92 100644
                          "powering down the display and controller\n"));
  
 diff --git a/QcomModulePkg/Library/FastbootLib/FastbootCmds.c b/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
-index 1ca6796..bdb6926 100644
+index 1ca6796..d1bc6e0 100644
 --- a/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
 +++ b/QcomModulePkg/Library/FastbootLib/FastbootCmds.c
 @@ -153,6 +153,7 @@ STATIC FASTBOOT_VAR *Varlist;
@@ -1048,7 +1048,76 @@ index 1ca6796..bdb6926 100644
      return Status;
  }
  
-@@ -4048,7 +4069,8 @@ FastbootCommandSetup (IN VOID *Base, IN UINT64 Size)
+@@ -1431,7 +1452,8 @@ SparseImgFlashThread (VOID* Arg)
+   IsFlashComplete = FALSE;
+   FlashSplitNeeded = TRUE;
+ 
+-  HandleSparseImgFlash (ThreadFlashInfo->PartitionName,
++  /* AcceptCmd reports a failure on the next flash or download. */
++  FlashResult = HandleSparseImgFlash (ThreadFlashInfo->PartitionName,
+           ThreadFlashInfo->PartitionSize,
+           ThreadFlashInfo->FlashDataBuffer,
+           ThreadFlashInfo->FlashNumDataBytes);
+@@ -1980,6 +2002,9 @@ CmdFlash (IN CONST CHAR8 *arg, IN VOID *data, IN UINT32 sz)
+                 PartitionName, ARRAY_SIZE (PartitionName));
+         ThreadFlashInfo->PartitionSize = ARRAY_SIZE (PartitionName);
+ 
++        /* Before the thread runs, so AcceptCmd holds back the next command
++         * from the start. */
++        IsFlashComplete = FALSE;
+         Status = CreateSparseImgFlashThread (ThreadFlashInfo);
+       } else {
+         IsFlashComplete = FALSE;
+@@ -3583,6 +3608,29 @@ AcceptCmdHandler (IN EFI_EVENT Event, IN VOID *Context)
+   AcceptCmdInfo = NULL;
+ }
+ 
++/* A command held back while a threaded flash writes. */
++STATIC CHAR8 DeferredCmd[MAX_FASTBOOT_COMMAND_SIZE + 1];
++STATIC UINT64 DeferredCmdSize;
++STATIC BOOLEAN HasDeferredCmd = FALSE;
++
++/* Runs the held back command once the write ends. */
++VOID
++FastbootRunDeferredCmd (VOID)
++{
++  if (!HasDeferredCmd || !IsFlashComplete) {
++    return;
++  }
++  HasDeferredCmd = FALSE;
++  AcceptCmd (DeferredCmdSize, DeferredCmd);
++}
++
++/* Drops a held back command, for stopping fastboot. */
++VOID
++FastbootDropDeferredCmd (VOID)
++{
++  HasDeferredCmd = FALSE;
++}
++
+ STATIC VOID
+ AcceptCmd (IN UINT64 Size, IN CHAR8 *Data)
+ {
+@@ -3606,6 +3654,18 @@ AcceptCmd (IN UINT64 Size, IN CHAR8 *Data)
+     /* Wait for flash finished before next command */
+     if (AsciiStrnCmp (Data, "download", AsciiStrLen ("download"))) {
+       StopUsbTimer ();
++      if (!IsFlashComplete &&
++          IsUseMThreadParallel ()) {
++        /* Waiting on LockFlash here would stall the caller's loop, and the
++         * menu with it, until the write ends. FastbootRunDeferredCmd runs
++         * the command then. */
++        if (Size > MAX_FASTBOOT_COMMAND_SIZE)
++          Size = MAX_FASTBOOT_COMMAND_SIZE;
++        gBS->CopyMem (DeferredCmd, Data, Size);
++        DeferredCmdSize = Size;
++        HasDeferredCmd = TRUE;
++        return;
++      }
+       if (!IsFlashComplete &&
+           !IsUseMThreadParallel ()) {
+         Status = AcceptCmdTimerInit (Size, Data);
+@@ -4048,7 +4108,8 @@ FastbootCommandSetup (IN VOID *Base, IN UINT64 Size)
    AsciiSPrint (EraseBlkSizeStr, sizeof (EraseBlkSizeStr), " 0x%x", BlkSize);
    FastbootPublishVar ("erase-block-size", EraseBlkSizeStr);
    GetDevInfo (&DevInfoPtr);
@@ -1058,8 +1127,19 @@ index 1ca6796..bdb6926 100644
    FastbootPublishVar ("version-baseband", DevInfoPtr->radio_version);
    BatterySocOk = TargetBatterySocOk (&BatteryVoltage);
    AsciiSPrint (StrBatteryVoltage, sizeof (StrBatteryVoltage), "%d",
+diff --git a/QcomModulePkg/Library/FastbootLib/FastbootCmds.h b/QcomModulePkg/Library/FastbootLib/FastbootCmds.h
+index f4d3522..552dd44 100644
+--- a/QcomModulePkg/Library/FastbootLib/FastbootCmds.h
++++ b/QcomModulePkg/Library/FastbootLib/FastbootCmds.h
+@@ -234,4 +234,6 @@ BOOLEAN IsDisableParallelDownloadFlash (VOID);
+ BOOLEAN IsUseMThreadParallel (VOID);
+ VOID ThreadSleep (TimeDuration Delay);
+ VOID WaitForFlashFinished (VOID);
++VOID FastbootRunDeferredCmd (VOID);
++VOID FastbootDropDeferredCmd (VOID);
+ #endif
 diff --git a/QcomModulePkg/Library/FastbootLib/FastbootMain.c b/QcomModulePkg/Library/FastbootLib/FastbootMain.c
-index 05554a6..11d8624 100755
+index 05554a6..471df0b 100755
 --- a/QcomModulePkg/Library/FastbootLib/FastbootMain.c
 +++ b/QcomModulePkg/Library/FastbootLib/FastbootMain.c
 @@ -160,7 +160,12 @@ DummyNotify (IN EFI_EVENT Event, IN VOID *Context)
@@ -1127,7 +1207,7 @@ index 05554a6..11d8624 100755
    /* Look for Event from Usb device protocol */
    Fbd.UsbDeviceProtocol->HandleEvent (&Msg, &PayloadSize, &Payload);
    if (UsbDeviceEventDeviceStateChange == Msg) {
-@@ -392,35 +413,104 @@ EFI_STATUS HandleUsbEvents (VOID)
+@@ -392,37 +413,120 @@ EFI_STATUS HandleUsbEvents (VOID)
    return Status;
  }
  
@@ -1138,7 +1218,14 @@ index 05554a6..11d8624 100755
 +FastbootPoll (VOID)
  {
 -  EFI_STATUS Status = EFI_SUCCESS;
-+  EFI_STATUS Status = HandleUsbEvents ();
++  EFI_STATUS Status;
++
++  /* Not while paused: the gadget's buffers are gone. */
++  if (mFastbootUsbStarted && !mGadgetPaused) {
++    FastbootRunDeferredCmd ();
++  }
++
++  Status = HandleUsbEvents ();
 +
 +  if (EFI_ERROR (Status) && (Status != EFI_ABORTED)) {
 +    DEBUG ((EFI_D_ERROR, "Error, failed to handle USB event\n"));
@@ -1171,6 +1258,9 @@ index 05554a6..11d8624 100755
 +    if (!mFastbootUsbStarted) {
 +      return EFI_SUCCESS;
 +    }
++    /* A threaded flash still reads the download buffer. */
++    WaitForFlashFinished ();
++    FastbootDropDeferredCmd ();
 +    Status = Fbd.UsbDeviceProtocol->Stop ();
 +    DEBUG ((EFI_D_ERROR, "Fastboot: gadget paused for USB host: %r\n", Status));
 +    if (EFI_ERROR (Status)) {
@@ -1230,8 +1320,8 @@ index 05554a6..11d8624 100755
 +  Status = FastbootStart ();
 +  if (Status != EFI_SUCCESS) {
 +    return Status;
-+  }
-+
+   }
+ 
 +  FastbootTextMenuLoop ();
 +
 +  return FastbootStop ();
@@ -1246,9 +1336,15 @@ index 05554a6..11d8624 100755
 +    /* A second Stop() would double-free in XBL. */
 +    ExitMenuKeysDetection ();
 +    return EFI_SUCCESS;
-   }
- 
++  }
++
++  /* A threaded flash still reads the download buffer. */
++  WaitForFlashFinished ();
++  FastbootDropDeferredCmd ();
++
    /* Close the fastboot app and stop USB device */
+   Status = FastbootCmdsUnInit ();
+   if (Status != EFI_SUCCESS) {
 diff --git a/QcomModulePkg/Library/FastbootLib/FastbootMain.h b/QcomModulePkg/Library/FastbootLib/FastbootMain.h
 index c528a50..62ccbb5 100755
 --- a/QcomModulePkg/Library/FastbootLib/FastbootMain.h
