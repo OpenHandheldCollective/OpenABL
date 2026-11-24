@@ -53,6 +53,8 @@
  * work. Once per boot, so Android then needs a restart. Failure is not fatal.
  */
 #define OPENABL_MENU_ACTION_NATIVE_KEYMASTER      19
+/* EFI_NOT_READY if the battery is too low to flash. */
+#define OPENABL_MENU_ACTION_BATTERY_OK            20
 
 typedef struct {
   UINT8  OffmodeCharging; /* Qualcomm's charger screen flag */
