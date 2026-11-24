@@ -21,8 +21,6 @@
 
 // Size limit for entry files and loader.conf.
 #define TEXT_LIMIT ((UINTN)64 << 10)
-// Bytes read from the start of a UKI to get its section table.
-#define PE_HEAD 4096
 
 CONST CHAR8 *
 BootEntriesVolumeKind (IN CONST BOOT_ENTRIES_VOLUME *V)
@@ -195,8 +193,8 @@ UkiEntries (
   for (UINTN Index = 0; Index < List.Count; Index++) {
     CONST CHAR8 *Name     = List.Items[Index].Name;
     PE_SECTIONS  Sections = {0};
-    OABL_BUFFER  Head;
     BOOT_ENTRY   Entry;
+    CONST CHAR8 *Why;
     CHAR8       *Path;
     CHAR8       *Osrel;
     CHAR8       *Uname;
@@ -209,12 +207,8 @@ UkiEntries (
     if (!Path) {
       continue;
     }
-    if (!FilesReadPart (Fs, Path, 0, PE_HEAD, &Head)) {
-      FreePool (Path);
-      continue;
-    }
-    if (!PeSections (Head.Data, Head.Len, &Sections)) {
-      SerialLog ("  %s: not a PE image; skipped", Path);
+    if (!FilesReadPeSections (Fs, Path, &Sections, &Why)) {
+      SerialLog ("  %s: %s; skipped", Path, Why);
     } else if (!PeFind (Sections.Items, Sections.Count, ".linux")) {
       SerialLog ("  %s: no .linux section, not a UKI; skipped", Path);
     } else {
@@ -230,7 +224,6 @@ UkiEntries (
       FreePool (Uname);
     }
     VecFree (&Sections);
-    BufferFree (&Head);
     FreePool (Path);
   }
   FilesEntriesFree (&List);

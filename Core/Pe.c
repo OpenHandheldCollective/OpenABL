@@ -70,6 +70,28 @@ PeMachine (
 }
 
 BOOLEAN
+PeHeadersSize (
+  IN CONST UINT8 *Head,
+  IN UINTN        Size,
+  OUT UINTN      *Needed
+)
+{
+  UINT16 Count;
+  UINT16 Optional;
+  UINTN  CoffOffset;
+
+  if (!CoffHeader (Head, Size, &CoffOffset) ||
+      !GetLe16 (Head, Size, CoffOffset + 2, &Count) ||
+      !GetLe16 (Head, Size, CoffOffset + 16, &Optional)) {
+    return FALSE;
+  }
+  // The COFF header is 20 bytes and each section entry 40. CoffOffset is
+  // at most 0xFFFFFFFF + 4, so this can't overflow a 64-bit UINTN.
+  *Needed = CoffOffset + 20 + Optional + (UINTN)Count * 40;
+  return TRUE;
+}
+
+BOOLEAN
 PeSections (
   IN CONST UINT8  *Head,
   IN UINTN         Size,

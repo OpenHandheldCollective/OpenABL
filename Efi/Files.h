@@ -23,6 +23,7 @@
 #include "Base/Buffer.h"
 
 #include "Core/BootDecision.h"
+#include "Core/Pe.h"
 #include "Core/Settings.h"
 
 // Reads up to Length bytes of Path (UCS-2) from Offset. Returns less if the
@@ -62,6 +63,17 @@ FilesReadPart (
   IN UINT64        Offset,
   IN UINTN         Length,
   OUT OABL_BUFFER *Out
+);
+
+// Reads the section table of the PE image at Path: a small head first, and
+// again up to the end of the table when it is longer, as in a UKI with one
+// .dtbauto section per device. On failure, *Why (if given) says why.
+BOOLEAN
+FilesReadPeSections (
+  IN EFI_HANDLE     Fs,
+  IN CONST CHAR8   *Path,
+  OUT PE_SECTIONS  *Out,
+  OUT CONST CHAR8 **Why OPTIONAL
 );
 
 // Returns TRUE if Path opens and is a file.

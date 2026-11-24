@@ -14,6 +14,12 @@
 #include "Core/EfiData.h"
 #include "Core/Fat32.h"
 
+// Bytes first read from the start of a PE image. Enough for the section
+// table of most; bigger ones are read again at the size they need.
+#define PE_HEAD ((UINTN)4 << 10)
+// Largest section table read. The format allows up to about 2.6 MiB.
+#define PE_HEAD_MAX ((UINTN)1 << 20)
+
 // Largest single Read request.
 #define CHUNK ((UINTN)1 << 20)
 
@@ -343,6 +349,41 @@ FilesReadPart (
   Ok = FilesReadRange (Fs, WidePath, Offset, Length, Out);
   FreePool (WidePath);
   return Ok;
+}
+
+BOOLEAN
+FilesReadPeSections (
+  IN EFI_HANDLE     Fs,
+  IN CONST CHAR8   *Path,
+  OUT PE_SECTIONS  *Out,
+  OUT CONST CHAR8 **Why OPTIONAL
+)
+{
+  OABL_BUFFER  Head  = {0};
+  CONST CHAR8 *Error = NULL;
+  UINTN        Needed;
+
+  *Out = (PE_SECTIONS){0};
+  if (!FilesReadPart (Fs, Path, 0, PE_HEAD, &Head)) {
+    Error = "unreadable";
+  } else if (!PeHeadersSize (Head.Data, Head.Len, &Needed)) {
+    Error = "not a PE image";
+  } else if (Needed > Head.Len) {
+    BufferFree (&Head);
+    if (Needed > PE_HEAD_MAX) {
+      Error = "section table too large";
+    } else if (!FilesReadPart (Fs, Path, 0, Needed, &Head)) {
+      Error = "section table unreadable";
+    }
+  }
+  if (!Error && !PeSections (Head.Data, Head.Len, Out)) {
+    Error = "section table cut short";
+  }
+  BufferFree (&Head);
+  if (Why) {
+    *Why = Error;
+  }
+  return !Error;
 }
 
 BOOLEAN

@@ -53,7 +53,17 @@ PeMachine (
   OUT UINT16     *Machine
 );
 
-// Reads the section table. Head must cover the headers; 4 KiB is enough.
+// Gets how many bytes from the start of the file Head must cover for
+// PeSections: up to the end of the section table. Head only needs to cover
+// the COFF header. Fails if Head isn't a PE image.
+BOOLEAN
+PeHeadersSize (
+  IN CONST UINT8 *Head,
+  IN UINTN        Size,
+  OUT UINTN      *Needed
+);
+
+// Reads the section table. Head must cover PeHeadersSize bytes.
 BOOLEAN
 PeSections (
   IN CONST UINT8  *Head,
