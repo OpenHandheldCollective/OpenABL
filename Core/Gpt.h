@@ -77,6 +77,18 @@ GptCfwParts (
   IN UINTN             Max
 );
 
+// Like GptCfwParts, for every entry in use: the partitions of a disk image
+// written to userdata.
+UINTN
+GptUsedParts (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             BlockSize,
+  OUT GPT_CFW_PART    *Out,
+  IN UINTN             Max
+);
+
 // Returns TRUE if entry Index is in use and called Name (ASCII).
 BOOLEAN
 GptEntryNamed (

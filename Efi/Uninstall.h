@@ -9,7 +9,9 @@
   Linux is on the first writable fixed disk whose GPT, with both copies
   valid and the same, has a partition on disk after userdata. Uninstalling
   rewrites that GPT (GptUninstall) and asks recovery, through misc, to wipe
-  Android's data so it fills the space. Block I/O goes through page-aligned
+  Android's data so it fills the space. Linux written to userdata as a
+  whole disk image has no partitions there to remove: its own MBR and GPT
+  headers are cleared instead, before the same wipe. Block I/O goes through page-aligned
   buffers, which satisfy any IoAlign.
 */
 
@@ -83,12 +85,15 @@ UninstallCfwOnInternal (
 #define UNINSTALL_MAX_PARTS 8
 
 // Points Parts at the partitions UninstallCfwOnInternal found, and returns
-// how many (none before it ran, or after an uninstall).
+// how many (none before it ran, or after an uninstall). For an image in
+// userdata they are the image's partitions, or userdata itself when its
+// table lists none, so there is at least one whenever Linux was found.
 UINTN
 UninstallCfwParts (OUT CONST GPT_CFW_PART **Parts);
 
 // Removes the Linux partitions from internal storage and gives their space
-// to userdata, in both GPTs, flushing each write, then reads both back.
+// to userdata, in both GPTs, flushing each write, then reads both back. For
+// an image in userdata, clears the image's table and checks it's gone.
 // EFI_NOT_FOUND if Linux isn't there, EFI_VOLUME_CORRUPTED if the table
 // can't be trusted (nothing was written), EFI_CRC_ERROR if the tables read
 // back wrong, else the write error. Block I/O writes return none of those

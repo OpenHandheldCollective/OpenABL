@@ -203,6 +203,30 @@ GptCfwAfterUserdata (
   return GptCfwParts (Header, Array, ArrayLen, 0, NULL, 0) > 0;
 }
 
+// Fills Part with Entry's name, ASCII as is and anything else as '?', and
+// its size. Names are ASCII in practice.
+STATIC VOID
+FillPart (
+  IN CONST UINT8   *Entry,
+  IN UINTN          BlockSize,
+  OUT GPT_CFW_PART *Part
+)
+{
+  UINT64 First = ReadLe64 (Entry + 32);
+  UINT64 Last  = ReadLe64 (Entry + 40);
+  UINTN  Len   = 0;
+
+  Part->Bytes = Last >= First ? (Last - First + 1) * (UINT64)BlockSize : 0;
+  for (UINTN Unit = 0; Unit < NAME_LEN / 2; Unit++) {
+    UINT16 Char = ReadLe16 (Entry + NAME_AT + 2 * Unit);
+    if (Char == 0) {
+      break;
+    }
+    Part->Name[Len++] = Char >= 0x20 && Char < 0x7f ? (CHAR8)Char : '?';
+  }
+  Part->Name[Len] = 0;
+}
+
 UINTN
 GptCfwParts (
   IN CONST GPT_HEADER *Header,
@@ -223,32 +247,34 @@ GptCfwParts (
   }
   End = ReadLe64 (Array + Userdata * Header->EntrySize + 40);
   for (UINTN Index = 0; Index < Count; Index++) {
-    CONST UINT8  *Entry = Array + Index * Header->EntrySize;
-    GPT_CFW_PART *Part;
-    UINT64        First;
-    UINT64        Last;
-    UINTN         Len = 0;
+    CONST UINT8 *Entry = Array + Index * Header->EntrySize;
 
-    if (!AfterUserdata (Entry, End)) {
-      continue;
+    if (AfterUserdata (Entry, End) && Found++ < Max) {
+      FillPart (Entry, BlockSize, &Out[Found - 1]);
     }
-    if (Found++ >= Max) {
-      continue;
+  }
+  return Found;
+}
+
+UINTN
+GptUsedParts (
+  IN CONST GPT_HEADER *Header,
+  IN CONST UINT8      *Array,
+  IN UINTN             ArrayLen,
+  IN UINTN             BlockSize,
+  OUT GPT_CFW_PART    *Out,
+  IN UINTN             Max
+)
+{
+  UINTN Count = EntryCount (Header, ArrayLen);
+  UINTN Found = 0;
+
+  for (UINTN Index = 0; Index < Count; Index++) {
+    CONST UINT8 *Entry = Array + Index * Header->EntrySize;
+
+    if (InUse (Entry) && Found++ < Max) {
+      FillPart (Entry, BlockSize, &Out[Found - 1]);
     }
-    Part  = &Out[Found - 1];
-    First = ReadLe64 (Entry + 32);
-    Last  = ReadLe64 (Entry + 40);
-    Part->Bytes =
-      Last >= First ? (Last - First + 1) * (UINT64)BlockSize : 0;
-    // ASCII as is, anything else as '?'; names are ASCII in practice.
-    for (UINTN Unit = 0; Unit < NAME_LEN / 2; Unit++) {
-      UINT16 Char = ReadLe16 (Entry + NAME_AT + 2 * Unit);
-      if (Char == 0) {
-        break;
-      }
-      Part->Name[Len++] = Char >= 0x20 && Char < 0x7f ? (CHAR8)Char : '?';
-    }
-    Part->Name[Len] = 0;
   }
   return Found;
 }

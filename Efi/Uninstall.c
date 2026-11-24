@@ -9,6 +9,7 @@
 
 #include "Efi/Uninstall.h"
 #include "Base/Memory.h"
+#include "Base/Text.h"
 
 #include "Core/AndroidBcb.h"
 #include "Efi/NestedDisk.h"
@@ -219,6 +220,27 @@ Find (VOID)
 // 0: not looked yet, 1: not installed, 2: installed.
 STATIC UINT8 mFoundCfw;
 
+// Lists the partitions of the image in userdata for the confirmation, or
+// userdata itself when the image's table lists none, so the list is never
+// empty.
+STATIC VOID
+ImageParts (IN CONST NESTED_GPT *Nested)
+{
+  UINTN Parts = GptUsedParts (
+    &Nested->Header, Nested->Array.Data, Nested->Array.Len, Nested->SectorSize,
+    mParts, UNINSTALL_MAX_PARTS
+  );
+
+  if (Parts) {
+    mPartCount = Parts < UNINSTALL_MAX_PARTS ? Parts : UNINSTALL_MAX_PARTS;
+    return;
+  }
+  AsciiStrCopy (mParts[0].Name, sizeof (mParts[0].Name), "userdata");
+  mParts[0].Bytes = (Nested->BlockIo->Media->LastBlock + 1) *
+                    (UINT64)Nested->BlockIo->Media->BlockSize;
+  mPartCount = 1;
+}
+
 BOOLEAN
 UninstallCfwOnInternal (
   IN UINT32   Chip,
@@ -226,7 +248,7 @@ UninstallCfwOnInternal (
 )
 {
   BOOLEAN    Installed;
-  BOOLEAN    Image;
+  BOOLEAN    Image = FALSE;
   NESTED_GPT Nested;
 
   if (mFoundCfw) {
@@ -234,9 +256,13 @@ UninstallCfwOnInternal (
   }
   QuirksConnectAll (Chip, Log);
   Installed = Find () != NULL;
-  Image     = NestedDiskFind (&Nested);
-  if (Image) {
-    BufferFree (&Nested.Array);
+  // Partitions after userdata win: they're what UninstallRun removes then.
+  if (!Installed) {
+    Image = NestedDiskFind (&Nested);
+    if (Image) {
+      ImageParts (&Nested);
+      BufferFree (&Nested.Array);
+    }
   }
   LogLine (
     Log, Installed ? "cfw: Linux is installed on internal storage"
@@ -255,6 +281,81 @@ UninstallCfwParts (OUT CONST GPT_CFW_PART **Parts)
   return mFoundCfw == 2 ? mPartCount : 0;
 }
 
+// Zeroes the parent blocks holding bytes [Offset, Offset + Size) of the
+// image, and flushes them.
+STATIC EFI_STATUS
+ZeroImageBytes (
+  IN EFI_BLOCK_IO_PROTOCOL *BlockIo,
+  IN UINT64                 Offset,
+  IN UINTN                  Size
+)
+{
+  UINTN       BlockSize = BlockIo->Media->BlockSize;
+  UINT64      First     = Offset / BlockSize;
+  UINT64      Last      = (Offset + Size - 1) / BlockSize;
+  OABL_BUFFER Zeros     = {0};
+  UINTN       Length;
+  EFI_STATUS  Status;
+
+  if (Last > BlockIo->Media->LastBlock) {
+    return EFI_BAD_BUFFER_SIZE;
+  }
+  Length = (UINTN)(Last - First + 1) * BlockSize;
+  if (!BufferReserve (&Zeros, Length)) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+  SetMem (Zeros.Data, Length, 0);
+  Status = UninstallWrite (BlockIo, First, Zeros.Data, Length);
+  if (Status == EFI_SUCCESS) {
+    Status = BlockIo->FlushBlocks (BlockIo);
+  }
+  BufferFree (&Zeros);
+  return Status;
+}
+
+// Linux written to userdata as a whole disk image (fastboot flash userdata)
+// has no partitions of its own in the device's GPT to remove. Its own
+// protective MBR and both GPT headers are zeroed instead, so neither the
+// ABL nor a kernel finds it again even if recovery doesn't wipe userdata;
+// the wipe then formats the rest.
+STATIC EFI_STATUS
+EraseImage (
+  IN OUT NESTED_GPT *Nested,
+  IN LOG_SINK        Log
+)
+{
+  EFI_BLOCK_IO_PROTOCOL *BlockIo = Nested->BlockIo;
+  UINT32                 Ss      = Nested->SectorSize;
+  UINT64                 Backup  = Nested->Header.AlternateLba;
+  EFI_STATUS             Status;
+  NESTED_GPT             Again;
+
+  BufferFree (&Nested->Array);
+  if (BlockIo->Media->ReadOnly) {
+    LogLine (Log, "uninstall: userdata is read only");
+    return EFI_WRITE_PROTECTED;
+  }
+  // The backup header first: with the primary still there, a failure
+  // leaves the image as it was.
+  Status = ZeroImageBytes (BlockIo, Backup * Ss, Ss);
+  if (Status == EFI_SUCCESS) {
+    Status = ZeroImageBytes (BlockIo, 0, 2 * (UINTN)Ss);
+  }
+  if (Status != EFI_SUCCESS) {
+    LogLine (Log, "uninstall: clearing the image's table in userdata failed");
+    return Status;
+  }
+  if (NestedDiskFind (&Again)) {
+    BufferFree (&Again.Array);
+    LogLine (Log, "uninstall: the image in userdata still reads back");
+    return EFI_CRC_ERROR;
+  }
+  mFoundCfw  = 1;
+  mPartCount = 0;
+  LogLine (Log, "uninstall: Linux's image in userdata cleared");
+  return EFI_SUCCESS;
+}
+
 EFI_STATUS
 UninstallRun (IN LOG_SINK Log)
 {
@@ -266,8 +367,12 @@ UninstallRun (IN LOG_SINK Log)
   GPT_HEADER             Header;
   GPT_HEADER             Backup;
   EFI_STATUS             Status = EFI_NOT_FOUND;
+  NESTED_GPT             Nested;
 
   if (!Disk) {
+    if (NestedDiskFind (&Nested)) {
+      return EraseImage (&Nested, Log);
+    }
     LogLine (Log, "uninstall: Linux isn't on internal storage");
     return EFI_NOT_FOUND;
   }
